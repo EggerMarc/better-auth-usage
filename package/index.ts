@@ -3,29 +3,42 @@ import { Customer, UsageOptions } from "./types";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod"
 import { getUsageAdapter } from "./adapter";
-import { checkLimit, getFeature, shouldReset } from "./utils";
+import { checkLimit, getCustomer, getFeature, shouldReset } from "./utils";
 import { customerSchema } from "./schema";
+import { getAdapter } from "better-auth/db";
 
 export function usage<O extends UsageOptions>(options: O) {
     const { customers: initCustomers, features, overrides } = options
     const customers = initCustomers ? initCustomers : {} as Record<string, Customer>;
 
-
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
         if (!session) {
-            throw new APIError("UNAUTHORIZED");
+            throw new APIError("UNAUTHORIZED", {
+                message: "Session not found"
+            });
         }
         if (ctx.body?.referenceId && ctx.body?.feature) {
             const feature = getFeature({
                 features, overrides,
                 ...ctx.body
             })
+            const customer = customers[ctx.body.referenceId];
 
-            const isAuthorized = await feature.authorizeReference?.({ ...ctx.body }) ?? false
+            if (!customer) {
+                throw new APIError("NOT_FOUND", {
+                    message: "Customer not found. Make sure to register them first."
+                })
+            }
+
+            const isAuthorized = await feature.authorizeReference?.({
+                ...ctx.body,
+                customer
+            }) ?? true
+
             if (!isAuthorized) {
                 throw new APIError("UNAUTHORIZED", {
-                    message: "Unauthorized",
+                    message: `Customer unauthorized by feature ${feature.key}`,
                 });
             }
         }
@@ -98,12 +111,61 @@ export function usage<O extends UsageOptions>(options: O) {
                     }
                 }),
 
-            registerCustomer: createAuthEndpoint("/usage/register/customer", {
+            registerCustomer: createAuthEndpoint("/usage/register-customer", {
                 method: "POST",
                 body: customerSchema,
                 metadata: {}
             }, async (ctx) => {
                 customers[ctx.body.referenceId] = ctx.body
+            }),
+
+            consumeFeature: createAuthEndpoint("/usage/consume", {
+                method: "POST",
+                middleware: [middleware],
+                body: z.object({
+                    featureKey: z.string(),
+                    overrideKey: z.string(),
+                    amount: z.number(),
+                    referenceId: z.string(),
+                    event: z.string().default("use")
+                })
+            }, async (ctx) => {
+                const adapter = getUsageAdapter(ctx.context)
+                const customer = getCustomer({ customers, ...ctx.body });
+                const feature = getFeature({ features, overrides, ...ctx.body });
+                const lastUsage = await adapter.findLatestUsage({
+                    referenceId: customer.referenceId,
+                    featureKey: feature.key
+                })
+
+                feature.hooks?.before?.({
+                    customer, usage: {
+                        amount: ctx.body.amount,
+                        beforeAmount: lastUsage.afterAmount,
+                        afterAmount: lastUsage.afterAmount + ctx.body.amount
+                    },
+                    feature
+                })
+
+                const res = await adapter.insertUsage({
+                    ...customer,
+                    event: ctx.body.event,
+                    feature: feature.key,
+                    beforeAmount: lastUsage.afterAmount,
+                    afterAmount: lastUsage.afterAmount + ctx.body.amount,
+                    amount: ctx.body.amount,
+                })
+
+                feature.hooks?.after?.({
+                    customer, usage: {
+                        amount: ctx.body.amount,
+                        beforeAmount: lastUsage.afterAmount,
+                        afterAmount: lastUsage.afterAmount + ctx.body.amount
+                    },
+                    feature
+                })
+
+                return res
             }),
 
             checkUsage: createAuthEndpoint(
@@ -178,7 +240,6 @@ export function usage<O extends UsageOptions>(options: O) {
                     method: "POST",
                     body: z.object({
                         referenceId: z.string(),
-                        referenceType: z.string(),
                         featureKey: z.string(),
                         overrideKey: z.string().optional(),
                     }),
@@ -200,6 +261,8 @@ export function usage<O extends UsageOptions>(options: O) {
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
                     const feature = getFeature({ features, overrides, ...ctx.body })
+                    const { referenceType } = customers[ctx.body.referenceId];
+
                     if (!feature.reset || feature.reset === "never") {
                         return
                     }
@@ -216,7 +279,7 @@ export function usage<O extends UsageOptions>(options: O) {
                             amount: 0,
                             feature: feature.key,
                             referenceId: ctx.body.referenceId,
-                            referenceType: ctx.body.referenceType,
+                            referenceType: referenceType,
                             event: "reset"
                         })
                     }
@@ -225,5 +288,3 @@ export function usage<O extends UsageOptions>(options: O) {
         },
     } satisfies BetterAuthPlugin;
 }
-
-

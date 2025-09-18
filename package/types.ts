@@ -12,7 +12,11 @@ export type Customer = {
     email?: string;
     name?: string;
 };
-
+export type UsageData = {
+    beforeAmount: number,
+    afterAmount: number,
+    amount: number
+}
 export type CustomerExpanded = Customer & ExtraFields;
 export type Feature = {
     /*
@@ -27,17 +31,20 @@ export type Feature = {
     resetValue?: number,
     hooks?: {
         after?: (props: {
-            usage: Usage,
+            usage: UsageData,
             customer: Customer,
             feature: Feature
         }) => Promise<void> | void
         before?: (props: {
-            usage: Usage,
+            usage: UsageData,
             customer: Customer,
             feature: Feature
         }) => Promise<void> | void
     },
-    authorizeReference?: <BT>(params: BT) => Promise<boolean> | boolean
+    authorizeReference?: <BT>(params: {
+        body: BT,
+        customer: Customer
+    }) => Promise<boolean> | boolean
 };
 export type Features = Record<string, Feature>;
 export type Customers = Record<string, Customer>;
