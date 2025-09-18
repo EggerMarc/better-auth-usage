@@ -11,8 +11,9 @@ export type Customer = {
     referenceType: string;
     email?: string;
     name?: string;
-} & ExtraFields;
+};
 
+export type CustomerExpanded = Customer & ExtraFields;
 export type Feature = {
     /*
      *
@@ -37,8 +38,8 @@ export type Feature = {
             feature: Feature
         }) => void
     },
-} & ExtraFields;
-
+};
+export type FeatureExpanded = Feature & ExtraFields
 export type ResetType = "hourly" | "6-hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "never"
 export type ConsumptionLimitType = "in-limit" | "above-limit" | "below-limit";
 export interface UsageOptions {

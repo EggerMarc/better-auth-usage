@@ -4,19 +4,37 @@ import type { Usage } from "./types"
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
     return {
-        findLatestUsage: async (referenceId: string, feature: string) => {
+        findLatestUsage: async ({
+            referenceId,
+            feature,
+            event
+        }: {
+            referenceId: string,
+            feature: string,
+            event?: string
+        }) => {
+            const conditions = event ? [{
+                field: "reference_id",
+                value: referenceId,
+            },
+            {
+                field: "feature",
+                value: feature
+            }, {
+                field: "event",
+                value: event
+            }] : [{
+                field: "reference_id",
+                value: referenceId,
+            },
+            {
+                field: "feature",
+                value: feature
+            }]
+
             const usage = await adapter.findMany<Usage>({
                 model: "usage",
-                where: [
-                    {
-                        field: "reference_id",
-                        value: referenceId,
-                    },
-                    {
-                        field: "feature",
-                        value: feature
-                    }
-                ],
+                where: conditions,
                 sortBy: {
                     field: "created_at",
                     direction: "desc"
@@ -25,15 +43,15 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage[0]
         },
 
-        insertUsage: async (
-            beforeAmount: number,
-            afterAmount: number,
-            amount: number,
-            referenceId: string,
-            referenceType: string,
-            feature: string,
-            event?: string
-        ) => {
+        insertUsage: async ({
+            beforeAmount,
+            afterAmount,
+            amount,
+            referenceId,
+            referenceType,
+            feature,
+            event
+        }: Omit<Usage, "createdAt">) => {
             const usage = await adapter.create<Usage>({
                 model: "usage",
                 data: {

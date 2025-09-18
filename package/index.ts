@@ -2,9 +2,8 @@ import { BetterAuthPlugin, OpenAPIParameter } from "better-auth";
 import { UsageOptions } from "./types";
 import { createAuthEndpoint } from "better-auth/api";
 import { z } from "zod"
-import { getAdapter } from "better-auth/db";
 import { getUsageAdapter } from "./adapter";
-import { checkLimit } from "./utils";
+import { checkLimit, shouldReset } from "./utils";
 
 export function usage<O extends UsageOptions>(options: O) {
     const { customers, features, overrides } = options
@@ -111,10 +110,9 @@ export function usage<O extends UsageOptions>(options: O) {
                 async (ctx) => {
                     // Change later
                     const adapter = getUsageAdapter(ctx.context)
-                    const usage = await adapter.findLatestUsage(
-                        ctx.body.referenceId,
-                        ctx.body.feature
-                    )
+                    const usage = await adapter.findLatestUsage({
+                        ...ctx.body
+                    })
 
                     let feature = features[ctx.body.feature]
                     if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
@@ -139,6 +137,7 @@ export function usage<O extends UsageOptions>(options: O) {
                     method: "POST",
                     body: z.object({
                         referenceId: z.string(),
+                        referenceType: z.string(),
                         feature: z.string(),
                         overrideKey: z.string().optional(),
                     }),
@@ -158,9 +157,9 @@ export function usage<O extends UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    let feature = features[ctx.body.feature]
+                    const adapter = getUsageAdapter(ctx.context);
+                    let feature = features[ctx.body.feature];
                     if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
-
                     if (ctx.body.overrideKey && overrides?.[ctx.body.overrideKey]) {
                         feature = {
                             ...feature,
@@ -172,13 +171,20 @@ export function usage<O extends UsageOptions>(options: O) {
                         return
                     }
 
-                    const lastReset = await getLastUsage(ctx.body.referenceId, ctx.body.feature, "reset")
-                    const resetDue = checkResetDate(lastReset, feature.reset)
-
+                    const lastReset = await adapter.findLatestUsage({
+                        ...ctx.body,
+                        event: "reset"
+                    })
+                    const resetDue = shouldReset(lastReset.createdAt, feature.reset)
                     if (resetDue) {
-                        await resetUsage({
-                            feature: ctx.body.feature,
+                        return await adapter.insertUsage({
+                            beforeAmount: 0,
+                            afterAmount: 0,
+                            amount: 0,
+                            feature: feature.key,
                             referenceId: ctx.body.referenceId,
+                            referenceType: ctx.body.referenceType,
+                            event: "reset"
                         })
                     }
                 }
