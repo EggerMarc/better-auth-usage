@@ -34,16 +34,16 @@ export function mergeSchema<S extends AuthPluginSchema>(
 interface CheckLimitProps {
     maxLimit?: number,
     minLimit?: number,
-    newValue: number
+    value: number
 }
 
 export function checkLimit({
     maxLimit,
     minLimit,
-    newValue
+    value
 }: CheckLimitProps): ConsumptionLimitType {
-    if (maxLimit && newValue > maxLimit) return "above-limit"
-    if (minLimit && newValue < minLimit) return "below-limit"
+    if (maxLimit && value > maxLimit) return "above-limit"
+    if (minLimit && value < minLimit) return "below-limit"
     return "in-limit"
 }
 

@@ -1,7 +1,7 @@
 import type { AuthContext } from "better-auth/types";
 import type { Usage } from "./types"
 
-export const getAdminAdapter = (context: AuthContext) => {
+export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
     return {
         findLatestUsage: async (referenceId: string, feature: string) => {

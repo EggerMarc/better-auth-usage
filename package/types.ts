@@ -1,13 +1,23 @@
-import { customerSchema, usageSchema } from "./schema"
+import { usageSchema } from "./schema"
 import { z } from "zod";
 
 export type Usage = z.infer<typeof usageSchema>;
-export type Customer = z.infer<typeof customerSchema>
+type ExtraFields = {
+    [key: string]: string;
+}
+
+export type Customer = {
+    referenceId: string;
+    referenceType: string;
+    email?: string;
+    name?: string;
+} & ExtraFields;
+
 export type Feature = {
     /*
      *
      */
-    availableInPlans?: string[],
+    availableInPlans?: string[];
     key: string,
     maxLimit?: number,
     minLimit?: number,
@@ -26,8 +36,9 @@ export type Feature = {
             customer: Customer,
             feature: Feature
         }) => void
-    }
-}
+    },
+} & ExtraFields;
+
 export type ResetType = "hourly" | "6-hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "never"
 export type ConsumptionLimitType = "in-limit" | "above-limit" | "below-limit";
 export interface UsageOptions {

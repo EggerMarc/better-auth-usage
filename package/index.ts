@@ -1,9 +1,193 @@
-import { BetterAuthPlugin } from "better-auth";
+import { BetterAuthPlugin, OpenAPIParameter } from "better-auth";
 import { UsageOptions } from "./types";
+import { createAuthEndpoint } from "better-auth/api";
+import { z } from "zod"
+import { getAdapter } from "better-auth/db";
+import { getUsageAdapter } from "./adapter";
+import { checkLimit } from "./utils";
 
 export function usage<O extends UsageOptions>(options: O) {
     const { customers, features, overrides } = options
     return {
-        id: "usage"
+        id: "usage",
+        schema: {
+            usage: {
+                fields: {
+                    referenceId: {
+                        type: "string",
+                        required: true,
+                        input: true,
+                    },
+                    referenceType: {
+                        type: "string",
+                        required: true,
+                        input: true,
+                    },
+                    feature: {
+                        type: "string",
+                        required: true,
+                        input: true,
+                    },
+                    amount: {
+                        type: "number",
+                        required: true,
+                        input: true,
+                    },
+                    afterAmount: {
+                        type: "number",
+                        required: true,
+                        input: true,
+                    },
+                    beforeAmount: {
+                        type: "number",
+                        required: true,
+                        input: true,
+                    },
+                    event: {
+                        type: "string",
+                        required: true,
+                    },
+                    createdAt: {
+                        type: "date",
+                        required: true,
+                    },
+                },
+            },
+        },
+        endpoints: {
+            checkUsage: createAuthEndpoint(
+                "/usage/check",
+                {
+                    method: "GET",
+                    body: z.object({
+                        referenceId: z.string({
+                            description: "Customer referenceId to look for",
+                        }),
+                        feature: z.string({
+                            description: "Feature to check",
+                        }),
+                        overrideKey: z
+                            .string({
+                                description:
+                                    "Override usage limits/behaviour (e.g. plan name)",
+                            })
+                            .optional(),
+                    }),
+                    metadata: {
+                        openapi: {
+                            description: "Checks current usage",
+                            parameters: [
+                                {
+                                    in: "query",
+                                    name: "feature",
+                                    required: true,
+                                    description: "Feature key",
+                                    schema: { type: "string", example: "token-feature" },
+                                } satisfies OpenAPIParameter,
+                                {
+                                    in: "query",
+                                    name: "referenceId",
+                                    required: true,
+                                    description: "ID of the customer",
+                                    schema: { type: "string" },
+                                } satisfies OpenAPIParameter,
+                            ],
+                            responses: {
+                                200: {
+                                    description: "Success",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "string",
+                                                enum: ["in-limit", "above-limit", "below-limit"],
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                async (ctx) => {
+                    // Change later
+                    const adapter = getUsageAdapter(ctx.context)
+                    const usage = await adapter.findLatestUsage(
+                        ctx.body.referenceId,
+                        ctx.body.feature
+                    )
+
+                    let feature = features[ctx.body.feature]
+                    if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
+
+                    if (ctx.body.overrideKey && overrides?.[ctx.body.overrideKey]) {
+                        feature = {
+                            ...feature,
+                            ...overrides[ctx.body.overrideKey].features[ctx.body.feature],
+                        }
+                    }
+
+                    return checkLimit({
+                        ...feature,
+                        value: usage?.afterAmount ?? 0,
+                    })
+                }
+            ),
+
+            syncUsage: createAuthEndpoint(
+                "/usage/sync",
+                {
+                    method: "POST",
+                    body: z.object({
+                        referenceId: z.string(),
+                        feature: z.string(),
+                        overrideKey: z.string().optional(),
+                    }),
+                    metadata: {
+                        openapi: {
+                            description: "Syncs customer usage based on reset rules",
+                            parameters: [
+                                {
+                                    in: "query",
+                                    name: "referenceId",
+                                    required: true,
+                                    description: "ID of the customer",
+                                    schema: { type: "string" },
+                                } satisfies OpenAPIParameter,
+                            ],
+                        },
+                    },
+                },
+                async (ctx) => {
+                    let feature = features[ctx.body.feature]
+                    if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
+
+                    if (ctx.body.overrideKey && overrides?.[ctx.body.overrideKey]) {
+                        feature = {
+                            ...feature,
+                            ...overrides[ctx.body.overrideKey].features[ctx.body.feature],
+                        }
+                    }
+
+                    if (!feature.reset || feature.reset === "never") {
+                        return
+                    }
+
+                    const lastReset = await getLastUsage(ctx.body.referenceId, ctx.body.feature, "reset")
+                    const resetDue = checkResetDate(lastReset, feature.reset)
+
+                    if (resetDue) {
+                        await resetUsage({
+                            feature: ctx.body.feature,
+                            referenceId: ctx.body.referenceId,
+                        })
+                    }
+                }
+            ),
+        },
+        features,
+        overrides,
+        customers, // optional in-memory map for quick lookup
     } satisfies BetterAuthPlugin;
 }
+
+
