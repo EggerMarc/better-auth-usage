@@ -1,207 +1,335 @@
-import { APIError, BetterAuthPlugin, OpenAPIParameter } from "better-auth";
-import { Customer, UsageOptions } from "./types";
+import { APIError, BetterAuthPlugin } from "better-auth";
+import { Customer, Feature, UsageOptions } from "./types";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
-import { z } from "zod"
+import { z } from "zod";
 import { getUsageAdapter } from "./adapter";
 import { checkLimit, getCustomer, getFeature, shouldReset } from "./utils";
 import { customerSchema } from "./schema";
-import { getAdapter } from "better-auth/db";
 
-export function usage<O extends UsageOptions>(options: O) {
-    const { customers: initCustomers, features, overrides } = options
-    const customers = initCustomers ? initCustomers : {} as Record<string, Customer>;
+/**
+ * Usage plugin for BetterAuth
+ *
+ * Responsibilities:
+ *  - provide endpoints to register customers (in-memory by default)
+ *  - consume (meter) feature usage with before/after hooks
+ *  - check usage limits
+ *  - sync/reset usage according to `feature.reset`
+ *
+ * Notes:
+ *  - Customer shape is validated at runtime with `customerSchema` (zod).
+ *  - By default customers are kept in-memory (options.customers). Persistent customers
+ *  and customer based limits is in the roadmap
+ */
+export function usage<O extends UsageOptions = UsageOptions>(options: O) {
+    const { customers: initCustomers, features, overrides } = options;
+    const customers: Record<string, Customer> = initCustomers ? { ...initCustomers } : {};
+
+
+    function getFeature(
+        params: {
+            featureKey: string,
+            overrideKey?: string
+            customer?: Customer
+        }
+    ): Feature {
+        let feature = features[params.featureKey]
+
+        if (!feature) {
+            throw new APIError("NOT_FOUND", { message: `Feature ${params.featureKey} not found` });
+        }
+
+        if (params.overrideKey && overrides?.[params.overrideKey]) {
+            feature = {
+                ...feature,
+                ...overrides[params.overrideKey].features[params.featureKey],
+            }
+        }
+
+        if (params.customer?.featureLimits?.[params.featureKey]) {
+            feature = {
+                ...feature,
+                ...params.customer.featureLimits[params.featureKey],
+            };
+        }
+
+        return feature
+    }
+
+    function getCustomer(
+        referenceId: string,
+    ): Customer {
+        let customer = customers[referenceId]
+        if (!customer) {
+            throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
+        }
+        return customer
+    }
 
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
         if (!session) {
-            throw new APIError("UNAUTHORIZED", {
-                message: "Session not found"
-            });
+            throw new APIError("UNAUTHORIZED", { message: "Session not found" });
         }
-        if (ctx.body?.referenceId && ctx.body?.feature) {
-            const feature = getFeature({
-                features, overrides,
-                ...ctx.body
-            })
-            const customer = customers[ctx.body.referenceId];
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", {
-                    message: "Customer not found. Make sure to register them first."
-                })
-            }
-
-            const isAuthorized = await feature.authorizeReference?.({
+        if (ctx.body?.referenceId && ctx.body?.featureKey) {
+            const customer = getCustomer(ctx.body.referenceId)
+            const feature = getFeature({ features, overrides, customer, ...ctx.body });
+            const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
-                customer
-            }) ?? true
-
+                customer,
+            })) ?? true;
             if (!isAuthorized) {
                 throw new APIError("UNAUTHORIZED", {
                     message: `Customer unauthorized by feature ${feature.key}`,
                 });
             }
         }
-    })
+    });
 
     return {
-        id: "usage",
+        id: "@eggermarc/usage",
         schema: {
             usage: {
                 fields: {
-                    referenceId: {
-                        type: "string",
-                        required: true,
-                        input: true,
-                    },
-                    referenceType: {
-                        type: "string",
-                        required: true,
-                        input: true,
-                    },
-                    feature: {
-                        type: "string",
-                        required: true,
-                        input: true,
-                    },
-                    amount: {
-                        type: "number",
-                        required: true,
-                        input: true,
-                    },
-                    afterAmount: {
-                        type: "number",
-                        required: true,
-                        input: true,
-                    },
-                    beforeAmount: {
-                        type: "number",
-                        required: true,
-                        input: true,
-                    },
-                    event: {
-                        type: "string",
-                        required: true,
-                    },
-                    createdAt: {
-                        type: "date",
-                        required: true,
-                    },
+                    referenceId: { type: "string", required: true, input: true },
+                    referenceType: { type: "string", required: true, input: true },
+                    feature: { type: "string", required: true, input: true },
+                    amount: { type: "number", required: true, input: true },
+                    afterAmount: { type: "number", required: true, input: true },
+                    beforeAmount: { type: "number", required: true, input: true },
+                    event: { type: "string", required: true },
+                    createdAt: { type: "date", required: true },
                 },
             },
         },
+
         endpoints: {
-            getFeature: createAuthEndpoint("/usage/feature", {
-                method: "GET",
-                middleware: [middleware],
-                body: z.object({
-                    featureKey: z.string(),
-                    overrideKey: z.string()
-                }),
-                metadata: {},
-            },
+            /**
+             * Get feature metadata (merged with overrides if provided).
+             */
+            getFeature: createAuthEndpoint(
+                "/usage/feature",
+                {
+                    method: "POST",
+                    middleware: [middleware],
+                    body: z.object({
+                        featureKey: z.string(),
+                        overrideKey: z.string().optional(),
+                        referenceId: z.string().optional()
+                    }),
+                    metadata: {
+                        openapi: {
+                            description: "Returns the feature configuration (merged with overrides if provided).",
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: {
+                                            type: "object",
+                                            properties: {
+                                                featureKey: { type: "string" },
+                                                overrideKey: { type: "string" },
+                                                referenceId: { type: "string" }
+                                            },
+                                            required: ["featureKey"],
+                                        },
+                                    },
+                                },
+                            },
+                            responses: {
+                                200: {
+                                    description: "Feature object",
+                                    content: {
+                                        "application/json": {
+                                            schema: { type: "object" },
+                                        },
+                                    },
+                                },
+                                404: { description: "Feature not found" },
+                            },
+                        },
+                    },
+                },
                 async (ctx) => {
-                    const feature = getFeature({
-                        features, overrides, ...ctx.body
-                    })
+                    const customer = ctx.body.referenceId && getCustomer(ctx.body.referenceId)
+                    const feature = getFeature({ ...ctx.body, ...customer });
+                    const serializableFeature = { ...feature };
+                    delete (serializableFeature as any).hooks;
+                    return { feature: serializableFeature };
+                }
+            ),
 
-                    return {
-                        name: feature.key,
-                        // feature simple object 
+            /**
+             * Register or update an in-memory customer.
+             * Uses `customerSchema` (zod) as the runtime validator.
+             */
+            registerCustomer: createAuthEndpoint(
+                "/usage/register-customer",
+                {
+                    method: "POST",
+                    body: customerSchema,
+                    metadata: {
+                        openapi: {
+                            description: "Register or update a customer (in-memory by default).",
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: { type: "object" },
+                                    },
+                                },
+                            },
+                            responses: {
+                                201: { description: "Customer registered/updated" },
+                                400: { description: "Validation error" },
+                            },
+                        },
+                    },
+                },
+                async (ctx) => {
+                    const customer = ctx.body as Customer;
+                    if (!customer?.referenceId) {
+                        throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
                     }
-                }),
+                    customers[customer.referenceId] = customer;
+                    return { status: "created", referenceId: customer.referenceId };
+                }
+            ),
 
-            registerCustomer: createAuthEndpoint("/usage/register-customer", {
-                method: "POST",
-                body: customerSchema,
-                metadata: {}
-            }, async (ctx) => {
-                customers[ctx.body.referenceId] = ctx.body
-            }),
-
-            consumeFeature: createAuthEndpoint("/usage/consume", {
-                method: "POST",
-                middleware: [middleware],
-                body: z.object({
-                    featureKey: z.string(),
-                    overrideKey: z.string(),
-                    amount: z.number(),
-                    referenceId: z.string(),
-                    event: z.string().default("use")
-                })
-            }, async (ctx) => {
-                const adapter = getUsageAdapter(ctx.context)
-                const customer = getCustomer({ customers, ...ctx.body });
-                const feature = getFeature({ features, overrides, ...ctx.body });
-                const lastUsage = await adapter.findLatestUsage({
-                    referenceId: customer.referenceId,
-                    featureKey: feature.key
-                })
-
-                feature.hooks?.before?.({
-                    customer, usage: {
-                        amount: ctx.body.amount,
-                        beforeAmount: lastUsage.afterAmount,
-                        afterAmount: lastUsage.afterAmount + ctx.body.amount
+            /**
+             * Consume (meter) a feature for a given referenceId.
+             * - runs before hook
+             * - inserts usage row (adapter)
+             * - runs after hook
+             *
+             * Idempotency & concurrency control are NOT implemented here (see suggestions below).
+             */
+            consumeFeature: createAuthEndpoint(
+                "/usage/consume",
+                {
+                    method: "POST",
+                    middleware: [middleware],
+                    body: z.object({
+                        featureKey: z.string(),
+                        overrideKey: z.string().optional(),
+                        amount: z.number(),
+                        referenceId: z.string(),
+                        event: z.string().default("use"),
+                    }),
+                    metadata: {
+                        openapi: {
+                            description: "Consume a feature (meter usage).",
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: {
+                                            type: "object",
+                                            properties: {
+                                                featureKey: { type: "string" },
+                                                overrideKey: { type: "string" },
+                                                amount: { type: "number", minimum: 1 },
+                                                referenceId: { type: "string" },
+                                                event: { type: "string" },
+                                            },
+                                            required: ["featureKey", "amount", "referenceId"],
+                                        },
+                                    },
+                                },
+                            },
+                            responses: {
+                                200: {
+                                    description: "Usage row inserted",
+                                    content: { "application/json": { schema: { type: "object" } } },
+                                },
+                                404: { description: "Customer or feature not found" },
+                                401: { description: "Unauthorized" },
+                            },
+                        },
                     },
-                    feature
-                })
+                },
+                async (ctx) => {
+                    const adapter = getUsageAdapter(ctx.context);
+                    const customer = getCustomer(ctx.body.referenceId);
+                    const feature = getFeature({ ...ctx.body, ...customer });
+                    const lastUsage = await adapter.findLatestUsage({
+                        referenceId: customer.referenceId,
+                        featureKey: feature.key,
+                    });
+                    const beforeAmount = lastUsage?.afterAmount ?? 0;
+                    const afterAmount = beforeAmount + ctx.body.amount;
+                    if (feature.hooks?.before) {
+                        await feature.hooks.before({
+                            customer,
+                            usage: {
+                                amount: ctx.body.amount,
+                                beforeAmount,
+                                afterAmount,
+                            },
+                            feature,
+                        });
+                    }
 
-                const res = await adapter.insertUsage({
-                    ...customer,
-                    event: ctx.body.event,
-                    feature: feature.key,
-                    beforeAmount: lastUsage.afterAmount,
-                    afterAmount: lastUsage.afterAmount + ctx.body.amount,
-                    amount: ctx.body.amount,
-                })
-
-                feature.hooks?.after?.({
-                    customer, usage: {
+                    const res = await adapter.insertUsage({
+                        ...customer,
+                        event: ctx.body.event,
+                        feature: feature.key,
+                        beforeAmount,
+                        afterAmount,
                         amount: ctx.body.amount,
-                        beforeAmount: lastUsage.afterAmount,
-                        afterAmount: lastUsage.afterAmount + ctx.body.amount
-                    },
-                    feature
-                })
+                    });
 
-                return res
-            }),
+                    if (feature.hooks?.after) {
+                        await feature.hooks.after({
+                            customer,
+                            usage: {
+                                amount: ctx.body.amount,
+                                beforeAmount,
+                                afterAmount,
+                            },
+                            feature,
+                        });
+                    }
 
+                    return res;
+                }
+            ),
+
+            /**
+             * Check usage limit for a feature for a specific reference.
+             * Returns a small enum ("in-limit"|"above-limit"|"below-limit") based on checkLimit util.
+             */
             checkUsage: createAuthEndpoint(
                 "/usage/check",
                 {
-                    method: "GET",
+                    method: "POST", // changed to POST so we can rely on body validation consistently
                     middleware: [middleware],
                     body: z.object({
                         referenceId: z.string(),
                         featureKey: z.string(),
-                        overrideKey: z
-                            .string()
-                            .optional(),
+                        overrideKey: z.string().optional(),
                     }),
                     metadata: {
                         openapi: {
-                            description: "Checks current usage",
-                            parameters: [
-                                {
-                                    in: "query",
-                                    name: "featureKey",
-                                    required: true,
-                                    description: "Feature key",
-                                    schema: { type: "string", example: "token-feature" },
-                                } satisfies OpenAPIParameter,
-                                {
-                                    in: "query",
-                                    name: "referenceId",
-                                    required: true,
-                                    description: "ID of the customer",
-                                    schema: { type: "string" },
-                                } satisfies OpenAPIParameter,
-                            ],
+                            description: "Checks current usage against feature limits.",
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: {
+                                            type: "object",
+                                            properties: {
+                                                referenceId: { type: "string" },
+                                                featureKey: { type: "string" },
+                                                overrideKey: { type: "string" },
+                                            },
+                                            required: ["referenceId", "featureKey"],
+                                        },
+                                    },
+                                },
+                            },
                             responses: {
                                 200: {
-                                    description: "Success",
+                                    description: "Status string",
                                     content: {
                                         "application/json": {
                                             schema: {
@@ -216,24 +344,32 @@ export function usage<O extends UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    // Change later
-                    const adapter = getUsageAdapter(ctx.context)
+                    const adapter = getUsageAdapter(ctx.context);
+                    const customer = getCustomer(ctx.body.referenceId)
+                    const feature = getFeature({ ...ctx.body, ...customer });
+                    if (!feature) {
+                        throw new APIError("NOT_FOUND", { message: "Feature not found" });
+                    }
+
                     const usage = await adapter.findLatestUsage({
-                        ...ctx.body
-                    })
-                    const feature = getFeature({
-                        features,
-                        overrides,
-                        ...ctx.body
-                    })
+                        referenceId: ctx.body.referenceId,
+                        featureKey: feature.key,
+                    });
 
                     return checkLimit({
                         ...feature,
                         value: usage?.afterAmount ?? 0,
-                    })
+                    });
                 }
             ),
 
+            /**
+             * Sync usage according to feature.reset rules.
+             * This will insert a reset event row with zeroed usage if the feature requires it.
+             *
+             * Note: you might prefer running this as a background job for many customers,
+             * rather than via an endpoint.
+             */
             syncUsage: createAuthEndpoint(
                 "/usage/sync",
                 {
@@ -245,46 +381,65 @@ export function usage<O extends UsageOptions>(options: O) {
                     }),
                     metadata: {
                         openapi: {
-                            description: "Syncs customer usage based on reset rules",
-                            parameters: [
-                                {
-                                    in: "query",
-                                    name: "referenceId",
-                                    required: true,
-                                    description: "ID of the customer",
-                                    schema: { type: "string" },
-                                } satisfies OpenAPIParameter,
-                            ],
+                            description: "Syncs customer usage based on reset rules (inserts a reset row if due).",
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: {
+                                            type: "object",
+                                            properties: {
+                                                referenceId: { type: "string" },
+                                                featureKey: { type: "string" },
+                                            },
+                                            required: ["referenceId", "featureKey"],
+                                        },
+                                    },
+                                },
+                            },
+                            responses: {
+                                200: { description: "Reset inserted or not needed" },
+                                404: { description: "Customer or feature not found" },
+                            },
                         },
                     },
                 },
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
-                    const feature = getFeature({ features, overrides, ...ctx.body })
-                    const { referenceType } = customers[ctx.body.referenceId];
+                    const customer = getCustomer(ctx.body.referenceId)
+                    const feature = getFeature({ ...ctx.body, ...customer });
 
                     if (!feature.reset || feature.reset === "never") {
-                        return
+                        return { reset: false, reason: "no-reset" };
                     }
 
                     const lastReset = await adapter.findLatestUsage({
-                        ...ctx.body,
-                        event: "reset"
-                    })
-                    const resetDue = shouldReset(lastReset.createdAt, feature.reset)
-                    if (resetDue) {
-                        return await adapter.insertUsage({
-                            beforeAmount: 0,
-                            afterAmount: 0,
-                            amount: 0,
-                            feature: feature.key,
-                            referenceId: ctx.body.referenceId,
-                            referenceType: referenceType,
-                            event: "reset"
-                        })
+                        referenceId: ctx.body.referenceId,
+                        featureKey: feature.key,
+                        event: "reset",
+                    });
+
+                    const lastResetDate = lastReset?.createdAt ?? null;
+                    const resetDue = shouldReset(lastResetDate, feature.reset);
+
+                    if (!resetDue) {
+                        return { reset: false, reason: "not-due" };
                     }
+
+                    const inserted = await adapter.insertUsage({
+                        beforeAmount: 0,
+                        afterAmount: 0,
+                        amount: 0,
+                        feature: feature.key,
+                        referenceId: ctx.body.referenceId,
+                        referenceType: customer.referenceType,
+                        event: "reset",
+                    });
+
+                    return { reset: true, inserted };
                 }
             ),
         },
     } satisfies BetterAuthPlugin;
 }
+
