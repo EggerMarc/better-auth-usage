@@ -16,8 +16,16 @@ export type Feature = {
     reset?: ResetType,
     resetValue?: number,
     hooks?: {
-        after?: (props: UsageProps) => void
-        before?: (props: UsageProps) => void
+        after?: (props: {
+            usage: Usage,
+            customer: Customer,
+            feature: Feature
+        }) => void
+        before?: (props: {
+            usage: Usage,
+            customer: Customer,
+            feature: Feature
+        }) => void
     }
 }
 export type ResetType = "hourly" | "6-hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "never"

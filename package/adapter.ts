@@ -26,30 +26,14 @@ export const getAdminAdapter = (context: AuthContext) => {
         },
 
         insertUsage: async (
+            beforeAmount: number,
+            afterAmount: number,
             amount: number,
             referenceId: string,
             referenceType: string,
             feature: string,
             event?: string
         ) => {
-            const lastUsage = await adapter.findMany<Usage>({
-                model: "usage",
-                where: [
-                    {
-                        field: "reference_id",
-                        value: referenceId,
-                    },
-                    {
-                        field: "feature",
-                        value: feature
-                    }
-                ],
-                sortBy: {
-                    field: "created_at",
-                    direction: "desc"
-                }
-            });
-
             const usage = await adapter.create<Usage>({
                 model: "usage",
                 data: {
@@ -59,11 +43,10 @@ export const getAdminAdapter = (context: AuthContext) => {
                     event,
                     amount,
                     createdAt: new Date(Date.now()),
-                    beforeAmount: lastUsage[0].afterAmount,
-                    afterAmount: lastUsage[0].afterAmount + amount
+                    beforeAmount: beforeAmount,
+                    afterAmount: afterAmount
                 }
             })
-
             return usage
         },
     };

@@ -1,4 +1,5 @@
 import { AuthPluginSchema } from "better-auth";
+import { ConsumptionLimitType, ResetType } from "./types";
 
 export function mergeSchema<S extends AuthPluginSchema>(
     schema: S,
@@ -28,4 +29,75 @@ export function mergeSchema<S extends AuthPluginSchema>(
         }
     }
     return schema;
+}
+
+interface CheckLimitProps {
+    maxLimit?: number,
+    minLimit?: number,
+    newValue: number
+}
+
+export function checkLimit({
+    maxLimit,
+    minLimit,
+    newValue
+}: CheckLimitProps): ConsumptionLimitType {
+    if (maxLimit && newValue > maxLimit) return "above-limit"
+    if (minLimit && newValue < minLimit) return "below-limit"
+    return "in-limit"
+}
+
+export function shouldReset(lastReset: Date, reset: ResetType): boolean {
+    const now = new Date();
+    let nextResetTime = new Date(now);
+
+    switch (reset) {
+        case "hourly":
+            nextResetTime.setHours(nextResetTime.getHours() + 1, 0, 0, 0);
+            break;
+        case "6-hourly": {
+            const hour = now.getHours();
+            const nextBlock = Math.floor(hour / 6) * 6 + 6;
+            if (nextBlock >= 24) {
+                nextResetTime.setDate(nextResetTime.getDate() + 1);
+                nextResetTime.setHours(0, 0, 0, 0);
+            } else {
+                nextResetTime.setHours(nextBlock, 0, 0, 0);
+            }
+            break;
+        }
+        case "daily":
+            nextResetTime.setDate(nextResetTime.getDate() + 1);
+            nextResetTime.setHours(0, 0, 0, 0);
+            break;
+        case "weekly": {
+            const day = nextResetTime.getDay(); // 0 = Sunday
+            const daysUntilNextMonday = (8 - day) % 7 || 7;
+            nextResetTime.setDate(nextResetTime.getDate() + daysUntilNextMonday);
+            nextResetTime.setHours(0, 0, 0, 0);
+            break;
+        }
+        case "monthly":
+            nextResetTime.setMonth(nextResetTime.getMonth() + 1, 1);
+            nextResetTime.setHours(0, 0, 0, 0);
+            break;
+        case "quarterly": {
+            const currentMonth = nextResetTime.getMonth();
+            const nextQuarterStartMonth = Math.floor(currentMonth / 3) * 3 + 3;
+            if (nextQuarterStartMonth >= 12) {
+                nextResetTime.setFullYear(nextResetTime.getFullYear() + 1);
+                nextResetTime.setMonth(0, 1);
+            } else {
+                nextResetTime.setMonth(nextQuarterStartMonth, 1);
+            }
+            nextResetTime.setHours(0, 0, 0, 0);
+            break;
+        }
+        case "yearly":
+            nextResetTime.setFullYear(nextResetTime.getFullYear() + 1, 0, 1);
+            nextResetTime.setHours(0, 0, 0, 0);
+            break;
+    }
+
+    return now >= nextResetTime || lastReset < nextResetTime;
 }
