@@ -1,12 +1,36 @@
-import { BetterAuthPlugin, OpenAPIParameter } from "better-auth";
-import { UsageOptions } from "./types";
-import { createAuthEndpoint } from "better-auth/api";
+import { APIError, BetterAuthPlugin, OpenAPIParameter } from "better-auth";
+import { Customer, UsageOptions } from "./types";
+import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod"
 import { getUsageAdapter } from "./adapter";
-import { checkLimit, shouldReset } from "./utils";
+import { checkLimit, getFeature, shouldReset } from "./utils";
+import { customerSchema } from "./schema";
 
 export function usage<O extends UsageOptions>(options: O) {
-    const { customers, features, overrides } = options
+    const { customers: initCustomers, features, overrides } = options
+    const customers = initCustomers ? initCustomers : {} as Record<string, Customer>;
+
+
+    const middleware = createAuthMiddleware(async (ctx) => {
+        const session = ctx.context.session;
+        if (!session) {
+            throw new APIError("UNAUTHORIZED");
+        }
+        if (ctx.body?.referenceId && ctx.body?.feature) {
+            const feature = getFeature({
+                features, overrides,
+                ...ctx.body
+            })
+
+            const isAuthorized = await feature.authorizeReference?.({ ...ctx.body }) ?? false
+            if (!isAuthorized) {
+                throw new APIError("UNAUTHORIZED", {
+                    message: "Unauthorized",
+                });
+            }
+        }
+    })
+
     return {
         id: "usage",
         schema: {
@@ -54,22 +78,44 @@ export function usage<O extends UsageOptions>(options: O) {
             },
         },
         endpoints: {
+            getFeature: createAuthEndpoint("/usage/feature", {
+                method: "GET",
+                middleware: [middleware],
+                body: z.object({
+                    featureKey: z.string(),
+                    overrideKey: z.string()
+                }),
+                metadata: {},
+            },
+                async (ctx) => {
+                    const feature = getFeature({
+                        features, overrides, ...ctx.body
+                    })
+
+                    return {
+                        name: feature.key,
+                        // feature simple object 
+                    }
+                }),
+
+            registerCustomer: createAuthEndpoint("/usage/register/customer", {
+                method: "POST",
+                body: customerSchema,
+                metadata: {}
+            }, async (ctx) => {
+                customers[ctx.body.referenceId] = ctx.body
+            }),
+
             checkUsage: createAuthEndpoint(
                 "/usage/check",
                 {
                     method: "GET",
+                    middleware: [middleware],
                     body: z.object({
-                        referenceId: z.string({
-                            description: "Customer referenceId to look for",
-                        }),
-                        feature: z.string({
-                            description: "Feature to check",
-                        }),
+                        referenceId: z.string(),
+                        featureKey: z.string(),
                         overrideKey: z
-                            .string({
-                                description:
-                                    "Override usage limits/behaviour (e.g. plan name)",
-                            })
+                            .string()
                             .optional(),
                     }),
                     metadata: {
@@ -78,7 +124,7 @@ export function usage<O extends UsageOptions>(options: O) {
                             parameters: [
                                 {
                                     in: "query",
-                                    name: "feature",
+                                    name: "featureKey",
                                     required: true,
                                     description: "Feature key",
                                     schema: { type: "string", example: "token-feature" },
@@ -113,16 +159,11 @@ export function usage<O extends UsageOptions>(options: O) {
                     const usage = await adapter.findLatestUsage({
                         ...ctx.body
                     })
-
-                    let feature = features[ctx.body.feature]
-                    if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
-
-                    if (ctx.body.overrideKey && overrides?.[ctx.body.overrideKey]) {
-                        feature = {
-                            ...feature,
-                            ...overrides[ctx.body.overrideKey].features[ctx.body.feature],
-                        }
-                    }
+                    const feature = getFeature({
+                        features,
+                        overrides,
+                        ...ctx.body
+                    })
 
                     return checkLimit({
                         ...feature,
@@ -138,7 +179,7 @@ export function usage<O extends UsageOptions>(options: O) {
                     body: z.object({
                         referenceId: z.string(),
                         referenceType: z.string(),
-                        feature: z.string(),
+                        featureKey: z.string(),
                         overrideKey: z.string().optional(),
                     }),
                     metadata: {
@@ -158,15 +199,7 @@ export function usage<O extends UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
-                    let feature = features[ctx.body.feature];
-                    if (!feature) throw new Error(`Feature ${ctx.body.feature} not found`)
-                    if (ctx.body.overrideKey && overrides?.[ctx.body.overrideKey]) {
-                        feature = {
-                            ...feature,
-                            ...overrides[ctx.body.overrideKey].features[ctx.body.feature],
-                        }
-                    }
-
+                    const feature = getFeature({ features, overrides, ...ctx.body })
                     if (!feature.reset || feature.reset === "never") {
                         return
                     }
@@ -190,9 +223,6 @@ export function usage<O extends UsageOptions>(options: O) {
                 }
             ),
         },
-        features,
-        overrides,
-        customers, // optional in-memory map for quick lookup
     } satisfies BetterAuthPlugin;
 }
 

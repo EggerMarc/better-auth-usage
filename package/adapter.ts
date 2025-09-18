@@ -6,11 +6,11 @@ export const getUsageAdapter = (context: AuthContext) => {
     return {
         findLatestUsage: async ({
             referenceId,
-            feature,
+            featureKey,
             event
         }: {
             referenceId: string,
-            feature: string,
+            featureKey: string,
             event?: string
         }) => {
             const conditions = event ? [{
@@ -19,7 +19,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             },
             {
                 field: "feature",
-                value: feature
+                value: featureKey
             }, {
                 field: "event",
                 value: event
@@ -29,7 +29,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             },
             {
                 field: "feature",
-                value: feature
+                value: featureKey
             }]
 
             const usage = await adapter.findMany<Usage>({

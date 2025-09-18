@@ -18,7 +18,6 @@ export type Feature = {
     /*
      *
      */
-    availableInPlans?: string[];
     key: string,
     maxLimit?: number,
     minLimit?: number,
@@ -31,21 +30,25 @@ export type Feature = {
             usage: Usage,
             customer: Customer,
             feature: Feature
-        }) => void
+        }) => Promise<void> | void
         before?: (props: {
             usage: Usage,
             customer: Customer,
             feature: Feature
-        }) => void
+        }) => Promise<void> | void
     },
+    authorizeReference?: <BT>(params: BT) => Promise<boolean> | boolean
 };
+export type Features = Record<string, Feature>;
+export type Customers = Record<string, Customer>;
+export type Overrides = Record<string, {
+    features: Record<string, Partial<Omit<Feature, "key">>>
+}>;
 export type FeatureExpanded = Feature & ExtraFields
 export type ResetType = "hourly" | "6-hourly" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "never"
 export type ConsumptionLimitType = "in-limit" | "above-limit" | "below-limit";
 export interface UsageOptions {
-    features: Record<string, Feature>
-    overrides?: Record<string, {
-        features: Record<string, Partial<Feature>>
-    }>
-    customers?: Record<string, Customer>
+    features: Features;
+    overrides?: Overrides;
+    customers?: Customers
 }

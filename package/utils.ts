@@ -1,5 +1,5 @@
 import { AuthPluginSchema } from "better-auth";
-import { ConsumptionLimitType, ResetType } from "./types";
+import { ConsumptionLimitType, Features, Overrides, ResetType } from "./types";
 
 export function mergeSchema<S extends AuthPluginSchema>(
     schema: S,
@@ -100,4 +100,25 @@ export function shouldReset(lastReset: Date, reset: ResetType): boolean {
     }
 
     return now >= nextResetTime || lastReset < nextResetTime;
+}
+
+export function getFeature(
+    params: {
+        features: Features,
+        featureKey: string,
+        overrideKey?: string
+        overrides?: Overrides,
+    }
+) {
+    let feature = params.features[params.featureKey]
+    if (!feature) throw new Error(`Feature ${params.featureKey} not found`)
+
+    if (params.overrideKey && params.overrides?.[params.overrideKey]) {
+        feature = {
+            ...feature,
+            ...params.overrides[params.overrideKey].features[params.featureKey],
+        }
+    }
+
+    return feature
 }
