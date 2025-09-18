@@ -58,8 +58,13 @@ export const getAdminAdapter = (context: AuthContext) => {
                     feature,
                     event,
                     amount,
+                    createdAt: new Date(Date.now()),
+                    beforeAmount: lastUsage[0].afterAmount,
+                    afterAmount: lastUsage[0].afterAmount + amount
                 }
             })
+
+            return usage
         },
     };
 };
