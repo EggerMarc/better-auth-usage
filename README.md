@@ -1,6 +1,7 @@
 # @eggermarc/better-auth-usage
 
-!Warning! This package is a **work in progress**! Expect breaking changes and functionality changes.
+**⚠️ Warning!** This package is a **work in progress**! Expect breaking changes and functionality changes.
+
 Feature and usage-based authorization plugin for [BetterAuth](https://www.better-auth.com/). Provides a way to define **features**, **track usage**, apply **per-plan limits**, and integrate with external systems (Stripe, custom hooks, etc).
 
 ## Features
