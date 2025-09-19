@@ -1,4 +1,5 @@
-import { APIError, type BetterAuthPlugin } from "better-auth";
+import type { BetterAuthPlugin } from "better-auth";
+import { APIError } from "better-auth/api"
 import type { Customer, Feature, UsageOptions } from "./types.ts";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
@@ -296,6 +297,92 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     return res;
                 }
             ),
+
+            listCustomers: createAuthEndpoint(
+                "/customers",
+                {
+                    method: "GET",
+                    middleware: [middleware],
+                    metadata: {
+                        openapi: {
+                            description: "Lists registered customers. These are in-memory registered customers.",
+                            responses: {
+                                200: {
+                                    description: "List of registered customers.",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "array",
+                                                items: {
+                                                    type: "object",
+                                                    properties: {
+                                                        referenceId: { type: "string" },
+                                                        referenceType: { type: "string" },
+                                                        email: { type: "string" },
+                                                        name: { type: "string" },
+                                                    },
+                                                    required: ["referenceId", "referenceType"],
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                async () => {
+                    return Object.values(customers).map((c) => ({
+                        referenceId: c.referenceId,
+                        referenceType: c.referenceType,
+                        email: c.email,
+                        name: c.name,
+                    }))
+                }
+            ),
+
+            listFeatures: createAuthEndpoint(
+                "/features",
+                {
+                    method: "GET",
+                    middleware: [middleware],
+                    metadata: {
+                        openapi: {
+                            description: "Lists registered features.",
+                            responses: {
+                                200: {
+                                    description: "List of registered features.",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "array",
+                                                items: {
+                                                    type: "object",
+                                                    properties: {
+                                                        featureKey: { type: "string" },
+                                                        details: {
+                                                            type: "array",
+                                                            items: { type: "string" },
+                                                        },
+                                                    },
+                                                    required: ["featureKey"],
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                async () => {
+                    return Object.values(features).map((f) => ({
+                        featureKey: f.key,
+                        details: f.details,
+                    }))
+                }
+            ),
+
 
             /**
              * Check usage limit for a feature for a specific reference.
