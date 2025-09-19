@@ -3,7 +3,7 @@ import { Customer, Feature, UsageOptions } from "./types";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { getUsageAdapter } from "./adapter";
-import { checkLimit, getCustomer, getFeature, shouldReset } from "./utils";
+import { checkLimit, shouldReset } from "./utils";
 import { customerSchema } from "./schema";
 
 /**

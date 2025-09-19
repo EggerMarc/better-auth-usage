@@ -175,8 +175,8 @@ export type ResetType =
  */
 export type ConsumptionLimitType =
     | "in-limit"
-    | "above-limit"
-    | "below-limit";
+    | "above-max-limit"
+    | "below-min-limit";
 
 /**
  * Options for configuring the usage plugin.

@@ -47,7 +47,7 @@
         }
     },
     "publishConfig": {
-        "access": "private"
+        "access": "public"
     },
     "scripts": {
         "build": "tsup",

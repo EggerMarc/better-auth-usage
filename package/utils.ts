@@ -1,35 +1,4 @@
-import { APIError, AuthPluginSchema } from "better-auth";
-import { ConsumptionLimitType, Customer, Customers, Feature, Features, Overrides, ResetType } from "./types";
-
-export function mergeSchema<S extends AuthPluginSchema>(
-    schema: S,
-    newSchema?: {
-        [K in keyof S]?: {
-            modelName?: string;
-            fields?: {
-                [P: string]: string;
-            };
-        };
-    },
-) {
-    if (!newSchema) {
-        return schema;
-    }
-    for (const table in newSchema) {
-        const newModelName = newSchema[table]?.modelName;
-        if (newModelName) {
-            schema[table].modelName = newModelName;
-        }
-        for (const field in schema[table].fields) {
-            const newField = newSchema[table]?.fields?.[field];
-            if (!newField) {
-                continue;
-            }
-            schema[table].fields[field].fieldName = newField;
-        }
-    }
-    return schema;
-}
+import { ConsumptionLimitType, ResetType } from "./types";
 
 interface CheckLimitProps {
     maxLimit?: number,
@@ -42,8 +11,8 @@ export function checkLimit({
     minLimit,
     value
 }: CheckLimitProps): ConsumptionLimitType {
-    if (maxLimit && value > maxLimit) return "above-limit"
-    if (minLimit && value < minLimit) return "below-limit"
+    if (maxLimit && value > maxLimit) return "above-max-limit"
+    if (minLimit && value < minLimit) return "below-min-limit"
     return "in-limit"
 }
 
@@ -100,50 +69,5 @@ export function shouldReset(lastReset: Date, reset: ResetType): boolean {
     }
 
     return now >= nextResetTime || lastReset < nextResetTime;
-}
-
-export function getFeature(
-    params: {
-        features: Features,
-        featureKey: string,
-        overrideKey?: string
-        overrides?: Overrides,
-        customer?: Customer
-    }
-): Feature {
-    let feature = params.features[params.featureKey]
-
-    if (!feature) {
-        throw new APIError("NOT_FOUND", { message: `Feature ${params.featureKey} not found` });
-    }
-
-    if (params.overrideKey && params.overrides?.[params.overrideKey]) {
-        feature = {
-            ...feature,
-            ...params.overrides[params.overrideKey].features[params.featureKey],
-        }
-    }
-
-    if (params.customer?.featureLimits?.[params.featureKey]) {
-        feature = {
-            ...feature,
-            ...params.customer.featureLimits[params.featureKey],
-        };
-    }
-
-    return feature
-}
-
-export function getCustomer(
-    params: {
-        customers: Customers,
-        referenceId: string,
-    }
-): Customer {
-    let customer = params.customers[params.referenceId]
-    if (!customer) {
-        throw new APIError("NOT_FOUND", { message: `Customer ${params.referenceId} not found` });
-    }
-    return customer
 }
 
