@@ -29,19 +29,19 @@ export const auth = betterAuth({
         },
         overrides: {
             "starter-plan": {
-                key: "token-feature",
-                maxLimit: 10_000,
-                hooks: {
+                "token-feature":{ 
+                    maxLimit: 10_000,
+                    hooks: {
                     after: async ({ usage, customer, feature }) => {
                         console.log(
                         `[AFTER HOOK] ${customer.referenceId} used ${usage.amount} of ${feature.key}`
                         );
                     },
+                    stripeId: env.TOKEN_STARTER_ID // Can declare new fields
                 },
             },
             "pro-plan": {
                 "token-features": {
-                    key: "token-feature",
                     maxLimit: 1_000_000,
                     hooks: {
                         after: async ({ usage, customer, feature }) => {
