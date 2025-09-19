@@ -131,7 +131,7 @@ await client.usage.registerCustomer(customer)
 
 await client.usage.consume({
     featureKey: "token-feature",
-    referenceId: session.session.id,
+    referenceId: session.session.ipAddress ?? session.session.id,
     amount: 1
 })
 ```
