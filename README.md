@@ -11,7 +11,7 @@ Feature and usage-based authorization plugin for [BetterAuth](https://www.better
 
 ### Installation
 ```bash
-pnpm add @eggermarc/better-auth-usage
+npm add @eggermarc/better-auth-usage
 ```
 
 ### Usage
@@ -29,19 +29,19 @@ export const auth = betterAuth({
         },
         overrides: {
             "starter-plan": {
-                key: "token-feature",
-                maxLimit: 10_000,
-                hooks: {
+                "token-feature":{ 
+                    maxLimit: 10_000,
+                    hooks: {
                     after: async ({ usage, customer, feature }) => {
                         console.log(
                         `[AFTER HOOK] ${customer.referenceId} used ${usage.amount} of ${feature.key}`
                         );
                     },
+                    stripeId: env.TOKEN_STARTER_ID // Can declare new fields
                 },
             },
             "pro-plan": {
                 "token-features": {
-                    key: "token-feature",
                     maxLimit: 1_000_000,
                     hooks: {
                         after: async ({ usage, customer, feature }) => {
@@ -60,10 +60,10 @@ export const auth = betterAuth({
 ```ts
 // client.ts
 import { createAuthClient } from "better-auth/client";
-import { adminClient } from "@eggermarc/better-auth-usage/client";
+import { usageClient } from "@eggermarc/better-auth-usage/client";
 
 export const client = createAuthClient({
-  plugins: [adminClient()],
+  plugins: [usageClient()],
 });
 
 // Example: consume usage
@@ -86,6 +86,4 @@ const customer: Customer = {
 };
 
 await client.usage.registerCustomer(customer)
-
 ```
-
