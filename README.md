@@ -1,5 +1,6 @@
 # @eggermarc/better-auth-usage
 
+!Warning! This package is a **work in progress**! Expect breaking changes and functionality changes.
 Feature and usage-based authorization plugin for [BetterAuth](https://www.better-auth.com/). Provides a way to define **features**, **track usage**, apply **per-plan limits**, and integrate with external systems (Stripe, custom hooks, etc).
 
 ## Features
@@ -16,7 +17,8 @@ npm add @eggermarc/better-auth-usage
 
 ### Usage
 #### Server
-```ts
+```typescript
+// server
 export const auth = betterAuth({
     plugins: [usage({
         features: {
@@ -66,7 +68,7 @@ export const client = createAuthClient({
   plugins: [usageClient()],
 });
 
-// Example: consume usage
+// Example: consume usage, in your app
 await client.usage.consume({
   featureKey: "token-feature",
   overrideKey: "starter-plan",
@@ -76,6 +78,7 @@ await client.usage.consume({
 ```
 #### Customer Registration
 ```ts
+// in your app
 import type { Customer } from "@eggermarc/better-auth-usage";
 
 const customer: Customer = {
@@ -87,3 +90,49 @@ const customer: Customer = {
 
 await client.usage.registerCustomer(customer)
 ```
+
+### Goals
+Why customer registration and not per user / organization query?
+- Generalizing customer management is not straight forward. Our goal was to not make many assumptions on the origin of the customer to let this plugin be usable for non typical use cases, like users and organizations. By giving customer registration to the dev, we allow multiple scenarios to arise, for instance **per-session** or **per-ip** limitations. We also open the door to **team** based usage.
+
+
+#### Examples
+##### Team based
+```ts
+const teamLimits = getTeamLimits(teamId, "token-feature") 
+
+const customer: Customer = {
+    referenceId: teamId, // Team ID,
+    referenceType: "team",
+    email: session.user.email, // User in team email
+    name: `${session.user.name}@${teamName}`,
+    // WIP featureLimits: new Record("token-feature", teamLimits)
+}
+
+await client.usage.registerCustomer(customer)
+
+await client.usage.consume({
+    featureKey: "token-feature",
+    overrideKey: "team-plan",
+    referenceId: teamId,
+    amount: 1,
+})
+```
+##### Session based / IP based
+```ts
+const customer: Customer = {
+    referenceId: session.session.ipAddress ?? session.session.id,
+    referenceType: "session",
+}
+
+await client.usage.registerCustomer(customer)
+
+
+await client.usage.consume({
+    featureKey: "token-feature",
+    referenceId: session.session.id,
+    amount: 1
+})
+```
+
+In this current version, we apply to all customers the root limits, then overrides, and finally with customer specific overrides. 
