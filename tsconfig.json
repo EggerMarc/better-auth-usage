@@ -1,32 +1,23 @@
 {
     "compilerOptions": {
-        "esModuleInterop": true,
-        "skipLibCheck": true,
-        "target": "es2022",
         "lib": [
-            "es2022",
-            "dom"
+            "ESNext",
+            "DOM"
         ],
-        "noEmit": true,
-        "allowImportingTsExtensions": true,
-        "resolveJsonModule": true,
+        "target": "ESNext",
+        "module": "ESNext",
         "moduleDetection": "force",
-        "isolatedModules": true,
+        "jsx": "react-jsx",
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
         "verbatimModuleSyntax": true,
+        "noEmit": true,
         "strict": true,
-        "noUncheckedIndexedAccess": true,
-        "noImplicitOverride": true,
-        "module": "NodeNext",
-        "outDir": "dist",
-        "rootDir": "package",
-        "sourceMap": true,
-        "declaration": true,
-        "declarationMap": true
-    },
-    "include": [
-        "package"
-    ],
-    "exclude": [
-        "node_modules"
-    ]
+        "skipLibCheck": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noPropertyAccessFromIndexSignature": false,
+        "baseUrl": "."
+    }
 }
