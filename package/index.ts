@@ -1,10 +1,10 @@
-import { APIError, BetterAuthPlugin } from "better-auth";
-import { Customer, Feature, UsageOptions } from "./types";
+import { APIError, type BetterAuthPlugin } from "better-auth";
+import type { Customer, Feature, UsageOptions } from "./types.ts";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
-import { getUsageAdapter } from "./adapter";
-import { checkLimit, shouldReset } from "./utils";
-import { customerSchema } from "./schema";
+import { getUsageAdapter } from "./adapter.ts";
+import { checkLimit, shouldReset } from "./utils.ts";
+import { customerSchema } from "./schema.ts";
 
 /**
  * Usage plugin for BetterAuth
@@ -39,9 +39,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         }
 
         if (params.overrideKey && overrides?.[params.overrideKey]) {
-            feature = {
-                ...feature,
-                ...overrides[params.overrideKey].features[params.featureKey],
+            const override = overrides[params.featureKey];
+            if (override) {
+                feature = {
+                    ...feature,
+                    ...override.features[params.featureKey],
+                }
             }
         }
 

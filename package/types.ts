@@ -1,4 +1,4 @@
-import { customerSchema, usageSchema } from "./schema"
+import { customerSchema, usageSchema } from "./schema.ts"
 import { z } from "zod";
 
 /**

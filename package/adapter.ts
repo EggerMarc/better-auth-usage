@@ -1,5 +1,5 @@
 import type { AuthContext } from "better-auth/types";
-import type { Usage } from "./types"
+import type { Usage } from "./types.ts"
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;

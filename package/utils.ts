@@ -1,4 +1,4 @@
-import { ConsumptionLimitType, ResetType } from "./types";
+import type { ConsumptionLimitType, ResetType } from "./types.ts";
 
 interface CheckLimitProps {
     maxLimit?: number,
@@ -16,7 +16,7 @@ export function checkLimit({
     return "in-limit"
 }
 
-export function shouldReset(lastReset: Date, reset: ResetType): boolean {
+export function shouldReset(lastReset: Date | null, reset: ResetType): boolean {
     const now = new Date();
     let nextResetTime = new Date(now);
 
@@ -66,8 +66,10 @@ export function shouldReset(lastReset: Date, reset: ResetType): boolean {
             nextResetTime.setFullYear(nextResetTime.getFullYear() + 1, 0, 1);
             nextResetTime.setHours(0, 0, 0, 0);
             break;
+        case "never":
+            return false
     }
 
-    return now >= nextResetTime || lastReset < nextResetTime;
+    return now >= nextResetTime || (lastReset ? lastReset < nextResetTime : true);
 }
 
