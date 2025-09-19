@@ -60,10 +60,10 @@ export const auth = betterAuth({
 ```ts
 // client.ts
 import { createAuthClient } from "better-auth/client";
-import { adminClient } from "@eggermarc/better-auth-usage/client";
+import { usageClient } from "@eggermarc/better-auth-usage/client";
 
 export const client = createAuthClient({
-  plugins: [adminClient()],
+  plugins: [usageClient()],
 });
 
 // Example: consume usage
