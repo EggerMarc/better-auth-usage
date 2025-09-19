@@ -14,7 +14,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             event?: string
         }) => {
             const conditions = event ? [{
-                field: "reference_id",
+                field: "referenceId",
                 value: referenceId,
             },
             {
@@ -24,7 +24,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                 field: "event",
                 value: event
             }] : [{
-                field: "reference_id",
+                field: "referenceId",
                 value: referenceId,
             },
             {
@@ -36,7 +36,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                 model: "usage",
                 where: conditions,
                 sortBy: {
-                    field: "created_at",
+                    field: "createdAt",
                     direction: "desc"
                 }
             });
