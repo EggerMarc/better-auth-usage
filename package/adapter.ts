@@ -1,5 +1,5 @@
 import type { AuthContext } from "better-auth/types";
-import type { Feature, Usage } from "./types.ts"
+import type { Usage } from "./types.ts"
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
@@ -65,5 +65,13 @@ export const getUsageAdapter = (context: AuthContext) => {
             })
             return usage
         },
+
+        syncUsage: async ({
+
+        }) => {
+
+        }
     };
 };
+
+export type UsageAdapter = ReturnType<typeof getUsageAdapter>

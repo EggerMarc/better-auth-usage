@@ -5,6 +5,7 @@ export const customerSchema = z.object({
     referenceType: z.string(),
     email: z.string().optional(),
     name: z.string().optional(),
+    overrideKey: z.string().optional(),
     featureLimits: z.record(
         z.string(),
         z.object({

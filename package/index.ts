@@ -3,7 +3,7 @@ import { APIError } from "better-auth/api"
 import type { Customer, Feature, UsageOptions } from "./types.ts";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
-import { getUsageAdapter } from "./adapter.ts";
+import { getUsageAdapter, type UsageAdapter } from "./adapter.ts";
 import { checkLimit, shouldReset } from "./utils.ts";
 import { customerSchema } from "./schema.ts";
 
@@ -24,6 +24,42 @@ import { customerSchema } from "./schema.ts";
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     const { customers: initCustomers, features, overrides, getCustomer: getCustomerOverride } = options;
     const customers: Record<string, Customer> = initCustomers ? { ...initCustomers } : {};
+    const featureKeys = Object.keys(features);
+
+    async function syncUsage({
+        adapter,
+        feature,
+        customer }: {
+            adapter: UsageAdapter,
+            feature: Feature,
+            customer: Customer,
+        }) {
+        if (!feature.reset || feature.reset === "never") {
+            return { reset: false, reason: "no-reset" };
+        }
+
+        const lastReset = await adapter.findLatestUsage({
+            referenceId: customer.referenceId,
+            featureKey: feature.key,
+            event: "reset",
+        });
+
+        const lastResetDate = lastReset?.createdAt ?? null;
+        const resetDue = shouldReset(lastResetDate, feature.reset);
+
+        if (!resetDue) {
+            return { reset: false, reason: "not-due" };
+        }
+
+        return await adapter.insertUsage({
+            afterAmount: feature.resetValue ?? 0,
+            amount: 0,
+            feature: feature.key,
+            referenceId: customer.referenceId,
+            referenceType: customer.referenceType,
+            event: "reset",
+        });
+    }
 
     function getFeature(
         params: {
@@ -190,10 +226,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const customer = ctx.body as Customer;
+                    const adapter = getUsageAdapter(ctx.context);
+
                     if (!customer?.referenceId) {
                         throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
                     }
                     customers[customer.referenceId] = customer;
+                    Promise.all(featureKeys.map(async (featureKey) => {
+                        const feature = getFeature({ featureKey, customer, overrideKey: customer.overrideKey });
+                        await syncUsage({ adapter, customer, feature })
+                    }))
                     return {
                         status: "created",
                         referenceId: customer.referenceId
@@ -257,6 +299,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
                     const feature = getFeature({ ...ctx.body, ...customer });
+
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
                         featureKey: feature.key,
@@ -300,7 +343,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             ),
 
             listCustomers: createAuthEndpoint(
-                "/customers",
+                "/usage/customers",
                 {
                     method: "GET",
                     middleware: [middleware],
@@ -343,7 +386,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             ),
 
             listFeatures: createAuthEndpoint(
-                "/features",
+                "/usage/features",
                 {
                     method: "GET",
                     middleware: [middleware],
@@ -499,33 +542,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
                     const feature = getFeature({ ...ctx.body, ...customer });
-
-                    if (!feature.reset || feature.reset === "never") {
-                        return { reset: false, reason: "no-reset" };
-                    }
-
-                    const lastReset = await adapter.findLatestUsage({
-                        referenceId: ctx.body.referenceId,
-                        featureKey: feature.key,
-                        event: "reset",
-                    });
-
-                    const lastResetDate = lastReset?.createdAt ?? null;
-                    const resetDue = shouldReset(lastResetDate, feature.reset);
-
-                    if (!resetDue) {
-                        return { reset: false, reason: "not-due" };
-                    }
-
-                    const inserted = await adapter.insertUsage({
-                        afterAmount: feature.resetValue ?? 0,
-                        amount: 0,
-                        feature: feature.key,
-                        referenceId: ctx.body.referenceId,
-                        referenceType: customer.referenceType,
-                        event: "reset",
-                    });
-
+                    const inserted = await syncUsage({ customer, adapter, feature });
                     return { reset: true, inserted };
                 }
             ),
