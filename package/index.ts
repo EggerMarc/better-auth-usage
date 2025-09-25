@@ -22,9 +22,8 @@ import { customerSchema } from "./schema.ts";
  *  and customer based limits is in the roadmap
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
-    const { customers: initCustomers, features, overrides } = options;
+    const { customers: initCustomers, features, overrides, getCustomer: getCustomerOverride } = options;
     const customers: Record<string, Customer> = initCustomers ? { ...initCustomers } : {};
-
 
     function getFeature(
         params: {
@@ -59,15 +58,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         return feature
     }
 
-    function getCustomer(
-        referenceId: string,
-    ): Customer {
-        let customer = customers[referenceId]
-        if (!customer) {
-            throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
+    const getCustomer = getCustomerOverride ??
+        function getCustomer(
+            referenceId: string,
+        ): Customer {
+            let customer = customers[referenceId]
+            if (!customer) {
+                throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
+            }
+            return customer
         }
-        return customer
-    }
 
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
@@ -75,7 +75,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             throw new APIError("UNAUTHORIZED", { message: "Session not found" });
         }
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
-            const customer = getCustomer(ctx.body.referenceId)
+            const customer = await getCustomer(ctx.body.referenceId)
             const feature = getFeature({ features, overrides, customer, ...ctx.body });
             const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
@@ -99,7 +99,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
                     afterAmount: { type: "number", required: true, input: true },
-                    beforeAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
                     createdAt: { type: "date", required: true },
                 },
@@ -154,7 +153,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = ctx.body.referenceId && getCustomer(ctx.body.referenceId)
+                    const customer = ctx.body.referenceId && await getCustomer(ctx.body.referenceId)
                     const feature = getFeature({ ...ctx.body, ...customer });
                     const serializableFeature = { ...feature };
                     delete (serializableFeature as any).hooks;
@@ -195,7 +194,10 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
                     }
                     customers[customer.referenceId] = customer;
-                    return { status: "created", referenceId: customer.referenceId };
+                    return {
+                        status: "created",
+                        referenceId: customer.referenceId
+                    };
                 }
             ),
 
@@ -252,8 +254,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
+                    const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
-                    const customer = getCustomer(ctx.body.referenceId);
                     const feature = getFeature({ ...ctx.body, ...customer });
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
@@ -277,7 +279,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         ...customer,
                         event: ctx.body.event,
                         feature: feature.key,
-                        beforeAmount,
                         afterAmount,
                         amount: ctx.body.amount,
                     });
@@ -435,7 +436,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
-                    const customer = getCustomer(ctx.body.referenceId)
+                    const customer = await getCustomer(ctx.body.referenceId)
                     const feature = getFeature({ ...ctx.body, ...customer });
                     if (!feature) {
                         throw new APIError("NOT_FOUND", { message: "Feature not found" });
@@ -495,8 +496,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
+                    const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
-                    const customer = getCustomer(ctx.body.referenceId)
                     const feature = getFeature({ ...ctx.body, ...customer });
 
                     if (!feature.reset || feature.reset === "never") {
@@ -517,8 +518,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     }
 
                     const inserted = await adapter.insertUsage({
-                        beforeAmount: 0,
-                        afterAmount: 0,
+                        afterAmount: feature.resetValue ?? 0,
                         amount: 0,
                         feature: feature.key,
                         referenceId: ctx.body.referenceId,

@@ -1,5 +1,5 @@
 import type { AuthContext } from "better-auth/types";
-import type { Usage } from "./types.ts"
+import type { Feature, Usage } from "./types.ts"
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
@@ -44,7 +44,6 @@ export const getUsageAdapter = (context: AuthContext) => {
         },
 
         insertUsage: async ({
-            beforeAmount,
             afterAmount,
             amount,
             referenceId,
@@ -61,7 +60,6 @@ export const getUsageAdapter = (context: AuthContext) => {
                     event,
                     amount,
                     createdAt: new Date(Date.now()),
-                    beforeAmount: beforeAmount,
                     afterAmount: afterAmount
                 }
             })

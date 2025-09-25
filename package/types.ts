@@ -188,6 +188,8 @@ export type ConsumptionLimitType =
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
-    customers?: Customers;
+    customers?: Customers | (() => Promise<Customers> | Customers);
+    // Allow customer fetching
+    getCustomer?: (referenceId: string, referenceType?: string) => Promise<Customer> | Customer;
 }
 
