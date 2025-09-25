@@ -113,7 +113,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         }
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
             const customer = await getCustomer(ctx.body.referenceId)
-            const feature = getFeature({ ...ctx.body, customer });
+            const feature = getFeature({
+                featureKey: ctx.body.featureKey,
+                overrideKey: ctx.body.overrideKey,
+                customer
+            });
             const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
                 customer,
@@ -192,7 +196,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const customer = ctx.body.referenceId ? await getCustomer(ctx.body.referenceId) : undefined;
                     const feature = getFeature({
-                        ...ctx.body,
+                        featureKey: ctx.body.featureKey,
+                        overrideKey: ctx.body.overrideKey,
                         customer: customer ? customer : undefined
                     });
                     const serializableFeature = { ...feature };
@@ -210,6 +215,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 {
                     method: "POST",
                     body: customerSchema,
+                    middleware: [middleware],
                     metadata: {
                         openapi: {
                             description: "Register or update a customer (in-memory by default).",
@@ -302,7 +308,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
-                    const feature = getFeature({ ...ctx.body, customer });
+                    const feature = getFeature({
+                        featureKey: ctx.body.featureKey,
+                        overrideKey: ctx.body.overrideKey,
+                        customer
+                    });
 
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
@@ -323,7 +333,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     }
 
                     const res = await adapter.insertUsage({
-                        ...customer,
+                        referenceType: customer.referenceType,
+                        referenceId: customer.referenceId,
                         event: ctx.body.event,
                         feature: feature.key,
                         afterAmount,
@@ -484,7 +495,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
                     const customer = await getCustomer(ctx.body.referenceId)
-                    const feature = getFeature({ ...ctx.body, customer });
+                    const feature = getFeature({
+                        featureKey: ctx.body.featureKey,
+                        overrideKey: ctx.body.overrideKey,
+                        customer
+                    });
                     if (!feature) {
                         throw new APIError("NOT_FOUND", { message: "Feature not found" });
                     }
@@ -495,7 +510,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     });
 
                     return checkLimit({
-                        ...feature,
+                        minLimit: feature.minLimit,
+                        maxLimit: feature.maxLimit,
                         value: usage?.afterAmount ?? 0,
                     });
                 }
@@ -545,7 +561,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
-                    const feature = getFeature({ ...ctx.body, customer });
+                    const feature = getFeature({
+                        featureKey: ctx.body.featureKey,
+                        overrideKey: ctx.body.overrideKey,
+                        customer
+                    });
                     return await syncUsage({ customer, adapter, feature });
                 }
             ),
