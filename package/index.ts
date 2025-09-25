@@ -95,16 +95,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         return feature
     }
 
-    const getCustomer = getCustomerOverride ??
-        function getCustomer(
-            referenceId: string,
-        ): Customer {
-            let customer = customers[referenceId]
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
-            }
-            return customer
-        }
+    const getCustomer: (referenceId: string, referenceType?: string) => Promise<Customer> =
+        getCustomerOverride
+            ? async (referenceId, referenceType) => await getCustomerOverride(referenceId, referenceType)
+            : async (referenceId) => {
+                const customer = customers[referenceId];
+                if (!customer) {
+                    throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
+                }
+                return customer;
+            };
 
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
@@ -113,7 +113,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         }
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
             const customer = await getCustomer(ctx.body.referenceId)
-            const feature = getFeature({ features, overrides, customer, ...ctx.body });
+            const feature = getFeature({ ...ctx.body, customer });
             const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
                 customer,
@@ -190,7 +190,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = ctx.body.referenceId && await getCustomer(ctx.body.referenceId)
+                    const customer = ctx.body.referenceId ? await getCustomer(ctx.body.referenceId) : undefined;
                     const feature = getFeature({
                         ...ctx.body,
                         customer: customer ? customer : undefined
@@ -236,7 +236,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
                     }
                     customers[customer.referenceId] = customer;
-                    Promise.all(featureKeys.map(async (featureKey) => {
+                    await Promise.allSettled(featureKeys.map(async (featureKey) => {
                         const feature = getFeature({ featureKey, customer, overrideKey: customer.overrideKey });
                         await syncUsage({ adapter, customer, feature })
                     }))
