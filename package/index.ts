@@ -59,7 +59,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             event: "reset",
         });
 
-        return { reset: true, usage}
+        return { reset: true, usage }
     }
 
     function getFeature(
@@ -191,7 +191,10 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const customer = ctx.body.referenceId && await getCustomer(ctx.body.referenceId)
-                    const feature = getFeature({ ...ctx.body, ...customer });
+                    const feature = getFeature({
+                        ...ctx.body,
+                        customer: customer ? customer : undefined
+                    });
                     const serializableFeature = { ...feature };
                     delete (serializableFeature as any).hooks;
                     return { feature: serializableFeature };
@@ -299,7 +302,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
-                    const feature = getFeature({ ...ctx.body, ...customer });
+                    const feature = getFeature({ ...ctx.body, customer });
 
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
@@ -481,7 +484,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
                     const customer = await getCustomer(ctx.body.referenceId)
-                    const feature = getFeature({ ...ctx.body, ...customer });
+                    const feature = getFeature({ ...ctx.body, customer });
                     if (!feature) {
                         throw new APIError("NOT_FOUND", { message: "Feature not found" });
                     }
@@ -542,9 +545,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 async (ctx) => {
                     const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
-                    const feature = getFeature({ ...ctx.body, ...customer });
-                    const inserted = await syncUsage({ customer, adapter, feature });
-                    return { reset: true, inserted };
+                    const feature = getFeature({ ...ctx.body, customer });
+                    return await syncUsage({ customer, adapter, feature });
                 }
             ),
         },
