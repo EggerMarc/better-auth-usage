@@ -65,12 +65,6 @@ export const getUsageAdapter = (context: AuthContext) => {
             })
             return usage
         },
-
-        syncUsage: async ({
-
-        }) => {
-
-        }
     };
 };
 

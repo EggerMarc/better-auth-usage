@@ -50,8 +50,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         if (!resetDue) {
             return { reset: false, reason: "not-due" };
         }
-
-        return await adapter.insertUsage({
+        const usage = await adapter.insertUsage({
             afterAmount: feature.resetValue ?? 0,
             amount: 0,
             feature: feature.key,
@@ -59,6 +58,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             referenceType: customer.referenceType,
             event: "reset",
         });
+
+        return { reset: true, usage}
     }
 
     function getFeature(
