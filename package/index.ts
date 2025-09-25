@@ -77,11 +77,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
 
         if (params.overrideKey && overrides?.[params.overrideKey]) {
             const override = overrides[params.featureKey];
-            if (override) {
+            const overrideFeature = override?.features?.[params.featureKey];
+            if (overrideFeature) {
                 feature = {
                     ...feature,
-                    ...override.features[params.featureKey],
-                }
+                    ...overrideFeature,
+                };
             }
         }
 
