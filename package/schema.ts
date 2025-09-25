@@ -5,6 +5,7 @@ export const customerSchema = z.object({
     referenceType: z.string(),
     email: z.string().optional(),
     name: z.string().optional(),
+    overrideKey: z.string().optional(),
     featureLimits: z.record(
         z.string(),
         z.object({
@@ -20,7 +21,6 @@ export const usageSchema = z.object({
     event: z.string().optional(),
     createdAt: z.date(),
     amount: z.number(),
-    beforeAmount: z.number(),
     afterAmount: z.number(),
     feature: z.string(),
 })

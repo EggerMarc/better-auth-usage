@@ -189,5 +189,7 @@ export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
     customers?: Customers;
+    // Allow customer fetching
+    getCustomer?: (referenceId: string, referenceType?: string) => Promise<Customer> | Customer;
 }
 

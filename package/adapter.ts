@@ -44,7 +44,6 @@ export const getUsageAdapter = (context: AuthContext) => {
         },
 
         insertUsage: async ({
-            beforeAmount,
             afterAmount,
             amount,
             referenceId,
@@ -61,7 +60,6 @@ export const getUsageAdapter = (context: AuthContext) => {
                     event,
                     amount,
                     createdAt: new Date(Date.now()),
-                    beforeAmount: beforeAmount,
                     afterAmount: afterAmount
                 }
             })
@@ -69,3 +67,5 @@ export const getUsageAdapter = (context: AuthContext) => {
         },
     };
 };
+
+export type UsageAdapter = ReturnType<typeof getUsageAdapter>
