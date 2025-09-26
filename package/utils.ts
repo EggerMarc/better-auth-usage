@@ -16,60 +16,81 @@ export function checkLimit({
     return "in-limit"
 }
 
-export function shouldReset(lastReset: Date | null, reset: ResetType): boolean {
+export function shouldReset(
+    lastReset: Date | null,
+    reset: ResetType
+): {
+    shouldReset: boolean,
+    nextReset?: Date
+} {
+
     const now = new Date();
-    let nextResetTime = new Date(now);
+    if (reset === "never") {
+        return { shouldReset: false, }
+    }
+    let nextResetTime = computeNextResetTime(now, reset);
+    while (nextResetTime <= now) {
+        nextResetTime = computeNextResetTime(nextResetTime, reset);
+    }
+    if (!lastReset || lastReset < nextResetTime) {
+        return { shouldReset: true, nextReset: nextResetTime };
+    }
+    return { shouldReset: false, nextReset: nextResetTime };
+}
+
+function computeNextResetTime(base: Date, reset: ResetType): Date {
+    const next = new Date(base);
 
     switch (reset) {
         case "hourly":
-            nextResetTime.setHours(nextResetTime.getHours() + 1, 0, 0, 0);
+            next.setHours(next.getHours() + 1, 0, 0, 0);
             break;
         case "6-hourly": {
-            const hour = now.getHours();
+            const hour = base.getHours();
             const nextBlock = Math.floor(hour / 6) * 6 + 6;
             if (nextBlock >= 24) {
-                nextResetTime.setDate(nextResetTime.getDate() + 1);
-                nextResetTime.setHours(0, 0, 0, 0);
+                next.setDate(next.getDate() + 1);
+                next.setHours(0, 0, 0, 0);
             } else {
-                nextResetTime.setHours(nextBlock, 0, 0, 0);
+                next.setHours(nextBlock, 0, 0, 0);
             }
             break;
         }
         case "daily":
-            nextResetTime.setDate(nextResetTime.getDate() + 1);
-            nextResetTime.setHours(0, 0, 0, 0);
+            next.setDate(next.getDate() + 1);
+            next.setHours(0, 0, 0, 0);
             break;
         case "weekly": {
-            const day = nextResetTime.getDay(); // 0 = Sunday
+            const day = base.getDay(); // 0 = Sunday
             const daysUntilNextMonday = (8 - day) % 7 || 7;
-            nextResetTime.setDate(nextResetTime.getDate() + daysUntilNextMonday);
-            nextResetTime.setHours(0, 0, 0, 0);
+            next.setDate(next.getDate() + daysUntilNextMonday);
+            next.setHours(0, 0, 0, 0);
             break;
         }
         case "monthly":
-            nextResetTime.setMonth(nextResetTime.getMonth() + 1, 1);
-            nextResetTime.setHours(0, 0, 0, 0);
+            next.setMonth(next.getMonth() + 1, 1);
+            next.setHours(0, 0, 0, 0);
             break;
         case "quarterly": {
-            const currentMonth = nextResetTime.getMonth();
+            const currentMonth = base.getMonth();
             const nextQuarterStartMonth = Math.floor(currentMonth / 3) * 3 + 3;
             if (nextQuarterStartMonth >= 12) {
-                nextResetTime.setFullYear(nextResetTime.getFullYear() + 1);
-                nextResetTime.setMonth(0, 1);
+                next.setFullYear(next.getFullYear() + 1);
+                next.setMonth(0, 1);
             } else {
-                nextResetTime.setMonth(nextQuarterStartMonth, 1);
+                next.setMonth(nextQuarterStartMonth, 1);
             }
-            nextResetTime.setHours(0, 0, 0, 0);
+            next.setHours(0, 0, 0, 0);
             break;
         }
         case "yearly":
-            nextResetTime.setFullYear(nextResetTime.getFullYear() + 1, 0, 1);
-            nextResetTime.setHours(0, 0, 0, 0);
+            next.setFullYear(next.getFullYear() + 1, 0, 1);
+            next.setHours(0, 0, 0, 0);
             break;
         case "never":
-            return false
+            return base; // "never" just returns the base (ignored in main fn)
     }
 
-    return now >= nextResetTime || (lastReset ? lastReset < nextResetTime : true);
+    return next;
 }
 

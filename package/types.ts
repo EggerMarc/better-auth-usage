@@ -1,4 +1,4 @@
-import { customerSchema, usageSchema } from "./schema.ts"
+import { customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
 import { z } from "zod";
 
 /**
@@ -16,12 +16,17 @@ type ExtraFields = {
 };
 
 /**
+ * Customer specific usage limits
+ * E.g.: Purchased credits
+ */
+export type CustomerLimits = z.infer<typeof customerLimitsSchema>;
+
+/**
  * Core Customer type used across the plugin.
  *
  * - `referenceId`: Unique ID of the customer (e.g. UUID, tenant ID).
  * - `referenceType`: Logical grouping or type of reference (e.g. "org", "user").
  * - `email` / `name`: Optional metadata for identification.
- * - `featureLimits`: Overrides feature limits for this specific customer.
  *
  */
 export type Customer = z.infer<typeof customerSchema>
@@ -188,8 +193,5 @@ export type ConsumptionLimitType =
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
-    customers?: Customers;
-    // Allow customer fetching
-    getCustomer?: (referenceId: string, referenceType?: string) => Promise<Customer> | Customer;
 }
 

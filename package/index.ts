@@ -4,8 +4,7 @@ import type { Customer, Feature, UsageOptions } from "./types.ts";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { getUsageAdapter, type UsageAdapter } from "./adapter.ts";
-import { checkLimit, shouldReset } from "./utils.ts";
-import { customerSchema } from "./schema.ts";
+import { checkLimit } from "./utils.ts";
 
 /**
  * Usage plugin for BetterAuth
@@ -22,9 +21,7 @@ import { customerSchema } from "./schema.ts";
  *  and customer based limits is in the roadmap
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
-    const { customers: initCustomers, features, overrides, getCustomer: getCustomerOverride } = options;
-    const customers: Record<string, Customer> = initCustomers ? { ...initCustomers } : {};
-    const featureKeys = Object.keys(features);
+    const { features, overrides } = options;
 
     async function syncUsage({
         adapter,
@@ -35,39 +32,24 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         feature: Feature,
         customer: Customer,
     }) {
-        if (!feature.reset || feature.reset === "never") {
-            return { reset: false, reason: "no-reset" };
+
+        if (feature.reset) {
+            return await adapter.syncUsage({
+                referenceId: customer.referenceId,
+                referenceType: customer.referenceType,
+                feature: {
+                    key: feature.key,
+                    resetValue: feature.resetValue,
+                    reset: feature.reset
+                }
+            })
         }
-
-        const lastReset = await adapter.findLatestUsage({
-            referenceId: customer.referenceId,
-            featureKey: feature.key,
-            event: "reset",
-        });
-
-        const lastResetDate = lastReset?.createdAt ?? null;
-        const resetDue = shouldReset(lastResetDate, feature.reset);
-
-        if (!resetDue) {
-            return { reset: false, reason: "not-due" };
-        }
-        const usage = await adapter.insertUsage({
-            afterAmount: feature.resetValue ?? 0,
-            amount: 0,
-            feature: feature.key,
-            referenceId: customer.referenceId,
-            referenceType: customer.referenceType,
-            event: "reset",
-        });
-
-        return { reset: true, usage }
     }
 
     function getFeature(
         params: {
             featureKey: string,
             overrideKey?: string
-            customer?: Customer
         }
     ): Feature {
         let feature = features[params.featureKey]
@@ -86,27 +68,17 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 };
             }
         }
-
+        /*
         if (params.customer?.featureLimits?.[params.featureKey]) {
             feature = {
                 ...feature,
                 ...params.customer.featureLimits[params.featureKey],
             };
         }
+        */
 
         return feature
     }
-
-    const getCustomer: (referenceId: string, referenceType?: string) => Promise<Customer> =
-        getCustomerOverride
-            ? async (referenceId, referenceType) => await getCustomerOverride(referenceId, referenceType)
-            : async (referenceId) => {
-                const customer = customers[referenceId];
-                if (!customer) {
-                    throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
-                }
-                return customer;
-            };
 
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
@@ -114,15 +86,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             throw new APIError("UNAUTHORIZED", { message: "Session not found" });
         }
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
-            const customer = await getCustomer(ctx.body.referenceId)
             const feature = getFeature({
                 featureKey: ctx.body.featureKey,
-                overrideKey: ctx.body.overrideKey,
-                customer
-            });
+                overrideKey: ctx.body.overrideKey
+            })
             const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
-                customer,
             })) ?? true;
             if (!isAuthorized) {
                 throw new APIError("UNAUTHORIZED", {
@@ -143,9 +112,18 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     amount: { type: "number", required: true, input: true },
                     afterAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
+                    lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },
                 },
             },
+            customer: {
+                fields: {
+                    referenceId: { type: "string", required: true, input: true, unique: true },
+                    referenceType: { type: "string", required: true, input: true },
+                    email: { type: "string", required: false, input: true },
+                    name: { type: "string", required: false, input: true }
+                }
+            }
         },
 
         endpoints: {
@@ -160,7 +138,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     body: z.object({
                         featureKey: z.string(),
                         overrideKey: z.string().optional(),
-                        referenceId: z.string().optional()
                     }),
                     metadata: {
                         openapi: {
@@ -196,11 +173,9 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = ctx.body.referenceId ? await getCustomer(ctx.body.referenceId) : undefined;
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer: customer ? customer : undefined
                     });
                     const serializableFeature = { ...feature };
                     delete (serializableFeature as any).hooks;
@@ -208,52 +183,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 }
             ),
 
-            /**
-             * Register or update an in-memory customer.
-             * Uses `customerSchema` (zod) as the runtime validator.
-             */
-            registerCustomer: createAuthEndpoint(
-                "/usage/register-customer",
-                {
-                    method: "POST",
-                    body: customerSchema,
-                    middleware: [middleware],
-                    metadata: {
-                        openapi: {
-                            description: "Register or update a customer (in-memory by default).",
-                            requestBody: {
-                                required: true,
-                                content: {
-                                    "application/json": {
-                                        schema: { type: "object" },
-                                    },
-                                },
-                            },
-                            responses: {
-                                201: { description: "Customer registered/updated" },
-                                400: { description: "Validation error" },
-                            },
-                        },
-                    },
-                },
-                async (ctx) => {
-                    const customer = ctx.body as Customer;
-                    const adapter = getUsageAdapter(ctx.context);
-
-                    if (!customer?.referenceId) {
-                        throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
-                    }
-                    customers[customer.referenceId] = customer;
-                    await Promise.allSettled(featureKeys.map(async (featureKey) => {
-                        const feature = getFeature({ featureKey, customer, overrideKey: customer.overrideKey });
-                        await syncUsage({ adapter, customer, feature })
-                    }))
-                    return {
-                        status: "created",
-                        referenceId: customer.referenceId
-                    };
-                }
-            ),
 
             /**
              * Consume (meter) a feature for a given referenceId.
@@ -285,11 +214,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                                         schema: {
                                             type: "object",
                                             properties: {
-                                                featureKey: { type: "string" },
-                                                overrideKey: { type: "string" },
-                                                amount: { type: "number", minimum: 1 },
-                                                referenceId: { type: "string" },
-                                                event: { type: "string" },
+                                                featureKey: { type: "string", description: "Feature Key" },
+                                                overrideKey: { type: "string", description: "Overriding Key for consumption limits" },
+                                                amount: { type: "number", description: "Amount to be consumed" },
+                                                referenceId: { type: "string", description: "Reference ID of the customer" },
+                                                event: { type: "string", description: "(Optional) Event tag of the consumption" },
                                             },
                                             required: ["featureKey", "amount", "referenceId"],
                                         },
@@ -308,18 +237,25 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
+                    }
+
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
 
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
                         featureKey: feature.key,
                     });
+
                     const beforeAmount = lastUsage?.afterAmount ?? 0;
                     const afterAmount = beforeAmount + ctx.body.amount;
                     if (feature.hooks?.before) {
@@ -338,8 +274,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         referenceType: customer.referenceType,
                         referenceId: customer.referenceId,
                         event: ctx.body.event,
-                        feature: feature.key,
-                        afterAmount,
+                        feature: feature,
                         amount: ctx.body.amount,
                     });
 
@@ -356,49 +291,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     }
 
                     return res;
-                }
-            ),
-
-            listCustomers: createAuthEndpoint(
-                "/usage/customers",
-                {
-                    method: "GET",
-                    middleware: [middleware],
-                    metadata: {
-                        openapi: {
-                            description: "Lists registered customers. These are in-memory registered customers.",
-                            responses: {
-                                200: {
-                                    description: "List of registered customers.",
-                                    content: {
-                                        "application/json": {
-                                            schema: {
-                                                type: "array",
-                                                items: {
-                                                    type: "object",
-                                                    properties: {
-                                                        referenceId: { type: "string" },
-                                                        referenceType: { type: "string" },
-                                                        email: { type: "string" },
-                                                        name: { type: "string" },
-                                                    },
-                                                    required: ["referenceId", "referenceType"],
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                async () => {
-                    return Object.values(customers).map((c) => ({
-                        referenceId: c.referenceId,
-                        referenceType: c.referenceType,
-                        email: c.email,
-                        name: c.name,
-                    }))
                 }
             ),
 
@@ -496,11 +388,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
-                    const customer = await getCustomer(ctx.body.referenceId)
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` })
+                    }
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
                     if (!feature) {
                         throw new APIError("NOT_FOUND", { message: "Feature not found" });
@@ -561,14 +458,20 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
+                    }
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
-                    return await syncUsage({ customer, adapter, feature });
+
+                    const usage = await syncUsage({ adapter, feature, customer })
+                    return usage
                 }
             ),
         },
