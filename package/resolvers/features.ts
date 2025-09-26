@@ -19,7 +19,7 @@ export function resolveFeature({
     }
 
     if (overrideKey && overrides?.[overrideKey]) {
-        const override = overrides[featureKey];
+        const override = overrides[overrideKey];
         const overrideFeature = override?.features?.[featureKey];
         if (overrideFeature) {
             feature = { ...feature, ...overrideFeature };
