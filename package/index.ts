@@ -35,32 +35,18 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         feature: Feature,
         customer: Customer,
     }) {
-        if (!feature.reset || feature.reset === "never") {
-            return { reset: false, reason: "no-reset" };
+
+        if (feature.reset) {
+            return await adapter.syncUsage({
+                referenceId: customer.referenceId,
+                referenceType: customer.referenceType,
+                feature: {
+                    key: feature.key,
+                    resetValue: feature.resetValue,
+                    reset: feature.reset
+                }
+            })
         }
-
-        const lastReset = await adapter.findLatestUsage({
-            referenceId: customer.referenceId,
-            featureKey: feature.key,
-            event: "reset",
-        });
-
-        const lastResetDate = lastReset?.createdAt ?? null;
-        const resetDue = shouldReset(lastResetDate, feature.reset);
-
-        if (!resetDue) {
-            return { reset: false, reason: "not-due" };
-        }
-        const usage = await adapter.insertUsage({
-            afterAmount: feature.resetValue ?? 0,
-            amount: 0,
-            feature: feature.key,
-            referenceId: customer.referenceId,
-            referenceType: customer.referenceType,
-            event: "reset",
-        });
-
-        return { reset: true, usage }
     }
 
     function getFeature(

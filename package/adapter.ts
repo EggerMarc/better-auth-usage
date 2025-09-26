@@ -107,7 +107,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             feature: {
                 key: string,
                 reset: ResetType,
-                resetValue: number,
+                resetValue?: number,
             }
         }) => {
             const usage = await adapter.transaction(async (tx) => {
@@ -137,7 +137,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                 }
             });
             return usage
-        }
+        },
     };
 };
 
