@@ -55,7 +55,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             referenceId: string,
             referenceType: string,
             event: string,
-            feature: Omit<Feature, "hooks" | "">
+            feature: Omit<Feature, "hooks">
         }) => {
             const usage = await adapter.transaction(async (tx) => {
                 const lastUsage = await tx.findMany<Usage>({
