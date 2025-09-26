@@ -6,10 +6,11 @@ export const usageClient = () => {
         id: "@eggermarc/usage-client",
         $InferServerPlugin: {} as ReturnType<typeof usage>,
         pathMethods: {
-            "/usage/feature": "GET",
-            "/usage/register-customer": "POST",
+            "/usage/features": "GET",
+            "/usage/features/:featureKey": "GET",
+            "/usage/upsert-customer": "POST",
             "/usage/consume": "POST",
-            "/usage/check": "GET",
+            "/usage/check": "POST",
             "/usage/sync": "POST",
         },
     } satisfies BetterAuthClientPlugin;
