@@ -89,20 +89,6 @@ await client.usage.consume({
   amount: 1,
 });
 ```
-#### Customer Registration
-```ts
-// in your app
-import type { Customer } from "@eggermarc/better-auth-usage";
-
-const customer: Customer = {
-  referenceId: "456",
-  referenceType: "organization",
-  email: "test@example.com",
-  name: "Test User",
-};
-
-await client.usage.registerCustomer(customer)
-```
 
 ### Goals
 Why customer registration and not per user / organization query?

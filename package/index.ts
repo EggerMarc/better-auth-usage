@@ -5,6 +5,8 @@ import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { getUsageAdapter, type UsageAdapter } from "./adapter.ts";
 import { checkLimit } from "./utils.ts";
+import { customerSchema } from "./schema.ts";
+import { required } from "zod/mini";
 
 /**
  * Usage plugin for BetterAuth
@@ -131,17 +133,24 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
              * Get feature metadata (merged with overrides if provided).
              */
             getFeature: createAuthEndpoint(
-                "/usage/feature",
+                "/usage/features/:featureKey",
                 {
-                    method: "POST",
-                    middleware: [middleware],
+                    method: "GET",
                     body: z.object({
-                        featureKey: z.string(),
                         overrideKey: z.string().optional(),
                     }),
                     metadata: {
                         openapi: {
                             description: "Returns the feature configuration (merged with overrides if provided).",
+                            parameters: [{
+                                in: "path",
+                                name: "featureKey",
+                                required: true,
+                                schema: {
+                                    type: "string",
+                                },
+                                description: "The key of the feature to retrieve"
+                            }],
                             requestBody: {
                                 required: true,
                                 content: {
@@ -149,11 +158,8 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                                         schema: {
                                             type: "object",
                                             properties: {
-                                                featureKey: { type: "string" },
                                                 overrideKey: { type: "string" },
-                                                referenceId: { type: "string" }
                                             },
-                                            required: ["featureKey"],
                                         },
                                     },
                                 },
@@ -174,7 +180,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const feature = getFeature({
-                        featureKey: ctx.body.featureKey,
+                        featureKey: ctx.params.featureKey,
                         overrideKey: ctx.body.overrideKey,
                     });
                     const serializableFeature = { ...feature };
@@ -298,7 +304,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 "/usage/features",
                 {
                     method: "GET",
-                    middleware: [middleware],
                     metadata: {
                         openapi: {
                             description: "Lists registered features.",
@@ -373,14 +378,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                             responses: {
                                 200: {
                                     description: "Status string",
-                                    content: {
-                                        "application/json": {
-                                            schema: {
-                                                type: "string",
-                                                enum: ["in-limit", "above-limit", "below-limit"],
-                                            },
-                                        },
-                                    },
                                 },
                             },
                         },
@@ -415,6 +412,43 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     });
                 }
             ),
+
+            upsertCustomer: createAuthEndpoint("/usage/upsert-customer", {
+                method: "POST",
+                body: customerSchema,
+                middleware: [middleware],
+                metadata: {
+                    openapi: {
+                        description: "Upserts a customer to the customer table",
+                        requestBody: {
+                            required: true,
+                            content: {
+                                "application/json": {
+                                    schema: {
+                                        type: "object",
+                                        properties: {
+                                            referenceId: { type: "string" },
+                                            featureType: { type: "string" },
+                                            name: { type: "string" },
+                                            email: { type: "string" }
+                                        },
+                                        required: ["referenceId", "featureType"],
+                                    },
+                                },
+                            },
+                        },
+                        responses: {
+                            200: {
+                                description: "Successful Upsert",
+                            },
+                        },
+                    },
+                },
+            }, async (ctx) => {
+                const adapter = getUsageAdapter(ctx.context);
+                const customer = await adapter.upsertCustomer(ctx.body);
+                return customer
+            }),
 
             /**
              * Sync usage according to feature.reset rules.
