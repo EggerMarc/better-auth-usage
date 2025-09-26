@@ -1,5 +1,5 @@
 import type { AuthContext } from "better-auth/types";
-import type { Feature, Usage } from "./types.ts"
+import type { Feature, ResetType, Usage } from "./types.ts"
 import { shouldReset } from "./utils.ts";
 
 export const getUsageAdapter = (context: AuthContext) => {
@@ -101,7 +101,15 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage
         },
 
-        syncUsage: async ({ referenceId }: { referenceId: string }) => {
+        syncUsage: async ({ referenceId, referenceType, feature }: {
+            referenceId: string,
+            referenceType: string
+            feature: {
+                key: string,
+                reset: ResetType,
+                resetValue: number,
+            }
+        }) => {
             const usage = await adapter.transaction(async (tx) => {
                 const lastUsage = await tx.findMany<Usage>({
                     model: "usage",
@@ -109,8 +117,24 @@ export const getUsageAdapter = (context: AuthContext) => {
                     sortBy: { field: "createdAt", direction: "desc" },
                     limit: 1
                 });
-                if (lastUsage[0] && shouldReset(lastUsage[0].createdAt, lastUsage[0].))
 
+                const reset = shouldReset(lastUsage[0].lastResetAt, feature.reset ?? "never");
+                if (reset.shouldReset && reset.nextReset) {
+                    const usage = await tx.create<Usage>({
+                        model: "usage",
+                        data: {
+                            referenceId,
+                            referenceType,
+                            event: "reset",
+                            amount: 0,
+                            feature: feature.key,
+                            afterAmount: feature.resetValue ?? 0,
+                            lastResetAt: reset.nextReset,
+                            createdAt: reset.nextReset,
+                        }
+                    })
+                    return usage
+                }
             });
             return usage
         }
