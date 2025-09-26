@@ -33,15 +33,16 @@ export function getUpsertCustomerEndpoint() {
                                 },
                                 required: ["referenceId", "referenceType"],
                             },
+                        },
                     },
-                },
-                responses: {
-                    200: {
-                        description: "Successful Upsert",
+                    responses: {
+                        200: {
+                            description: "Successful Upsert",
+                        },
                     },
                 },
             },
-        },
+        }
     }, async (ctx) => {
         const adapter = getUsageAdapter(ctx.context);
         const customer = await adapter.upsertCustomer(ctx.body);
