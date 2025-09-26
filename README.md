@@ -4,6 +4,18 @@
 
 Feature and usage-based authorization plugin for [BetterAuth](https://www.better-auth.com/). Provides a way to define **features**, **track usage**, apply **per-plan limits**, and integrate with external systems (Stripe, custom hooks, etc).
 
+## Roadmap
+Below are the action items to fix known limitations of this plugin. Namely, customer management and consumption indepotency.
+- [ ] Customer table
+- [ ] Customer to feature table (for customer limits)
+    - [ ] Feature 
+    - [ ] Follow slowly changing dimensions model
+- [ ] Consumption adapter as transaction
+- [ ] Non blocking sync
+- [ ] Customer provider (Optional - considering leaving this to dev)
+    - [ ] `useCustomer(referenceId)`
+
+
 ## Features
 
 - Define features with maxLimit, minLimit, reset strategies, and metadata.

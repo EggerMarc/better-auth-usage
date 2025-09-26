@@ -29,11 +29,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     async function syncUsage({
         adapter,
         feature,
-        customer }: {
-            adapter: UsageAdapter,
-            feature: Feature,
-            customer: Customer,
-        }) {
+        customer
+    }: {
+        adapter: UsageAdapter,
+        feature: Feature,
+        customer: Customer,
+    }) {
         if (!feature.reset || feature.reset === "never") {
             return { reset: false, reason: "no-reset" };
         }
