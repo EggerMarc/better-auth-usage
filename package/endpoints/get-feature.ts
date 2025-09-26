@@ -3,6 +3,16 @@ import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
 import { z } from "zod";
 
+/**
+ * Registers an authenticated GET endpoint at /usage/features/:featureKey that returns a feature configuration.
+ *
+ * The endpoint resolves the feature identified by the path parameter `featureKey`. If an `overrideKey` is provided
+ * in the request body, matching overrides are applied to the returned configuration. Runtime hooks are removed
+ * from the returned object.
+ *
+ * @param options - Usage options containing `features` and `overrides` used to resolve the feature
+ * @returns The configured authenticated endpoint which returns the resolved feature object (with overrides applied and `hooks` omitted)
+ */
 export function getFeatureEndpoint({
     features, overrides
 }: UsageOptions) {

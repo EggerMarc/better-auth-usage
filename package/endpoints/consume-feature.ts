@@ -5,6 +5,16 @@ import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
 import { z } from "zod"
 
+/**
+ * Create an authenticated POST endpoint at /usage/consume that records meter usage for a feature.
+ *
+ * The endpoint validates the request body, resolves the target feature (including any override),
+ * looks up the customer by referenceId, runs optional feature hooks (before/after), and inserts a usage record.
+ *
+ * @param features - Feature definitions available for consumption
+ * @param overrides - Optional override definitions that adjust feature behavior or limits
+ * @returns The configured authenticated endpoint that handles consumption requests and returns the inserted usage record
+ */
 export function getConsumeEndpoint({
     features, overrides
 }: UsageOptions) {
