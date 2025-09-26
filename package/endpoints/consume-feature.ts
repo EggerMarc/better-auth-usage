@@ -12,7 +12,10 @@ export function getConsumeEndpoint({
         "/usage/consume",
         {
             method: "POST",
-            middleware: [sessionMiddleware, usageMiddleware],
+            middleware: [
+                sessionMiddleware,
+                usageMiddleware({ features, overrides }),
+            ],
             body: z.object({
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
