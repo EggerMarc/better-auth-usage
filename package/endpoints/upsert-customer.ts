@@ -18,13 +18,13 @@ export function getUpsertCustomerEndpoint() {
                                 type: "object",
                                 properties: {
                                     referenceId: { type: "string" },
-                                    featureType: { type: "string" },
+                                    referenceType: { type: "string" },
                                     name: { type: "string" },
-                                    email: { type: "string" }
+                                    email: { type: "string" },
+                                    overrideKey: { type: "string" }
                                 },
-                                required: ["referenceId", "featureType"],
+                                required: ["referenceId", "referenceType"],
                             },
-                        },
                     },
                 },
                 responses: {
