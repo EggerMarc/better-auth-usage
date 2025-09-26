@@ -23,17 +23,18 @@ export function shouldReset(
     shouldReset: boolean,
     nextReset?: Date
 } {
-    const now = new Date();
-    let nextResetTime = computeNextResetTime(now, reset);
 
+    const now = new Date();
+    if (reset === "never") {
+        return { shouldReset: false, }
+    }
+    let nextResetTime = computeNextResetTime(now, reset);
     while (nextResetTime <= now) {
         nextResetTime = computeNextResetTime(nextResetTime, reset);
     }
-
     if (!lastReset || lastReset < nextResetTime) {
         return { shouldReset: true, nextReset: nextResetTime };
     }
-
     return { shouldReset: false, nextReset: nextResetTime };
 }
 

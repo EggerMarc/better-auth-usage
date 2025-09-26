@@ -112,6 +112,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     amount: { type: "number", required: true, input: true },
                     afterAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
+                    lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },
                 },
             },

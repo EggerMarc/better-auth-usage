@@ -62,7 +62,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                     model: "usage",
                     where: [
                         { field: "referenceId", value: referenceId },
-                        { field: "feature",   value: feature.key }
+                        { field: "feature", value: feature.key }
                     ],
                     sortBy: { field: "createdAt", direction: "desc" },
                     limit: 1
@@ -80,7 +80,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                             feature: feature.key,
                             lastResetAt: reset.nextReset,
                             afterAmount: amount + (feature.resetValue ?? 0),
-                            createdAt: new Date(Date.now())
+                            createdAt: new Date()
                         }
                     })
 
@@ -97,7 +97,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                         lastResetAt: lastUsage[0].lastResetAt,
                         feature: feature.key,
                         afterAmount: amount + (lastUsage[0].afterAmount ?? 0),
-                        createdAt: new Date(Date.now()),
+                        createdAt: new Date(),
                     }
                 })
 
@@ -135,7 +135,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                             feature: feature.key,
                             afterAmount: feature.resetValue ?? 0,
                             lastResetAt: reset.nextReset,
-                            createdAt: reset.nextReset,
+                            createdAt: new Date(),
                         }
                     })
                     return usage
