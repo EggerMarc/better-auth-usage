@@ -4,8 +4,7 @@ import type { Customer, Feature, UsageOptions } from "./types.ts";
 import { createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { getUsageAdapter, type UsageAdapter } from "./adapter.ts";
-import { checkLimit, shouldReset } from "./utils.ts";
-import { customerSchema } from "./schema.ts";
+import { checkLimit } from "./utils.ts";
 
 /**
  * Usage plugin for BetterAuth
@@ -23,7 +22,6 @@ import { customerSchema } from "./schema.ts";
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     const { features, overrides } = options;
-    const featureKeys = Object.keys(features);
 
     async function syncUsage({
         adapter,
@@ -139,7 +137,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     body: z.object({
                         featureKey: z.string(),
                         overrideKey: z.string().optional(),
-                        referenceId: z.string().optional()
                     }),
                     metadata: {
                         openapi: {
@@ -175,11 +172,9 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = ctx.body.referenceId ? await getCustomer(ctx.body.referenceId) : undefined;
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer: customer ? customer : undefined
                     });
                     const serializableFeature = { ...feature };
                     delete (serializableFeature as any).hooks;
@@ -187,52 +182,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 }
             ),
 
-            /**
-             * Register or update an in-memory customer.
-             * Uses `customerSchema` (zod) as the runtime validator.
-             */
-            registerCustomer: createAuthEndpoint(
-                "/usage/register-customer",
-                {
-                    method: "POST",
-                    body: customerSchema,
-                    middleware: [middleware],
-                    metadata: {
-                        openapi: {
-                            description: "Register or update a customer (in-memory by default).",
-                            requestBody: {
-                                required: true,
-                                content: {
-                                    "application/json": {
-                                        schema: { type: "object" },
-                                    },
-                                },
-                            },
-                            responses: {
-                                201: { description: "Customer registered/updated" },
-                                400: { description: "Validation error" },
-                            },
-                        },
-                    },
-                },
-                async (ctx) => {
-                    const customer = ctx.body as Customer;
-                    const adapter = getUsageAdapter(ctx.context);
-
-                    if (!customer?.referenceId) {
-                        throw new APIError("BAD_REQUEST", { message: "referenceId is required" });
-                    }
-                    customers[customer.referenceId] = customer;
-                    await Promise.allSettled(featureKeys.map(async (featureKey) => {
-                        const feature = getFeature({ featureKey, customer, overrideKey: customer.overrideKey });
-                        await syncUsage({ adapter, customer, feature })
-                    }))
-                    return {
-                        status: "created",
-                        referenceId: customer.referenceId
-                    };
-                }
-            ),
 
             /**
              * Consume (meter) a feature for a given referenceId.
@@ -264,11 +213,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                                         schema: {
                                             type: "object",
                                             properties: {
-                                                featureKey: { type: "string" },
-                                                overrideKey: { type: "string" },
-                                                amount: { type: "number", minimum: 1 },
-                                                referenceId: { type: "string" },
-                                                event: { type: "string" },
+                                                featureKey: { type: "string", description: "Feature Key" },
+                                                overrideKey: { type: "string", description: "Overriding Key for consumption limits" },
+                                                amount: { type: "number", description: "Amount to be consumed" },
+                                                referenceId: { type: "string", description: "Reference ID of the customer" },
+                                                event: { type: "string", description: "(Optional) Event tag of the consumption" },
                                             },
                                             required: ["featureKey", "amount", "referenceId"],
                                         },
@@ -287,18 +236,25 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = await getCustomer(ctx.body.referenceId);
                     const adapter = getUsageAdapter(ctx.context);
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
+                    }
+
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
 
                     const lastUsage = await adapter.findLatestUsage({
                         referenceId: customer.referenceId,
                         featureKey: feature.key,
                     });
+
                     const beforeAmount = lastUsage?.afterAmount ?? 0;
                     const afterAmount = beforeAmount + ctx.body.amount;
                     if (feature.hooks?.before) {
@@ -317,8 +273,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         referenceType: customer.referenceType,
                         referenceId: customer.referenceId,
                         event: ctx.body.event,
-                        feature: feature.key,
-                        afterAmount,
+                        feature: feature,
                         amount: ctx.body.amount,
                     });
 
@@ -335,49 +290,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     }
 
                     return res;
-                }
-            ),
-
-            listCustomers: createAuthEndpoint(
-                "/usage/customers",
-                {
-                    method: "GET",
-                    middleware: [middleware],
-                    metadata: {
-                        openapi: {
-                            description: "Lists registered customers. These are in-memory registered customers.",
-                            responses: {
-                                200: {
-                                    description: "List of registered customers.",
-                                    content: {
-                                        "application/json": {
-                                            schema: {
-                                                type: "array",
-                                                items: {
-                                                    type: "object",
-                                                    properties: {
-                                                        referenceId: { type: "string" },
-                                                        referenceType: { type: "string" },
-                                                        email: { type: "string" },
-                                                        name: { type: "string" },
-                                                    },
-                                                    required: ["referenceId", "referenceType"],
-                                                },
-                                            },
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                async () => {
-                    return Object.values(customers).map((c) => ({
-                        referenceId: c.referenceId,
-                        referenceType: c.referenceType,
-                        email: c.email,
-                        name: c.name,
-                    }))
                 }
             ),
 
@@ -475,11 +387,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 },
                 async (ctx) => {
                     const adapter = getUsageAdapter(ctx.context);
-                    const customer = await getCustomer(ctx.body.referenceId)
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` })
+                    }
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
                     if (!feature) {
                         throw new APIError("NOT_FOUND", { message: "Feature not found" });
@@ -540,14 +457,20 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     },
                 },
                 async (ctx) => {
-                    const customer = await getCustomer(ctx.body.referenceId)
                     const adapter = getUsageAdapter(ctx.context);
+                    const customer = await adapter.getCustomer({
+                        referenceId: ctx.body.referenceId
+                    });
+                    if (!customer) {
+                        throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
+                    }
                     const feature = getFeature({
                         featureKey: ctx.body.featureKey,
                         overrideKey: ctx.body.overrideKey,
-                        customer
                     });
-                    return await syncUsage({ customer, adapter, feature });
+
+                    const usage = await syncUsage({ adapter, feature, customer })
+                    return usage
                 }
             ),
         },
