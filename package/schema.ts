@@ -29,6 +29,7 @@ export const usageSchema = z.object({
     referenceType: z.string(),
     event: z.string().optional(),
     createdAt: z.date(),
+    lastResetAt: z.date(),
     amount: z.number(),
     afterAmount: z.number(),
     feature: z.string(),
