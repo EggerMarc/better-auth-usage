@@ -6,6 +6,13 @@ import { getUsageAdapter } from "package/adapter";
 import { checkLimit } from "package/utils";
 import { usageMiddleware } from "package/middlewares/usage";
 
+/**
+ * Creates an authenticated POST endpoint at /usage/check that validates the request body and checks a customer's latest usage against a feature's configured limits.
+ *
+ * @param features - Feature definitions available for lookup and limit evaluation.
+ * @param overrides - Optional override definitions that can alter or extend feature definitions.
+ * @returns The configured authenticated endpoint which responds with a status string describing the usage check result.
+ */
 export function getCheckEndpoint({ features, overrides }: UsageOptions) {
     return createAuthEndpoint(
         "/usage/check",

@@ -10,18 +10,10 @@ import {
 } from "./endpoints/";
 
 /**
- * Usage plugin for BetterAuth
+ * Creates a BetterAuth plugin that provides usage metering, customer schema, and endpoints for feature consumption, checks, listing, upserting customers, and syncing resets.
  *
- * Responsibilities:
- *  - provide endpoints to register customers (in-memory by default)
- *  - consume (meter) feature usage with before/after hooks
- *  - check usage limits
- *  - sync/reset usage according to `feature.reset`
- *
- * Notes:
- *  - Customer shape is validated at runtime with `customerSchema` (zod).
- *  - By default customers are kept in-memory (options.customers). Persistent customers
- *  and customer based limits is in the roadmap
+ * @param options - Configuration and overrides for the usage plugin and its endpoint factories
+ * @returns A BetterAuthPlugin exposing `usage` and `customer` schemas and endpoints: `getFeature`, `consumeFeature`, `listFeatures`, `checkUsage`, `upsertCustomer`, and `syncUsage`
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     return {

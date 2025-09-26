@@ -1,6 +1,12 @@
 import { createAuthEndpoint } from "better-auth/api"
 import type { UsageOptions } from "package/types"
 
+/**
+ * Creates an authenticated GET endpoint at "/usage/features" that lists registered features.
+ *
+ * @param features - Mapping of registered features; each value must contain `key` and `details`.
+ * @returns An array of objects where each object has `featureKey` (the feature's key) and `details` (an array of detail strings).
+ */
 export function getFeaturesEndpoint({ features }: UsageOptions) {
     return createAuthEndpoint(
         "/usage/features",

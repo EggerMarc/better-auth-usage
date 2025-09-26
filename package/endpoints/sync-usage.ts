@@ -5,6 +5,16 @@ import { resolveSyncUsage } from "package/resolvers/sync-usage";
 import type { UsageOptions } from "package/types";
 import { z } from "zod"
 
+/**
+ * Create an authenticated POST endpoint at /usage/sync that synchronizes a customer's usage according to reset rules.
+ *
+ * The endpoint validates a JSON body containing `referenceId`, `featureKey`, and optional `overrideKey`, looks up the customer,
+ * resolves the feature (considering provided features and overrides), and returns the resolved sync usage. If the customer is not found,
+ * the endpoint responds with a 404 error.
+ *
+ * @param options - Configuration containing available features and overrides used to resolve the feature for sync
+ * @returns The configured authenticated endpoint for syncing customer usage; responds with the resolved usage value or a 404 when the customer is not found
+ */
 export function getSyncEndpoint({ features, overrides }: UsageOptions) {
     return createAuthEndpoint(
         "/usage/sync",
