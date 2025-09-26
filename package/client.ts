@@ -10,7 +10,7 @@ export const usageClient = () => {
             "/usage/features/:featureKey": "GET",
             "/usage/upsert-customer": "POST",
             "/usage/consume": "POST",
-            "/usage/check": "GET",
+            "/usage/check": "POST",
             "/usage/sync": "POST",
         },
     } satisfies BetterAuthClientPlugin;
