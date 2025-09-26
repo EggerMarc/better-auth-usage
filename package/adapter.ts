@@ -60,10 +60,15 @@ export const getUsageAdapter = (context: AuthContext) => {
             const usage = await adapter.transaction(async (tx) => {
                 const lastUsage = await tx.findMany<Usage>({
                     model: "usage",
-                    where: [{ field: "referenceId", value: referenceId }, { field: "feature", value: feature.key }],
-                    sortBy: { field: "createdAt", direction: "desc" }, limit: 1
+                    where: [
+                        { field: "referenceId", value: referenceId },
+                        { field: "feature",   value: feature.key }
+                    ],
+                    sortBy: { field: "createdAt", direction: "desc" },
+                    limit: 1
                 })
-                const reset = shouldReset(lastUsage[0].lastResetAt, feature.reset ?? "never");
+                const last = lastUsage[0];
+                const reset = shouldReset(last?.lastResetAt ?? null, feature.reset ?? "never");
                 if (reset.shouldReset && reset.nextReset) {
                     // trigger sync
                     const usage = await tx.create<Usage>({
