@@ -1,7 +1,7 @@
 import type { UsageAdapter } from "package/adapter"
 import type { Feature, Customer } from "package/types"
 
-export async function resolveSync({
+export async function resolveSyncUsage({
     adapter,
     feature,
     customer

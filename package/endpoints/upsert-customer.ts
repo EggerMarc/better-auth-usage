@@ -1,4 +1,4 @@
-import { createAuthEndpoint } from "better-auth/api";
+import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapter";
 import { customerSchema } from "package/schema";
 
@@ -6,7 +6,7 @@ export function getUpsertCustomerEndpoint() {
     return createAuthEndpoint("/usage/upsert-customer", {
         method: "POST",
         body: customerSchema,
-        middleware: [middleware],
+        middleware: [sessionMiddleware],
         metadata: {
             openapi: {
                 description: "Upserts a customer to the customer table",

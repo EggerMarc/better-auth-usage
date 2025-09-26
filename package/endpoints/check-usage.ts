@@ -1,16 +1,17 @@
-import { APIError, createAuthEndpoint } from "better-auth/api";
+import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
 import { getUsageAdapter } from "package/adapter";
 import { checkLimit } from "package/utils";
+import { usageMiddleware } from "package/middlewares/usage";
 
 export function getCheckEndpoint({ features, overrides }: UsageOptions) {
     return createAuthEndpoint(
         "/usage/check",
         {
             method: "POST", // changed to POST so we can rely on body validation consistently
-            middleware: [middleware],
+            middleware: [sessionMiddleware, usageMiddleware],
             body: z.object({
                 referenceId: z.string(),
                 featureKey: z.string(),

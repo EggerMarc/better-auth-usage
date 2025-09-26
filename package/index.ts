@@ -1,8 +1,5 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError } from "better-auth/api"
 import type { UsageOptions } from "./types.ts";
-import { createAuthMiddleware } from "better-auth/api";
-import { resolveFeature } from "./resolvers/features.ts";
 import {
     getSyncEndpoint,
     getUpsertCustomerEndpoint,
@@ -27,31 +24,6 @@ import {
  *  and customer based limits is in the roadmap
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
-    const { features, overrides } = options;
-
-    const middleware = createAuthMiddleware(async (ctx) => {
-        const session = ctx.context.session;
-        if (!session) {
-            throw new APIError("UNAUTHORIZED", { message: "Session not found" });
-        }
-        if (ctx.body?.referenceId && ctx.body?.featureKey) {
-            const feature = resolveFeature({
-                featureKey: ctx.body.featureKey,
-                overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
-            })
-            const isAuthorized = (await feature.authorizeReference?.({
-                ...ctx.body,
-            })) ?? true;
-            if (!isAuthorized) {
-                throw new APIError("UNAUTHORIZED", {
-                    message: `Customer unauthorized by feature ${feature.key}`,
-                });
-            }
-        }
-    });
-
     return {
         id: "@eggermarc/usage",
         schema: {
@@ -87,8 +59,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
              * - runs before hook
              * - inserts usage row (adapter)
              * - runs after hook
-             *
-             * Idempotency & concurrency control are NOT implemented here (see suggestions below).
              */
             consumeFeature: getConsumeEndpoint(options),
             listFeatures: getFeaturesEndpoint(options),

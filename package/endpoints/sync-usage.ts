@@ -1,10 +1,11 @@
 import { APIError, createAuthEndpoint } from "better-auth/api";
-import { resolveSync } from "bun";
-import { type UsageEndpoint, getUsageAdapter } from "package/adapter";
+import { getUsageAdapter } from "package/adapter";
 import { resolveFeature } from "package/resolvers/features";
+import { resolveSyncUsage } from "package/resolvers/sync-usage";
+import type { UsageOptions } from "package/types";
 import { z } from "zod"
 
-export function getSyncEndpoint({ features, overrides }: UsageEndpoint) {
+export function getSyncEndpoint({ features, overrides }: UsageOptions) {
     return createAuthEndpoint(
         "/usage/sync",
         {
@@ -54,7 +55,7 @@ export function getSyncEndpoint({ features, overrides }: UsageEndpoint) {
                 overrides
             });
 
-            const usage = resolveSync({ adapter, feature, customer })
+            const usage = await resolveSyncUsage({ adapter, feature, customer })
             return usage
         }
     )

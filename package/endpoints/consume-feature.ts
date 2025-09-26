@@ -1,5 +1,6 @@
-import { APIError, createAuthEndpoint } from "better-auth/api";
+import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapter";
+import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
 import { z } from "zod"
@@ -11,7 +12,7 @@ export function getConsumeEndpoint({
         "/usage/consume",
         {
             method: "POST",
-            middleware: [middleware],
+            middleware: [sessionMiddleware, usageMiddleware],
             body: z.object({
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),

@@ -1,4 +1,4 @@
-export * from "./sync.ts"
+export * from "./sync-usage.ts"
 export * from "./check-usage.ts"
 export * from "./get-feature.ts"
 export * from "./list-features.ts"
