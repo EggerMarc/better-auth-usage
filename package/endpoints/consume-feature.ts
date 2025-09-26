@@ -110,4 +110,5 @@ export function getConsumeEndpoint({
 
             return res;
         }
+    )
 }

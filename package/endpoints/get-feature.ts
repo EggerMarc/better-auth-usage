@@ -63,5 +63,5 @@ export function getFeatureEndpoint({
             delete (serializableFeature as any).hooks;
             return { feature: serializableFeature };
         }
-    ),
+    )
 }
