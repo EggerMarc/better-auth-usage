@@ -22,8 +22,7 @@ import { customerSchema } from "./schema.ts";
  *  and customer based limits is in the roadmap
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
-    const { customers: initCustomers, features, overrides, getCustomer: getCustomerOverride } = options;
-    const customers: Record<string, Customer> = initCustomers ? { ...initCustomers } : {};
+    const { features, overrides } = options;
     const featureKeys = Object.keys(features);
 
     async function syncUsage({
@@ -53,7 +52,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         params: {
             featureKey: string,
             overrideKey?: string
-            customer?: Customer
         }
     ): Feature {
         let feature = features[params.featureKey]
@@ -72,27 +70,17 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 };
             }
         }
-
+        /*
         if (params.customer?.featureLimits?.[params.featureKey]) {
             feature = {
                 ...feature,
                 ...params.customer.featureLimits[params.featureKey],
             };
         }
+        */
 
         return feature
     }
-
-    const getCustomer: (referenceId: string, referenceType?: string) => Promise<Customer> =
-        getCustomerOverride
-            ? async (referenceId, referenceType) => await getCustomerOverride(referenceId, referenceType)
-            : async (referenceId) => {
-                const customer = customers[referenceId];
-                if (!customer) {
-                    throw new APIError("NOT_FOUND", { message: `Customer ${referenceId} not found` });
-                }
-                return customer;
-            };
 
     const middleware = createAuthMiddleware(async (ctx) => {
         const session = ctx.context.session;
@@ -100,15 +88,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             throw new APIError("UNAUTHORIZED", { message: "Session not found" });
         }
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
-            const customer = await getCustomer(ctx.body.referenceId)
             const feature = getFeature({
                 featureKey: ctx.body.featureKey,
-                overrideKey: ctx.body.overrideKey,
-                customer
-            });
+                overrideKey: ctx.body.overrideKey
+            })
             const isAuthorized = (await feature.authorizeReference?.({
                 ...ctx.body,
-                customer,
             })) ?? true;
             if (!isAuthorized) {
                 throw new APIError("UNAUTHORIZED", {
@@ -132,6 +117,14 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     createdAt: { type: "date", required: true },
                 },
             },
+            customer: {
+                fields: {
+                    referenceId: { type: "string", required: true, input: true, unique: true },
+                    referenceType: { type: "string", required: true, input: true },
+                    email: { type: "string", required: false, input: true },
+                    name: { type: "string", required: false, input: true }
+                }
+            }
         },
 
         endpoints: {

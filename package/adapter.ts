@@ -1,5 +1,5 @@
 import type { AuthContext } from "better-auth/types";
-import type { Feature, ResetType, Usage } from "./types.ts"
+import type { Customer, Feature, ResetType, Usage } from "./types.ts"
 import { shouldReset } from "./utils.ts";
 
 export const getUsageAdapter = (context: AuthContext) => {
@@ -138,6 +138,39 @@ export const getUsageAdapter = (context: AuthContext) => {
             });
             return usage
         },
+
+        getCustomer: async ({ referenceId }: { referenceId: string }) => {
+            const customer = await adapter.findOne<Customer>({
+                model: "customer", where: [{
+                    field: "referenceId",
+                    value: referenceId
+                }]
+            })
+            return customer
+        },
+
+        upsertCustomer: async (customer: Customer) => {
+            const upsertedCustomer = await adapter.transaction(async (tx) => {
+                const existingCustomer = await tx.findOne<Customer>({
+                    model: "customer",
+                    where: [{ field: "referenceId", value: customer.referenceId }],
+                });
+
+                if (existingCustomer) {
+                    return await tx.update<Customer>({
+                        model: "customer",
+                        where: [{ field: "referenceId", value: customer.referenceId }],
+                        update: customer,
+                    });
+                } else {
+                    return await tx.create<Customer>({
+                        model: "customer",
+                        data: customer,
+                    });
+                }
+            });
+            return upsertedCustomer;
+        }
     };
 };
 
