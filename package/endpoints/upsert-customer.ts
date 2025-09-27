@@ -6,7 +6,7 @@ import { customerSchema } from "package/schema";
  * Creates an authenticated POST endpoint at "/usage/upsert-customer" that upserts a customer record.
  *
  * The endpoint expects a JSON body containing `referenceId` and `referenceType` (required), and optional
- * `name`, `email`, and `overrideKey`. The endpoint applies session authentication and returns the upserted customer object.
+ * `name` and `email`. The endpoint applies session authentication and returns the upserted customer object.
  *
  * @returns The configured endpoint handler which accepts the customer payload and returns the upserted customer object
  */
@@ -29,7 +29,6 @@ export function getUpsertCustomerEndpoint() {
                                     referenceType: { type: "string" },
                                     name: { type: "string" },
                                     email: { type: "string" },
-                                    overrideKey: { type: "string" }
                                 },
                                 required: ["referenceId", "referenceType"],
                             },
