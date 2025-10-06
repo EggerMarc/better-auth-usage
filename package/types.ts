@@ -142,7 +142,7 @@ export type Customers = Record<string, Customer>;
  * Example:
  * ```ts
  * {
- *   "customer-123": {
+ *   "starter-plan": {
  *     features: {
  *       "api-tokens": { maxLimit: 5000 }
  *     }
