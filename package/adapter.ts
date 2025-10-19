@@ -68,7 +68,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                     limit: 1
                 })
                 const last = lastUsage[0];
-                const reset = shouldReset(last?.lastResetAt ?? null, feature.reset ?? "never");
+                const reset = shouldReset(last ? (last.lastResetAt ?? null) : null, feature.reset ?? "never");
                 if (reset.shouldReset && reset.nextReset) {
                     // trigger sync
                     const usage = await tx.create<Usage>({
@@ -94,7 +94,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                         referenceType,
                         event,
                         amount,
-                        lastResetAt: lastUsage[0].lastResetAt,
+                        lastResetAt: lastUsage[0]?.lastResetAt ?? null,
                         feature: feature.key,
                         afterAmount: amount + (lastUsage[0].afterAmount ?? 0),
                         createdAt: new Date(),
