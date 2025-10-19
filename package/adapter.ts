@@ -96,7 +96,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                         amount,
                         lastResetAt: lastUsage[0]?.lastResetAt ?? null,
                         feature: feature.key,
-                        afterAmount: amount + (lastUsage[0].afterAmount ?? 0),
+                        afterAmount: amount + (lastUsage[0]?.afterAmount ?? 0),
                         createdAt: new Date(),
                     }
                 })
