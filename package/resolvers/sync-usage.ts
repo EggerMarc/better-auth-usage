@@ -1,4 +1,4 @@
-import type { UsageAdapter } from "package/adapter"
+import type { UsageAdapter } from "package/adapters"
 import type { Feature, Customer } from "package/types"
 
 /**

@@ -7,11 +7,7 @@ Feature and usage-based authorization plugin for [BetterAuth](https://www.better
 ## Roadmap
 Below are the action items to fix known limitations of this plugin. Namely, customer management and consumption indepotency.
 - [x] Customer table
-- [ ] Customer to feature table (for customer limits)
-    - [ ] Feature 
-    - [ ] Follow slowly changing dimensions model
 - [x] Consumption adapter as transaction
-- [ ] Non blocking syncUsage
 - [ ] Customer provider (Optional - considering leaving this to dev)
     - [ ] `useCustomer(referenceId)`
 

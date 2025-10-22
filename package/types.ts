@@ -195,3 +195,7 @@ export interface UsageOptions {
     overrides?: Overrides;
 }
 
+/**
+ * Caching Types
+ */
+export type cached_Usage = z.infer<typeof cached_usageSchema>;

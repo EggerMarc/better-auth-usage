@@ -18,6 +18,11 @@
         "noUnusedLocals": false,
         "noUnusedParameters": false,
         "noPropertyAccessFromIndexSignature": false,
-        "baseUrl": "."
+        "baseUrl": ".",
+        "paths": {
+            "@/*": [
+                "./package/*"
+            ]
+        }
     }
 }

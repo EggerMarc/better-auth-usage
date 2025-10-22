@@ -1,6 +1,6 @@
 import type { AuthContext } from "better-auth/types";
-import type { Customer, Feature, ResetType, Usage } from "./types.ts"
-import { shouldReset } from "./utils.ts";
+import type { Customer, Feature, ResetType, Usage } from "@/types.ts"
+import { shouldReset } from "@/utils.ts";
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
@@ -44,6 +44,67 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage[0]
         },
 
+        resetUsage: async ({
+            referenceId,
+            referenceType,
+            curr,
+            feature,
+        }: {
+            referenceId: string,
+            referenceType: string,
+            curr?: number,
+            feature: Omit<Feature, "hooks">
+        }) => {
+            if (!feature.resetValue) {
+                return //Success
+            }
+
+            if (curr) {
+                const usage = await adapter.create<Usage>({
+                    model: "usage",
+                    data: {
+                        amount: feature.resetValue - curr,
+                        feature: feature.key,
+                        referenceId,
+                        referenceType,
+                        event: "reset",
+                        lastResetAt: new Date(),
+                        createdAt: new Date()
+                    }
+                })
+
+                return //Success
+            }
+
+            const transaction = await adapter.transaction(async (tx) => {
+                const currentUsage = await tx.findMany<Usage>({
+                    model: "usage",
+                    where: [
+                        { field: "referenceId", value: referenceId },
+                        { field: "feature", value: feature.key },
+                    ],
+                    sortBy: { field: "createdAt", direction: "desc" }
+                })
+                if (currentUsage.length === 0) {
+                    return // Sync
+                }
+                const total = currentUsage.reduce((curr, { amount }) => amount + curr, 0)
+                const usage = await tx.create<Usage>({
+                    model: "usage",
+                    data: {
+                        amount: feature.resetValue! - total,
+                        feature: feature.key,
+                        event: "reset",
+                        referenceId,
+                        referenceType,
+                        lastResetAt: new Date(),
+                        createdAt: new Date()
+                    }
+                })
+                return // Success
+            })
+        },
+
         insertUsage: async ({
             amount,
             referenceId,
@@ -58,6 +119,40 @@ export const getUsageAdapter = (context: AuthContext) => {
             feature: Omit<Feature, "hooks">
         }) => {
             const usage = await adapter.transaction(async (tx) => {
+                const lastUsage = await tx.findMany<Usage>({
+                    model: "usage",
+                    where: [
+                        { field: "referenceId", value: referenceId },
+                        { field: "feature", value: feature.key }
+                    ],
+                    sortBy: { field: "createdAt", direction: "desc" },
+                    limit: 1
+                })
+
+                const last = lastUsage[0];
+                const reset = shouldReset(last ? (last.lastResetAt ?? null) : null, feature.reset ?? "never");
+                if (reset.shouldReset && reset.nextReset) {
+                    // trigger sync
+                    const usage = await tx.create<Usage>({
+                        model: "usage", data: {
+                            referenceId,
+                            referenceType,
+                            event,
+                            amount: ,
+                            feature: feature.key,
+                            lastResetAt: reset.nextReset,
+                            createdAt: new Date()
+                        }
+                    })
+
+                    return usage
+                }
+
+            })
+
+
+
+            const depr_usage = await adapter.transaction(async (tx) => {
                 const lastUsage = await tx.findMany<Usage>({
                     model: "usage",
                     where: [
@@ -123,7 +218,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                     limit: 1
                 });
 
-                const reset = shouldReset(lastUsage[0].lastResetAt, feature.reset ?? "never");
+                const reset = shouldReset(lastUsage[0]?.lastResetAt ?? null, feature.reset ?? "never");
                 if (reset.shouldReset && reset.nextReset) {
                     const usage = await tx.create<Usage>({
                         model: "usage",
@@ -133,7 +228,6 @@ export const getUsageAdapter = (context: AuthContext) => {
                             event: "reset",
                             amount: 0,
                             feature: feature.key,
-                            afterAmount: feature.resetValue ?? 0,
                             lastResetAt: reset.nextReset,
                             createdAt: new Date(),
                         }

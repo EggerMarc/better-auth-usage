@@ -25,12 +25,21 @@ export const customerLimitsSchema = z.object({
 })
 
 export const usageSchema = z.object({
-    referenceId: z.string({}),
+    referenceId: z.string(),
     referenceType: z.string(),
     event: z.string().optional(),
     createdAt: z.date(),
     lastResetAt: z.date(),
     amount: z.number(),
-    afterAmount: z.number(),
+    // afterAmount: z.number(), -> We will instead use sum
     feature: z.string(),
+})
+
+export const cached_usageSchema = z.object({
+    referenceId: z.string(),
+    lastResetAt: z.date(),
+    feature: z.string(),
+    curr: z.number(),
+    maxLimit: z.number().optional(),
+    minLimit: z.number().optional(),
 })
