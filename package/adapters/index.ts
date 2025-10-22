@@ -1,9 +1,9 @@
 import type { AuthContext } from "better-auth/types";
 import type { Customer, Feature, ResetType, Usage } from "@/types.ts"
 import { shouldReset } from "@/utils.ts";
-import { resolveResetUsage } from "@/resolvers/reset-usage";
 import { resetUsageQuery } from "./queries/reset-usage";
 import { insertUsageQuery } from "./queries/insert-usage";
+import { getUsageQuery } from "./queries/get-usage";
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
@@ -77,56 +77,22 @@ export const getUsageAdapter = (context: AuthContext) => {
             feature: Omit<Feature, "hooks">
         }) => {
             const usage = await adapter.transaction(async (tx) => {
-                const usage = await tx.findMany<Usage>({
-                    model: "usage",
-                    where: [
-                        { field: "referenceId", value: referenceId },
-                        { field: "feature", value: feature.key }
-                    ],
-                    sortBy: { field: "createdAt", direction: "desc" },
+                const usage = await getUsageQuery({
+                    adapter,
+                    referenceId,
+                    referenceType,
+                    feature
+                });
+
+                return insertUsageQuery({
+                    adapter: tx,
+                    featureKey: feature.key,
+                    lastResetAt: usage?.lastResetAt!,
+                    referenceId,
+                    referenceType,
+                    amount,
+                    event
                 })
-                if (usage.length === 0) {
-                    const reset = await resetUsageQuery({
-                        adapter,
-                        referenceId,
-                        referenceType,
-                        curr: 0,
-                        feature
-                    })
-
-                    return insertUsageQuery({
-                        adapter: tx,
-                        featureKey: feature.key,
-                        lastResetAt: reset?.lastResetAt!,
-                        referenceId,
-                        referenceType,
-                        amount,
-                        event
-                    })
-                }
-                const last = usage[0];
-                const current = usage.reduce((value, { amount }) => amount + value, 0)
-                const reset = shouldReset(last ? (last.lastResetAt ?? null) : null, feature.reset ?? "never");
-                if (reset.shouldReset && reset.nextReset) {
-                    // trigger sync
-                    const reset = await resetUsageQuery({
-                        adapter,
-                        referenceId,
-                        referenceType,
-                        curr: current,
-                        feature
-                    })
-
-                    return insertUsageQuery({
-                        adapter: tx,
-                        featureKey: feature.key,
-                        lastResetAt: reset?.lastResetAt!,
-                        referenceId,
-                        referenceType,
-                        amount,
-                        event
-                    })
-                }
             })
 
             return usage
@@ -141,30 +107,11 @@ export const getUsageAdapter = (context: AuthContext) => {
                 resetValue?: number,
             }
         }) => {
-            const usage = await adapter.transaction(async (tx) => {
-                const lastUsage = await tx.findMany<Usage>({
-                    model: "usage",
-                    where: [{ field: "referenceId", value: referenceId }],
-                    sortBy: { field: "createdAt", direction: "desc" },
-                    limit: 1
-                });
-
-                const reset = shouldReset(lastUsage[0]?.lastResetAt ?? null, feature.reset ?? "never");
-                if (reset.shouldReset && reset.nextReset) {
-                    const usage = await tx.create<Usage>({
-                        model: "usage",
-                        data: {
-                            referenceId,
-                            referenceType,
-                            event: "reset",
-                            amount: 0,
-                            feature: feature.key,
-                            lastResetAt: reset.nextReset,
-                            createdAt: new Date(),
-                        }
-                    })
-                    return usage
-                }
+            const usage = await getUsageQuery({
+                adapter,
+                referenceId,
+                referenceType,
+                feature
             });
             return usage
         },
