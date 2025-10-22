@@ -4,7 +4,6 @@ import type { Adapter, TransactionAdapter } from "better-auth";
 export async function insertUsageQuery({
     adapter,
     referenceId,
-    referenceType,
     featureKey,
     lastResetAt,
     amount,
@@ -12,7 +11,6 @@ export async function insertUsageQuery({
 }: {
     adapter: Adapter | TransactionAdapter,
     referenceId: string,
-    referenceType: string,
     featureKey: string,
     lastResetAt: Date,
     amount: number,
@@ -22,7 +20,6 @@ export async function insertUsageQuery({
         model: "usage",
         data: {
             referenceId,
-            referenceType,
             amount,
             lastResetAt,
             event,

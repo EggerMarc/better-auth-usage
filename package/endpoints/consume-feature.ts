@@ -1,5 +1,5 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { getUsageAdapter } from "package/adapter";
+import { getUsageAdapter } from "package/adapters";
 import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
@@ -87,22 +87,17 @@ export function getConsumeEndpoint({
                 featureKey: feature.key,
             });
 
-            const beforeAmount = lastUsage?.afterAmount ?? 0;
-            const afterAmount = beforeAmount + ctx.body.amount;
             if (feature.hooks?.before) {
                 await feature.hooks.before({
                     customer,
                     usage: {
                         amount: ctx.body.amount,
-                        beforeAmount,
-                        afterAmount,
                     },
                     feature,
                 });
             }
 
             const res = await adapter.insertUsage({
-                referenceType: customer.referenceType,
                 referenceId: customer.referenceId,
                 event: ctx.body.event,
                 feature: feature,
@@ -114,8 +109,6 @@ export function getConsumeEndpoint({
                     customer,
                     usage: {
                         amount: ctx.body.amount,
-                        beforeAmount,
-                        afterAmount,
                     },
                     feature,
                 });

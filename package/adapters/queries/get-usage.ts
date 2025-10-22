@@ -6,12 +6,10 @@ import { shouldReset } from "@/utils";
 export async function getUsageQuery({
     adapter,
     referenceId,
-    referenceType,
     feature,
 }: {
     adapter: Adapter,
     referenceId: string,
-    referenceType: string,
     feature: Omit<Feature, "hooks">
 }) {
 
@@ -28,7 +26,6 @@ export async function getUsageQuery({
         const reset = await resetUsageQuery({
             adapter,
             referenceId,
-            referenceType,
             curr: 0,
             feature
         })
@@ -43,7 +40,6 @@ export async function getUsageQuery({
         const reset = await resetUsageQuery({
             adapter,
             referenceId,
-            referenceType,
             curr: current,
             feature,
         })

@@ -5,13 +5,11 @@ import { APIError, type Adapter } from "better-auth"
 export async function resetUsageQuery({
     adapter,
     referenceId,
-    referenceType,
     curr,
     feature,
 }: {
     adapter: Adapter,
     referenceId: string,
-    referenceType: string,
     curr?: number,
     feature: Omit<Feature, "hooks">
 }) {
@@ -26,7 +24,6 @@ export async function resetUsageQuery({
                 amount: feature.resetValue - curr,
                 feature: feature.key,
                 referenceId,
-                referenceType,
                 event: "reset",
                 lastResetAt: new Date(),
                 createdAt: new Date()
@@ -53,7 +50,6 @@ export async function resetUsageQuery({
                     feature: feature.key,
                     event: "reset",
                     referenceId,
-                    referenceType,
                     lastResetAt: new Date(),
                     createdAt: new Date()
                 }
@@ -69,7 +65,6 @@ export async function resetUsageQuery({
                 feature: feature.key,
                 event: "reset",
                 referenceId,
-                referenceType,
                 lastResetAt: new Date(),
                 createdAt: new Date()
             }

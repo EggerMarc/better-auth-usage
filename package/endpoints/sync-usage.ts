@@ -1,5 +1,5 @@
 import { APIError, createAuthEndpoint } from "better-auth/api";
-import { getUsageAdapter } from "package/adapter";
+import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
 import { resolveSyncUsage } from "package/resolvers/sync-usage";
 import type { UsageOptions } from "package/types";

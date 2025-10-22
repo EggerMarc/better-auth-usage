@@ -2,7 +2,7 @@ import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptions } from "package/types";
-import { getUsageAdapter } from "package/adapter";
+import { getUsageAdapter } from "package/adapters";
 import { checkLimit } from "package/utils";
 import { usageMiddleware } from "package/middlewares/usage";
 

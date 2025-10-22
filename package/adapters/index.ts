@@ -1,6 +1,5 @@
 import type { AuthContext } from "better-auth/types";
 import type { Customer, Feature, ResetType, Usage } from "@/types.ts"
-import { shouldReset } from "@/utils.ts";
 import { resetUsageQuery } from "./queries/reset-usage";
 import { insertUsageQuery } from "./queries/insert-usage";
 import { getUsageQuery } from "./queries/get-usage";
@@ -49,30 +48,26 @@ export const getUsageAdapter = (context: AuthContext) => {
 
         resetUsage: async ({
             referenceId,
-            referenceType,
             curr,
             feature,
         }: {
             referenceId: string,
-            referenceType: string,
             curr?: number,
             feature: Omit<Feature, "hooks">
         }) => {
             return resetUsageQuery({
-                adapter, referenceId, referenceType, curr, feature
+                adapter, referenceId, curr, feature
             })
         },
 
         insertUsage: async ({
             amount,
             referenceId,
-            referenceType,
             event,
             feature
         }: {
             amount: number,
             referenceId: string,
-            referenceType: string,
             event: string,
             feature: Omit<Feature, "hooks">
         }) => {
@@ -80,7 +75,6 @@ export const getUsageAdapter = (context: AuthContext) => {
                 const usage = await getUsageQuery({
                     adapter,
                     referenceId,
-                    referenceType,
                     feature
                 });
 
@@ -89,7 +83,6 @@ export const getUsageAdapter = (context: AuthContext) => {
                     featureKey: feature.key,
                     lastResetAt: usage?.lastResetAt!,
                     referenceId,
-                    referenceType,
                     amount,
                     event
                 })
@@ -98,9 +91,8 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage
         },
 
-        syncUsage: async ({ referenceId, referenceType, feature }: {
+        syncUsage: async ({ referenceId, feature }: {
             referenceId: string,
-            referenceType: string
             feature: {
                 key: string,
                 reset: ResetType,
@@ -110,7 +102,6 @@ export const getUsageAdapter = (context: AuthContext) => {
             const usage = await getUsageQuery({
                 adapter,
                 referenceId,
-                referenceType,
                 feature
             });
             return usage

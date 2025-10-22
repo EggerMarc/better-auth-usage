@@ -1,5 +1,5 @@
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { getUsageAdapter } from "package/adapter";
+import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
 
 /**
