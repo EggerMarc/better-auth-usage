@@ -23,6 +23,10 @@
             "@/*": [
                 "./package/*"
             ]
-        }
+        },
+        "include": [
+            "src",
+            "global.d.ts"
+        ]
     }
 }

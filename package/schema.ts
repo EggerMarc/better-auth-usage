@@ -38,8 +38,15 @@ export const usageSchema = z.object({
 export const cached_usageSchema = z.object({
     referenceId: z.string(),
     lastResetAt: z.date(),
+    updatedAt: z.date(),
     feature: z.string(),
-    curr: z.number(),
+    current: z.number(),
     maxLimit: z.number().optional(),
     minLimit: z.number().optional(),
+})
+
+export const cached_usageEvent = z.object({
+    referenceId: z.string(),
+    feature: z.string(),
+    amount: z.number()
 })

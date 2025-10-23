@@ -1,4 +1,4 @@
-import { customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
+import { cached_usageEvent, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
 import { z } from "zod";
 
 /**
@@ -199,3 +199,4 @@ export interface UsageOptions {
  * Caching Types
  */
 export type cached_Usage = z.infer<typeof cached_usageSchema>;
+export type cached_UsageEvent = z.infer<typeof cached_usageEvent>;

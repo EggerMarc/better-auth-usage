@@ -25,7 +25,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     referenceType: { type: "string", required: true, input: true },
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
-                    afterAmount: { type: "number", required: true, input: true },
+                    // afterAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
                     lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },

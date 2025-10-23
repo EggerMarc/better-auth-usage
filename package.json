@@ -56,6 +56,9 @@
     "type": "module",
     "types": "./dist/index.d.ts",
     "dependencies": {
+        "events": "^3.3.0",
+        "ioredis": "^5.8.2",
+        "socket.io": "^4.8.1",
         "zod": "^4.1.9"
     }
 }
