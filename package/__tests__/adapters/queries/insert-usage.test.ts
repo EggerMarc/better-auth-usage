@@ -1,149 +1,143 @@
-import { describe, test, expect, mock } from "bun:test";
+import { describe, test, expect, mock, beforeEach } from "bun:test";
 import { insertUsageQuery } from "../../../adapters/queries/insert-usage";
+import type { Adapter } from "better-auth";
 
 describe("insertUsageQuery", () => {
-  test("should insert usage with correct data", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
+  let mockAdapter: Adapter;
 
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
+  beforeEach(() => {
+    mockAdapter = {
+      create: mock((params) => Promise.resolve({
+        id: "usage-1",
+        ...params.data,
+      })),
+    } as unknown as Adapter;
+  });
 
+  test("creates usage record with all required fields", async () => {
     const lastResetAt = new Date();
     const result = await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
+      referenceId: "ref-123",
       featureKey: "api-calls",
       lastResetAt,
-      amount: 5,
-      event: "consume"
+      amount: 10,
+      event: "use",
     });
 
-    expect(mockCreate).toHaveBeenCalled();
-    expect(result.referenceId).toBe("user-123");
-    expect(result.feature).toBe("api-calls");
-    expect(result.amount).toBe(5);
-    expect(result.event).toBe("consume");
+    expect(mockAdapter.create).toHaveBeenCalled();
+    expect(result).toHaveProperty("referenceId", "ref-123");
+    expect(result).toHaveProperty("feature", "api-calls");
+    expect(result).toHaveProperty("amount", 10);
   });
 
-  test("should use default event 'use'", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
-
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
-
-    await insertUsageQuery({
+  test("defaults event to 'use' when not provided", async () => {
+    const result = await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
+      referenceId: "ref-123",
       featureKey: "api-calls",
       lastResetAt: new Date(),
       amount: 5,
-      event: "use"
+      event: "use",
     });
 
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.data.event).toBe("use");
+    expect(result.event).toBe("use");
   });
 
-  test("should handle zero amount", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
-
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
-
+  test("accepts custom event name", async () => {
     const result = await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
+      referenceId: "ref-123",
+      featureKey: "api-calls",
+      lastResetAt: new Date(),
+      amount: 5,
+      event: "reset",
+    });
+
+    expect(result.event).toBe("reset");
+  });
+
+  test("preserves lastResetAt timestamp", async () => {
+    const specificDate = new Date("2024-01-15T10:00:00Z");
+    const result = await insertUsageQuery({
+      adapter: mockAdapter,
+      referenceId: "ref-123",
+      featureKey: "api-calls",
+      lastResetAt: specificDate,
+      amount: 5,
+      event: "use",
+    });
+
+    expect(result.lastResetAt).toEqual(specificDate);
+  });
+
+  test("sets createdAt to current time", async () => {
+    const beforeCreate = Date.now();
+    const result = await insertUsageQuery({
+      adapter: mockAdapter,
+      referenceId: "ref-123",
+      featureKey: "api-calls",
+      lastResetAt: new Date(),
+      amount: 5,
+      event: "use",
+    });
+    const afterCreate = Date.now();
+
+    expect(result.createdAt.getTime()).toBeGreaterThanOrEqual(beforeCreate);
+    expect(result.createdAt.getTime()).toBeLessThanOrEqual(afterCreate);
+  });
+
+  test("handles zero amount", async () => {
+    const result = await insertUsageQuery({
+      adapter: mockAdapter,
+      referenceId: "ref-123",
       featureKey: "api-calls",
       lastResetAt: new Date(),
       amount: 0,
-      event: "test"
+      event: "use",
     });
 
     expect(result.amount).toBe(0);
   });
 
-  test("should handle negative amount", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
-
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
-
+  test("handles negative amount", async () => {
     const result = await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
-      featureKey: "credits",
+      referenceId: "ref-123",
+      featureKey: "api-calls",
       lastResetAt: new Date(),
       amount: -10,
-      event: "refund"
+      event: "refund",
     });
 
     expect(result.amount).toBe(-10);
   });
 
-  test("should set createdAt to current time", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
-
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
-
-    const before = Date.now();
+  test("calls adapter.create with correct model", async () => {
     await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
+      referenceId: "ref-123",
       featureKey: "api-calls",
       lastResetAt: new Date(),
       amount: 5,
-      event: "use"
+      event: "use",
     });
-    const after = Date.now();
 
-    const callArgs = mockCreate.mock.calls[0][0];
-    const createdAt = callArgs.data.createdAt.getTime();
-    expect(createdAt).toBeGreaterThanOrEqual(before);
-    expect(createdAt).toBeLessThanOrEqual(after);
+    const callArgs = (mockAdapter.create as any).mock.calls[0][0];
+    expect(callArgs.model).toBe("usage");
   });
 
-  test("should preserve lastResetAt", async () => {
-    const mockCreate = mock(async (data: any) => ({
-      id: "usage-id",
-      ...data.data
-    }));
-
-    const mockAdapter = {
-      create: mockCreate
-    } as any;
-
-    const lastResetAt = new Date("2024-01-01T00:00:00Z");
-    await insertUsageQuery({
+  test("works with TransactionAdapter", async () => {
+    const result = await insertUsageQuery({
       adapter: mockAdapter,
-      referenceId: "user-123",
+      referenceId: "ref-123",
       featureKey: "api-calls",
-      lastResetAt,
+      lastResetAt: new Date(),
       amount: 5,
-      event: "use"
+      event: "use",
     });
 
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.data.lastResetAt).toBe(lastResetAt);
+    expect(result).toBeDefined();
+    expect(mockAdapter.create).toHaveBeenCalled();
   });
 });
