@@ -1,6 +1,6 @@
 import { Server as SocketServer } from "socket.io";
 import { APIError, type BetterAuthPlugin } from "better-auth";
-import type { UsageOptions } from "./types";
+import type { UsageOptions, UsageOptionsWithCache } from "./types";
 import { UsageCache } from "./adapters/cache";
 import { UsageTracker } from "./realtime/usage-tracker";
 import { UsageWebSocketServer } from "./realtime/websocket-server";
@@ -26,7 +26,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     let tracker: UsageTracker | undefined;
     let wsServer: UsageWebSocketServer | undefined;
     let io: SocketServer | undefined;
-
+    const runtimeOptions: UsageOptionsWithCache = { ...options };
     return {
         id: "@eggermarc/usage",
 
@@ -41,6 +41,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             cache = new UsageCache({
                 url: options.cacheOptions.redisUrl,
             });
+            runtimeOptions.cache = cache;
 
             if (options.cacheOptions.enableRealtime) {
                 if (!options.cacheOptions.port) {
@@ -66,6 +67,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                         cache
                     );
                     await tracker.connect();
+                    runtimeOptions.tracker = tracker;
                     console.log("[better-auth-usage] Pub/sub tracker connected");
                 } catch (err) {
                     throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -76,7 +78,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 wsServer = new UsageWebSocketServer(
                     io,
                     tracker,
-                    options
+                    runtimeOptions
                 );
 
                 console.log("[better-auth-usage] WebSocket handlers registered");

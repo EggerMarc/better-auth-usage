@@ -31,6 +31,30 @@ export async function resolveGetUsage({
     }
 
     if (!data) {
+        if (options.cache) {
+            let { data: adapterData, error: adapterError } = await tryCatch(
+                adapter.getUsage({
+                    referenceId, feature
+                })
+            );
+
+            if (adapterError) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Failed to get from adapter`
+                })
+            }
+
+            if (adapterData) {
+                await options.cache.insertEvent({
+                    referenceId,
+                    feature: feature.key,
+                    amount: adapterData.amount,
+                })
+
+                return normalizeData(adapterData, "db")
+            }
+        }
+
         return {
             referenceId,
             feature: feature.key,
@@ -64,4 +88,3 @@ function normalizeData<
 
     return data as Usage
 }
-

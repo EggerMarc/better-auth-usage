@@ -1,6 +1,6 @@
 import { Server as SocketServer } from "socket.io";
 import { UsageTracker } from "./usage-tracker";
-import type { UsageOptions } from "@/types";
+import type { Feature, UsageOptions } from "@/types";
 import { tryCatch } from "@/utils";
 
 interface SubscribeRequest {
@@ -44,7 +44,7 @@ export class UsageWebSocketServer {
                             referenceId: sub.referenceId,
                             referenceType: sub.referenceType,
                             feature: feature.key,
-                            incomingId: ""
+                            incomingId: "" // TODO handle authorization
                         });
 
                         if (!authorized) {
@@ -73,13 +73,13 @@ export class UsageWebSocketServer {
                 });
             });
 
-            // Get current usage for a specific feature
             socket.on("get:usage", async (data: {
                 referenceId: string,
-                feature: string
+                feature: Omit<Feature, "hooks">
             }) => {
-
-                const { data: usage, error } = await tryCatch(this.tracker.getUsage(data.referenceId, data.feature))
+                const { data: usage, error } = await tryCatch(
+                    this.tracker.getUsage(data.referenceId, data.feature)
+                )
                 if (error) {
                     socket.emit("usage:error", {
                         error: "Failed to fetch usage"

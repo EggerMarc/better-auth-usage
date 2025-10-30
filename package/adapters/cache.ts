@@ -1,10 +1,12 @@
 import type {
+    Customer,
     Feature,
     cached_Usage as Usage,
     cached_UsageEvent as UsageEvent
 } from "@/types";
 
 import {
+    customerSchema,
     cached_usageEventSchema as usageEventSchema,
     cached_usageSchema as usageSchema
 } from "@/schema"
@@ -118,6 +120,20 @@ export class UsageCache extends EventEmitter {
 
     async disconnect() {
         await this.cache.quit()
+    }
+
+    async getCustomer(referenceId: string): Promise<Customer> {
+        const { data, error } = await tryCatch(this.cache.get(`customer:${referenceId}`))
+
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to get customer from cache for ${referenceId}` })
+        }
+
+        return customerSchema.parse(data)
+    }
+
+    async setCustomer(customer: Customer) {
+        await this.cache.set(`customer:${customer.referenceId}`, JSON.stringify(customer))
     }
 }
 

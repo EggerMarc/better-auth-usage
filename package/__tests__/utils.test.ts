@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { tryCatch, checkLimit, shouldReset } from "@/utils";
 
-describe("successful promises", () => {
+describe("tryCatch", () => {
     it("should return data on successful promise", async () => {
         const promise = Promise.resolve(42);
         const result = await tryCatch(promise);
@@ -9,20 +9,14 @@ describe("successful promises", () => {
         expect(result.data).toBe(42);
         expect(result.error).toBeNull();
 
-        expect(result).toBe("below-min-limit");
     });
-});
+    it("should handle string values", async () => {
+        const promise = Promise.resolve("success");
+        const result = await tryCatch(promise);
 
-it("should handle string values", async () => {
-    const promise = Promise.resolve("success");
-    const result = await tryCatch(promise);
-
-    expect(result.data).toBe("success");
-    expect(result.error).toBeNull();
-    expect(result).toBe("in-limit");
-});
-
-describe("tryCatch", () => {
+        expect(result.data).toBe("success");
+        expect(result.error).toBeNull();
+    });
     it("should handle object values", async () => {
         const obj = { id: 1, name: "test" };
         const promise = Promise.resolve(obj);
@@ -194,7 +188,6 @@ describe("edge cases", () => {
 
         expect(result.error?.message).toBe("immediate error");
     });
-});
 });
 
 describe("checkLimit", () => {

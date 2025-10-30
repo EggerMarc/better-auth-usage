@@ -3,6 +3,7 @@ import type { Customer, Feature, ResetType, Usage } from "@/types.ts"
 import { resetUsageQuery } from "./queries/reset-usage";
 import { insertUsageQuery } from "./queries/insert-usage";
 import { getUsageQuery } from "./queries/get-usage";
+import type { UsageCache } from "./cache";
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
@@ -108,17 +109,29 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage
         },
 
-        getCustomer: async ({ referenceId }: { referenceId: string }) => {
-            const customer = await adapter.findOne<Customer>({
-                model: "customer", where: [{
-                    field: "referenceId",
-                    value: referenceId
-                }]
-            })
-            return customer
+        getCustomer: async ({ referenceId, cache }: { referenceId: string, cache?: UsageCache }) => {
+            let customer: Customer | null = null;
+            if (cache) {
+                customer = await cache.getCustomer(referenceId)
+            }
+
+            if (customer === undefined) {
+                customer = await adapter.findOne<Customer>({
+                    model: "customer", where: [{
+                        field: "referenceId",
+                        value: referenceId
+                    }]
+                })
+
+                if (cache && customer) {
+                    await cache.setCustomer(customer)
+                }
+            }
+
+            return customer;
         },
 
-        upsertCustomer: async (customer: Customer) => {
+        upsertCustomer: async (customer: Customer, cache?: UsageCache) => {
             const upsertedCustomer = await adapter.transaction(async (tx) => {
                 const existingCustomer = await tx.findOne<Customer>({
                     model: "customer",
@@ -126,17 +139,22 @@ export const getUsageAdapter = (context: AuthContext) => {
                 });
 
                 if (existingCustomer) {
-                    return await tx.update<Customer>({
+                    await tx.update<Customer>({
                         model: "customer",
                         where: [{ field: "referenceId", value: customer.referenceId }],
                         update: customer,
                     });
                 } else {
-                    return await tx.create<Customer>({
+                    await tx.create<Customer>({
                         model: "customer",
                         data: customer,
                     });
                 }
+
+                if (cache) {
+                    cache.setCustomer(customer)
+                }
+                return customer
             });
             return upsertedCustomer;
         },

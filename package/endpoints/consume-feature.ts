@@ -66,7 +66,8 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
             const adapter = getUsageAdapter(ctx.context);
 
             const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
+                referenceId: ctx.body.referenceId,
+                cache: options.cache
             });
 
             if (!customer) {

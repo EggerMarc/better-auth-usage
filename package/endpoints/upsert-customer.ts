@@ -1,3 +1,4 @@
+import type { UsageOptionsWithCache } from "@/types";
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
@@ -10,7 +11,7 @@ import { customerSchema } from "package/schema";
  *
  * @returns The configured endpoint handler which accepts the customer payload and returns the upserted customer object
  */
-export function getUpsertCustomerEndpoint() {
+export function getUpsertCustomerEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint("/usage/upsert-customer", {
         method: "POST",
         body: customerSchema,
@@ -44,7 +45,7 @@ export function getUpsertCustomerEndpoint() {
         }
     }, async (ctx) => {
         const adapter = getUsageAdapter(ctx.context);
-        const customer = await adapter.upsertCustomer(ctx.body);
+        const customer = await adapter.upsertCustomer(ctx.body, options.cache);
         return customer
     })
 }

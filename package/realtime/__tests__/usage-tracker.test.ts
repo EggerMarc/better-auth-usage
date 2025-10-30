@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { Server as SocketServer } from "socket.io";
-import Redis from "ioredis";
-import { UsageTracker, UsageUpdate } from "../usage-tracker";
+import { UsageTracker, type UsageUpdate } from "../usage-tracker";
 import { UsageCache } from "../../adapters/cache";
 
 describe("UsageTracker", () => {
