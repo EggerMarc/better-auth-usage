@@ -2,6 +2,14 @@ import type { Feature, Usage } from "@/types"
 import { APIError, type Adapter } from "better-auth"
 
 
+/**
+ * Creates a usage "reset" record reflecting a feature's configured resetValue for a given reference.
+ *
+ * @param referenceId - The identifier for the entity whose usage is being reset.
+ * @param curr - Optional current usage amount; when provided the reset amount is computed as `feature.resetValue - curr`.
+ * @param feature - Feature metadata (must include `key` and `resetValue`) used to determine the reset amount and feature key.
+ * @returns The created `Usage` record, or `undefined` when the feature has no `resetValue`.
+ */
 export async function resetUsageQuery({
     adapter,
     referenceId,
@@ -76,4 +84,3 @@ export async function resetUsageQuery({
 
 export interface ResetError extends APIError { };
 export interface ResetSuccess { }; // TODO
-
