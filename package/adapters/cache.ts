@@ -1,4 +1,13 @@
-import type { cached_Usage as Usage, cached_UsageEvent as UsageEvent, Customer } from "@/types";
+import type {
+    Feature,
+    cached_Usage as Usage,
+    cached_UsageEvent as UsageEvent
+} from "@/types";
+
+import {
+    cached_usageEventSchema as usageEventSchema,
+    cached_usageSchema as usageSchema
+} from "@/schema"
 import EventEmitter from "events";
 import Redis from "ioredis";
 import { z } from "zod";
@@ -17,7 +26,13 @@ export class UsageCache extends EventEmitter {
         url,
     }: z.infer<typeof cacheSchema>) {
         super()
+        cacheSchema.parse({ url });
         this.cache = new Redis(url)
+        this.cache.on('error', (err) => {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to initialize cache with error: ${err}`
+            })
+        });
     }
 
     async insertEvent({
@@ -26,25 +41,39 @@ export class UsageCache extends EventEmitter {
         amount,
     }: UsageEvent) {
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
-        const res = await this.cache.eval(
+
+        const { data, error } = await tryCatch(this.cache.eval(
             incrementScript, // lua script
             2, // number of keys
             usageKey,
             limitKey,
             amount,
             Date.now().toString()
-        ) as [number, number];
-        const [newAmount, resetAt] = res;
-        return {
-            amount,
-            afterValue: newAmount,
-            resetAt: new Date(resetAt)
+        ))
+
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `[ERROR][USAGE] Failed to increment usage to cache on ${usageKey}: ${error.message}`
+            })
         }
+
+        try {
+            const [newAmount, resetAt] = data as [number, number];
+            return usageEventSchema.parse({
+                amount, afterValue: newAmount, resetAt: new Date(resetAt)
+            }) as UsageEvent
+        } catch (err) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `[ERROR][USAGE] Corrupted cache insert data for ${usageKey}`
+            });
+        }
+
     }
 
-    async getUsage(referenceId: string, feature: string): Promise<Usage> {
-        const { usageKey } = this.resolveKeys(referenceId, feature)
+    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">): Promise<Usage> {
+        const { usageKey } = this.resolveKeys(referenceId, feature.key)
         const { data, error } = await tryCatch(this.cache.get(usageKey));
+
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${error.message}` })
         }
@@ -53,14 +82,22 @@ export class UsageCache extends EventEmitter {
             throw new APIError("NOT_FOUND", { message: `[ERROR][USAGE] Failed to get cached usage, ${usageKey}` })
         }
 
-        return JSON.parse(data) as Usage
+        try {
+            const parsed = JSON.parse(data);
+            const validated = usageSchema.parse(parsed);
+            return validated as Usage;
+        } catch (err) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `[ERROR][USAGE] Corrupted cache data for ${usageKey}`
+            });
+        }
     }
 
     async clearUsage(referenceId: string, feature: string): Promise<void> {
         const { usageKey } = this.resolveKeys(referenceId, feature);
         const { error } = await tryCatch(this.cache.del(usageKey));
         if (error) {
-            throw new APIError("NOT_FOUND", { message: `[ERROR][USAGE] Failed to clear cached usage, ${usageKey}` })
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to clear cached usage for ${usageKey}: ${error.message}` })
         }
     }
 

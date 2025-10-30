@@ -53,7 +53,7 @@ export const cached_limitSchema = z.object({
     resetValue: z.number().default(0),
 })
 
-export const cached_usageEvent = z.object({
+export const cached_usageEventSchema = z.object({
     referenceId: z.string(),
     feature: z.string(),
     amount: z.number()

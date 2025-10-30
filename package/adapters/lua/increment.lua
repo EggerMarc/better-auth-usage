@@ -21,10 +21,11 @@ local current = tonumber(
 if now > resetAt then
     current = resetValue
     redis.call('DEL', key)
+    redis.call('SET', key, resetValue)
 end
 
 local newAmount = current + amount
 
-redis.call('INCRBY', key, newAmount)
+redis.call('INCRBY', key, amount)
 redis.call('EXPIREAT', key, resetAt)
 return { newAmount, resetAt }

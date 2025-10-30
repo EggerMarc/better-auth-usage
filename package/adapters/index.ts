@@ -81,7 +81,8 @@ export const getUsageAdapter = (context: AuthContext) => {
                 return insertUsageQuery({
                     adapter: tx,
                     featureKey: feature.key,
-                    lastResetAt: usage?.lastResetAt!,
+                    // Set date if no prior resetDate
+                    lastResetAt: usage?.lastResetAt ?? new Date(),
                     referenceId,
                     amount,
                     event

@@ -1,5 +1,5 @@
+import { resolveGetUsage } from "@/resolvers/get-usage";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { getUsageAdapter } from "package/adapters";
 import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptionsWithCache } from "package/types";
@@ -10,20 +10,17 @@ import { z } from "zod"
  *
  * @param features - Feature definitions available for consumption
  * @param overrides - Optional override definitions that adjust feature behavior or limits
- * @param cache - Optional cache used to optimize usage-related lookups
  * @param tracker - Optional tracker used to obtain current usage before consuming
  * @returns The configured authenticated endpoint that inserts and returns the inserted usage record
  */
-export function getConsumeEndpoint({
-    features, overrides, cache, tracker
-}: UsageOptionsWithCache) {
+export function getConsumeEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint(
         "/usage/consume",
         {
             method: "POST",
             middleware: [
                 sessionMiddleware,
-                usageMiddleware({ features, overrides }),
+                usageMiddleware(options),
             ],
             body: z.object({
                 featureKey: z.string(),
@@ -65,8 +62,7 @@ export function getConsumeEndpoint({
             },
         },
         async (ctx) => {
-            const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
+            const customer = await options.adapter.getCustomer({
                 referenceId: ctx.body.referenceId
             });
 
@@ -77,36 +73,29 @@ export function getConsumeEndpoint({
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
 
-            let current = null;
-            if (tracker) {
-                const trackerData = await tracker.getUsage(feature.key, customer?.referenceId);
-                current = trackerData.current
-            } else {
-                const dbData = await adapter.getUsage({
-                    referenceId: customer.referenceId,
-                    feature
-                })
-                current = dbData?.amount
-            }
-
+            const current = await resolveGetUsage({
+                referenceId: ctx.body.referenceId,
+                feature,
+                options
+            })
 
             if (feature.hooks?.before) {
                 await feature.hooks.before({
                     customer,
                     usage: {
                         amount: ctx.body.amount,
-                        beforeAmount: current,
-                        afterAmount: ctx.body.amount + current
+                        beforeAmount: current.amount,
+                        afterAmount: ctx.body.amount + current.amount
                     },
                     feature,
                 });
             }
 
-            const res = await adapter.insertUsage({
+            const res = await options.adapter.insertUsage({
                 referenceId: customer.referenceId,
                 event: ctx.body.event,
                 feature: feature,
@@ -116,10 +105,8 @@ export function getConsumeEndpoint({
             if (feature.hooks?.after) {
                 await feature.hooks.after({
                     customer,
-                    usage: {
-                        amount: ctx.body.amount,
-                    },
                     feature,
+                    amount: ctx.body.amount,
                 });
             }
 
