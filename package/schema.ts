@@ -45,6 +45,14 @@ export const cached_usageSchema = z.object({
     minLimit: z.number().optional(),
 })
 
+export const cached_limitSchema = z.object({
+    referenceId: z.string(),
+    feature: z.string(),
+    maxLimit: z.number().optional(),
+    minLimit: z.number().optional(),
+    resetValue: z.number().default(0),
+})
+
 export const cached_usageEvent = z.object({
     referenceId: z.string(),
     feature: z.string(),

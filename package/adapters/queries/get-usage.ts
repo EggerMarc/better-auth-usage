@@ -3,6 +3,13 @@ import type { Adapter } from "better-auth";
 import { resetUsageQuery } from "./reset-usage";
 import { shouldReset } from "@/utils";
 
+/**
+ * Retrieve the current usage state for a given reference and feature, triggering and returning a reset record when no usage exists or a reset is required.
+ *
+ * @param referenceId - The identifier for the entity whose usage is being queried
+ * @param feature - The feature (without hooks) whose usage and reset policy to evaluate
+ * @returns The most recent `Usage` record for the given `referenceId` and `feature`, or the `Usage` record produced by a reset operation when no records exist or a reset is due
+ */
 export async function getUsageQuery({
     adapter,
     referenceId,
@@ -47,5 +54,4 @@ export async function getUsageQuery({
     }
     return last
 }
-
 
