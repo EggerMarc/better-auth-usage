@@ -28,4 +28,3 @@ local newAmount = current + amount
 redis.call('INCRBY', key, newAmount)
 redis.call('EXPIREAT', key, resetAt)
 return { newAmount, resetAt }
-

@@ -1,5 +1,9 @@
+import { Server as SocketServer } from "socket.io";
 import type { BetterAuthPlugin } from "better-auth";
-import type { UsageOptions } from "./types.ts";
+import type { UsageOptions } from "./types";
+import { UsageCache } from "./adapters/cache";
+import { UsageTracker } from "./realtime/usage-tracker";
+import { UsageWebSocketServer } from "./realtime/websocket-server";
 import {
     getSyncEndpoint,
     getUpsertCustomerEndpoint,
@@ -9,15 +13,60 @@ import {
     getConsumeEndpoint
 } from "./endpoints/";
 
-/**
- * Creates a BetterAuth plugin that provides usage metering, customer schema, and endpoints for feature consumption, checks, listing, upserting customers, and syncing resets.
- *
- * @param options - Configuration and overrides for the usage plugin and its endpoint factories
- * @returns A BetterAuthPlugin exposing `usage` and `customer` schemas and endpoints: `getFeature`, `consumeFeature`, `listFeatures`, `checkUsage`, `upsertCustomer`, and `syncUsage`
- */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
+    let cache: UsageCache | undefined;
+    let tracker: UsageTracker | undefined;
+    let wsServer: UsageWebSocketServer | undefined;
+    let io: SocketServer | undefined;
+
     return {
         id: "@eggermarc/usage",
+
+        async init() {
+            if (!options.cacheOptions) {
+                console.log("[better-auth-usage] Running without cache (DB-only mode)");
+                return;
+            }
+
+            console.log("[better-auth-usage] Initializing cache...");
+
+            cache = new UsageCache({
+                url: options.cacheOptions.redisUrl,
+            });
+
+            if (options.cacheOptions.enableRealtime) {
+                console.log("[better-auth-usage] Realtime enabled, starting WebSocket server...");
+
+                io = new SocketServer({
+                    cors: options.cacheOptions.cors || {
+                        origin: "*",
+                        credentials: true
+                    }
+                });
+
+                const port = options.cacheOptions.port;
+                io.listen(port);
+                console.log(`[better-auth-usage] WebSocket server listening on port ${port}`);
+
+                tracker = new UsageTracker(
+                    options.cacheOptions.redisUrl,
+                    io,
+                    cache
+                );
+                await tracker.connect();
+                console.log("[better-auth-usage] Pub/sub tracker connected");
+
+                wsServer = new UsageWebSocketServer(
+                    io,
+                    tracker,
+                    options
+                );
+                console.log("[better-auth-usage] WebSocket handlers registered");
+            } else {
+                console.log("[better-auth-usage] Realtime disabled (cache-only mode)");
+            }
+        },
+
         schema: {
             usage: {
                 fields: {
@@ -25,7 +74,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                     referenceType: { type: "string", required: true, input: true },
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
-                    // afterAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
                     lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },
@@ -42,33 +90,47 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         },
 
         endpoints: {
-            /**
-             * Get feature metadata (merged with overrides if provided).
-             */
             getFeature: getFeatureEndpoint(options),
-            /**
-             * Consume (meter) a feature for a given referenceId.
-             * - runs before hook
-             * - inserts usage row (adapter)
-             * - runs after hook
-             */
-            consumeFeature: getConsumeEndpoint(options),
+
+            consumeFeature: getConsumeEndpoint({
+                ...options,
+                cache,
+                tracker
+            }),
+
             listFeatures: getFeaturesEndpoint(options),
-            /**
-             * Check usage limit for a feature for a specific reference.
-             * Returns a small enum ("in-limit"|"above-limit"|"below-limit") based on checkLimit util.
-             */
-            checkUsage: getCheckEndpoint(options),
+
+            checkUsage: getCheckEndpoint({
+                ...options,
+                cache
+            }),
+
             upsertCustomer: getUpsertCustomerEndpoint(),
-            /**
-             * Sync usage according to feature.reset rules.
-             * This will insert a reset event row with zeroed usage if the feature requires it.
-             *
-             * Note: you might prefer running this as a background job for many customers,
-             * rather than via an endpoint.
-             */
-            syncUsage: getSyncEndpoint(options)
+
+            syncUsage: getSyncEndpoint({
+                ...options,
+                cache,
+                tracker
+            })
+        },
+        /*cleanup: async () => {
+            console.log("[better-auth-usage] Shutting down...");
+
+            if (tracker) {
+                await tracker.disconnect();
+                console.log("[better-auth-usage] Tracker disconnected");
+            }
+
+            if (cache) {
+                await cache.disconnect();
+                console.log("[better-auth-usage] Cache disconnected");
+            }
+
+            if (io) {
+                io.close();
+                console.log("[better-auth-usage] WebSocket server closed");
+            }
         }
+        */
     } satisfies BetterAuthPlugin;
 }
-

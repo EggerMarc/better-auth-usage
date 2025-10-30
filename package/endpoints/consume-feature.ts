@@ -2,7 +2,7 @@ import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api
 import { getUsageAdapter } from "package/adapters";
 import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptions } from "package/types";
+import type { UsageOptionsWithCache } from "package/types";
 import { z } from "zod"
 
 /**
@@ -16,8 +16,8 @@ import { z } from "zod"
  * @returns The configured authenticated endpoint that handles consumption requests and returns the inserted usage record
  */
 export function getConsumeEndpoint({
-    features, overrides
-}: UsageOptions) {
+    features, overrides, cache, tracker
+}: UsageOptionsWithCache) {
     return createAuthEndpoint(
         "/usage/consume",
         {
@@ -82,16 +82,26 @@ export function getConsumeEndpoint({
                 overrides
             });
 
-            const lastUsage = await adapter.findLatestUsage({
-                referenceId: customer.referenceId,
-                featureKey: feature.key,
-            });
+            let current = null;
+            if (tracker) {
+                const trackerData = await tracker.getUsage(feature.key, customer?.referenceId);
+                current = trackerData.current
+            } else {
+                const dbData = await adapter.getUsage({
+                    referenceId: customer.referenceId,
+                    feature
+                })
+                current = dbData?.amount
+            }
+
 
             if (feature.hooks?.before) {
                 await feature.hooks.before({
                     customer,
                     usage: {
                         amount: ctx.body.amount,
+                        beforeAmount: current,
+                        afterAmount: ctx.body.amount + current
                     },
                     feature,
                 });

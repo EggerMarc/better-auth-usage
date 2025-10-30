@@ -138,6 +138,12 @@ export const getUsageAdapter = (context: AuthContext) => {
                 }
             });
             return upsertedCustomer;
+        },
+
+        getUsage: async ({ referenceId, feature }: {
+            referenceId: string, feature: Omit<Feature, "hooks">
+        }) => {
+            return await getUsageQuery({ adapter, referenceId, feature })
         }
     };
 };
