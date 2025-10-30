@@ -13,6 +13,14 @@ import {
     getConsumeEndpoint
 } from "./endpoints/";
 
+/**
+ * Creates a usage plugin configured with the provided options.
+ *
+ * The plugin may initialize an optional Redis-backed cache and an optional realtime WebSocket server when `init()` is called, depending on `options.cacheOptions`.
+ *
+ * @param options - Plugin configuration; include `cacheOptions` to enable the Redis cache and optional realtime features (CORS, port, and enableRealtime).
+ * @returns A BetterAuth plugin object containing `id`, `init()`, `schema`, and `endpoints` for usage tracking and customer management.
+ */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     let cache: UsageCache | undefined;
     let tracker: UsageTracker | undefined;
