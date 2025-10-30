@@ -1,3 +1,4 @@
+import type { UsageAdapter } from "@/adapters";
 import type { cached_Usage, Feature, Usage, UsageOptionsWithCache } from "@/types"
 import { tryCatch } from "@/utils"
 import { APIError } from "better-auth"
@@ -5,32 +6,38 @@ import { APIError } from "better-auth"
 interface ResolveGetUsageParams {
     referenceId: string,
     feature: Omit<Feature, "hooks">,
-    options: UsageOptionsWithCache
+    options: UsageOptionsWithCache,
+    adapter: UsageAdapter
 }
 
 export async function resolveGetUsage({
     referenceId,
     feature,
     options,
-}: ResolveGetUsageParams) {
+    adapter
+}: ResolveGetUsageParams): Promise<Usage> {
     let { data, error } = options.cache ? await tryCatch(
         options.cache.getUsage(referenceId, feature)
     ) : await tryCatch(
-        options.adapter.getUsage({
+        adapter.getUsage({
             referenceId, feature
         })
     );
 
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: ""
+            message: `Failed to get`
         })
     }
 
     if (!data) {
-        throw new APIError("NOT_FOUND", {
-            message: ""
-        })
+        return {
+            referenceId,
+            feature: feature.key,
+            amount: 0,
+            event: undefined,
+            createdAt: new Date(),
+        } as Usage;
     }
 
     return normalizeData(data, options.cache ? "cache" : "db")

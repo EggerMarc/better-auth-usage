@@ -1,3 +1,4 @@
+import { getUsageAdapter } from "@/adapters";
 import { resolveGetUsage } from "@/resolvers/get-usage";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { usageMiddleware } from "package/middlewares/usage";
@@ -62,7 +63,9 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
             },
         },
         async (ctx) => {
-            const customer = await options.adapter.getCustomer({
+            const adapter = getUsageAdapter(ctx.context);
+
+            const customer = await adapter.getCustomer({
                 referenceId: ctx.body.referenceId
             });
 
@@ -80,7 +83,8 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
             const current = await resolveGetUsage({
                 referenceId: ctx.body.referenceId,
                 feature,
-                options
+                options,
+                adapter
             })
 
             if (feature.hooks?.before) {
@@ -95,7 +99,7 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
                 });
             }
 
-            const res = await options.adapter.insertUsage({
+            const res = await adapter.insertUsage({
                 referenceId: customer.referenceId,
                 event: ctx.body.event,
                 feature: feature,
@@ -106,7 +110,11 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
                 await feature.hooks.after({
                     customer,
                     feature,
-                    amount: ctx.body.amount,
+                    usage: {
+                        amount: ctx.body.amount,
+                        beforeAmount: current.amount,
+                        afterAmount: current.amount + ctx.body.amount
+                    }
                 });
             }
 

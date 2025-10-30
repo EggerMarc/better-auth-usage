@@ -216,8 +216,8 @@ export interface UsageOptions {
 export interface UsageOptionsWithCache extends UsageOptions {
     cache?: UsageCache;
     tracker?: UsageTracker;
-    adapter: UsageAdapter
 }
+
 
 /**
  * Caching Types

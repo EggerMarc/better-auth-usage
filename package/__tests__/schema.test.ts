@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { usageSchema, customerSchema, cached_usageSchema, cached_usageEvent } from "../schema";
+import { usageSchema, customerSchema, cached_usageSchema, cached_usageEventSchema } from "../schema";
 
 describe("usageSchema", () => {
   test("validates correct usage data", () => {
@@ -79,7 +79,7 @@ describe("cached_usageSchema", () => {
   });
 });
 
-describe("cached_usageEvent", () => {
+describe("cached_usageEventSchema", () => {
   test("validates usage event structure", () => {
     const validEvent = {
       referenceId: "ref-123",
@@ -87,7 +87,7 @@ describe("cached_usageEvent", () => {
       amount: 5,
     };
 
-    const result = cached_usageEvent.safeParse(validEvent);
+    const result = cached_usageEventSchema.safeParse(validEvent);
     expect(result.success).toBe(true);
   });
 
@@ -97,7 +97,7 @@ describe("cached_usageEvent", () => {
       feature: "api-calls",
     };
 
-    const result = cached_usageEvent.safeParse(invalidEvent);
+    const result = cached_usageEventSchema.safeParse(invalidEvent);
     expect(result.success).toBe(false);
   });
 });

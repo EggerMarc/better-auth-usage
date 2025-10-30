@@ -1,5 +1,5 @@
-import type { Feature, Usage } from "@/types"
 import { APIError, type Adapter } from "better-auth"
+import { Feature, Usage } from "../types"
 
 /**
  * Create a "reset" usage record to adjust stored usage to the feature's configured reset value when appropriate.
@@ -22,25 +22,26 @@ export async function resolveResetUsage({
     curr?: number,
     feature: Omit<Feature, "hooks">
 }) {
-    if (!feature.resetValue) {
-        return //Success
+
+    if (feature.resetValue === undefined || feature.resetValue === null) {
+        return
     }
 
-    if (curr) {
+
+    if (curr !== undefined) {
         const usage = await adapter.create<Usage>({
             model: "usage",
             data: {
                 amount: feature.resetValue - curr,
                 feature: feature.key,
                 referenceId,
-                referenceType,
                 event: "reset",
                 lastResetAt: new Date(),
                 createdAt: new Date()
             }
         })
 
-        return //Success
+        return usage
     }
 
     const transaction = await adapter.transaction(async (tx) => {
@@ -63,13 +64,14 @@ export async function resolveResetUsage({
                 feature: feature.key,
                 event: "reset",
                 referenceId,
-                referenceType,
                 lastResetAt: new Date(),
                 createdAt: new Date()
             }
         })
-        return // Success
+        return usage
     })
+
+    return transaction
 }
 
 export interface ResetError extends APIError { };

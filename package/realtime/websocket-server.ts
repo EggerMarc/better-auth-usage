@@ -35,7 +35,8 @@ export class UsageWebSocketServer {
                     if (!feature) {
                         socket.emit("error", {
                             message: `Feature ${sub.feature} not found`
-                        })
+                        });
+                        continue;
                     }
 
                     if (feature.authorizeReference) {
@@ -83,6 +84,7 @@ export class UsageWebSocketServer {
                     socket.emit("usage:error", {
                         error: "Failed to fetch usage"
                     });
+                    return;
                 }
                 socket.emit("usage:current", usage);
             });

@@ -1,5 +1,5 @@
 import { Server as SocketServer } from "socket.io";
-import type { BetterAuthPlugin } from "better-auth";
+import { APIError, type BetterAuthPlugin } from "better-auth";
 import type { UsageOptions } from "./types";
 import { UsageCache } from "./adapters/cache";
 import { UsageTracker } from "./realtime/usage-tracker";
@@ -43,6 +43,10 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             });
 
             if (options.cacheOptions.enableRealtime) {
+                if (!options.cacheOptions.port) {
+                    throw new Error("Port is required when enableRealtime is true");
+                }
+
                 console.log("[better-auth-usage] Realtime enabled, starting WebSocket server...");
 
                 io = new SocketServer({
@@ -55,20 +59,26 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 const port = options.cacheOptions.port;
                 io.listen(port);
                 console.log(`[better-auth-usage] WebSocket server listening on port ${port}`);
-
-                tracker = new UsageTracker(
-                    options.cacheOptions.redisUrl,
-                    io,
-                    cache
-                );
-                await tracker.connect();
-                console.log("[better-auth-usage] Pub/sub tracker connected");
+                try {
+                    tracker = new UsageTracker(
+                        options.cacheOptions.redisUrl,
+                        io,
+                        cache
+                    );
+                    await tracker.connect();
+                    console.log("[better-auth-usage] Pub/sub tracker connected");
+                } catch (err) {
+                    throw new APIError("INTERNAL_SERVER_ERROR", {
+                        message: `[ERROR][USAGE] Failed to initialize UsageTracker service ${err}`
+                    })
+                }
 
                 wsServer = new UsageWebSocketServer(
                     io,
                     tracker,
                     options
                 );
+
                 console.log("[better-auth-usage] WebSocket handlers registered");
             } else {
                 console.log("[better-auth-usage] Realtime disabled (cache-only mode)");
@@ -79,7 +89,6 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             usage: {
                 fields: {
                     referenceId: { type: "string", required: true, input: true },
-                    referenceType: { type: "string", required: true, input: true },
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
@@ -103,7 +112,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             consumeFeature: getConsumeEndpoint({
                 ...options,
                 cache,
-                tracker
+                tracker,
             }),
 
             listFeatures: getFeaturesEndpoint(options),
@@ -121,24 +130,5 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
                 tracker
             })
         },
-        /*cleanup: async () => {
-            console.log("[better-auth-usage] Shutting down...");
-
-            if (tracker) {
-                await tracker.disconnect();
-                console.log("[better-auth-usage] Tracker disconnected");
-            }
-
-            if (cache) {
-                await cache.disconnect();
-                console.log("[better-auth-usage] Cache disconnected");
-            }
-
-            if (io) {
-                io.close();
-                console.log("[better-auth-usage] WebSocket server closed");
-            }
-        }
-        */
     } satisfies BetterAuthPlugin;
 }

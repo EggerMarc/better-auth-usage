@@ -11,4 +11,5 @@ export default defineConfig(({ watch = false }) => ({
     splitting: false,
     watch,
     minify: !watch,
+    loader: { '.lua': 'text' }
 }));

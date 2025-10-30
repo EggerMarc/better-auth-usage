@@ -26,12 +26,10 @@ export const customerLimitsSchema = z.object({
 
 export const usageSchema = z.object({
     referenceId: z.string(),
-    // referenceType: z.string(), -> Delete this, otherwise we can have missmatches
     event: z.string().optional(),
     createdAt: z.date(),
     lastResetAt: z.date(),
     amount: z.number(),
-    // afterAmount: z.number(), -> We will instead use sum
     feature: z.string(),
 })
 
