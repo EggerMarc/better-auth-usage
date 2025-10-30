@@ -1,6 +1,14 @@
 import type { Feature, Usage } from "@/types"
 import { APIError, type Adapter } from "better-auth"
 
+/**
+ * Record a reset usage event for a feature and reference, creating a Usage entry that adjusts usage to the feature's resetValue.
+ *
+ * If `feature.resetValue` is falsy the function is a no-op. If `curr` is provided it creates a single usage with `amount = feature.resetValue - curr`. If `curr` is omitted it transactionally sums existing usage records for the reference and creates a reset usage with `amount = feature.resetValue - total`. The created usage uses `event = "reset"` and sets `lastResetAt` and `createdAt` timestamps.
+ *
+ * @param curr - Optional current usage value to compute the reset delta; when provided avoids a transactional read.
+ * @param feature - Feature definition (without `hooks`) whose `resetValue` and `key` are used to compute and record the reset.
+ */
 export async function resolveResetUsage({
     adapter,
     referenceId,
@@ -66,4 +74,3 @@ export async function resolveResetUsage({
 
 export interface ResetError extends APIError { };
 export interface ResetSuccess { }; // TODO
-
