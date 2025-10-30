@@ -50,6 +50,7 @@
         "access": "public"
     },
     "scripts": {
+        "test": "bun test",
         "build": "tsup",
         "dev": "tsup --watch"
     },

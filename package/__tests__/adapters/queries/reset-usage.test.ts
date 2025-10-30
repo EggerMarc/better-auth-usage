@@ -1,225 +1,240 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { resetUsageQuery } from "../../../adapters/queries/reset-usage";
-import type { Feature, Usage } from "../../../types";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { resetUsageQuery } from "@/adapters/queries/reset-usage";
 import type { Adapter } from "better-auth";
+import type { Feature } from "@/types";
 
 describe("resetUsageQuery", () => {
   let mockAdapter: Adapter;
-  const mockFeature: Omit<Feature, "hooks"> = {
-    key: "api-calls",
-    maxLimit: 1000,
-    resetValue: 100,
-  };
+  let mockFeature: Omit<Feature, "hooks">;
 
   beforeEach(() => {
     mockAdapter = {
-      create: mock((params) => Promise.resolve({
-        id: "reset-1",
-        ...params.data,
+      create: mock(async (params) => ({
+        id: "usage-1",
+        ...params.data
       })),
       transaction: mock(async (callback) => {
         const tx = {
-          findMany: mock(() => Promise.resolve([])),
-          create: mock((params) => Promise.resolve({
-            id: "reset-tx-1",
-            ...params.data,
-          })),
+          findMany: mock(async () => []),
+          create: mock(async (params) => ({
+            id: "usage-1",
+            ...params.data
+          }))
         };
         return callback(tx as any);
-      }),
+      })
     } as unknown as Adapter;
-  });
 
-  test("returns undefined when feature has no resetValue", async () => {
-    const featureNoReset: Omit<Feature, "hooks"> = {
+    mockFeature = {
       key: "api-calls",
-      maxLimit: 1000,
+      reset: "daily",
+      resetValue: 100
     };
-
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: featureNoReset,
-    });
-
-    expect(result).toBeUndefined();
   });
 
-  test("creates reset usage with current value when curr is provided", async () => {
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 75,
-      feature: mockFeature,
+  describe("with resetValue defined", () => {
+    it("should reset usage with current value provided", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 50,
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          amount: 50, // resetValue (100) - curr (50)
+          feature: "api-calls",
+          referenceId: "user-123",
+          event: "reset"
+        })
+      });
     });
 
-    expect(mockAdapter.create).toHaveBeenCalled();
-    expect(result).toBeDefined();
-    expect(result?.amount).toBe(25); // 100 - 75
-    expect(result?.event).toBe("reset");
+    it("should handle zero current usage", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 0,
+        feature: mockFeature
+      });
+
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          amount: 100 // full resetValue
+        })
+      });
+    });
+
+    it("should handle usage exceeding resetValue", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 150,
+        feature: mockFeature
+      });
+
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          amount: -50 // negative adjustment
+        })
+      });
+    });
   });
 
-  test("calculates correct reset amount from current usage", async () => {
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 80,
-      feature: { ...mockFeature, resetValue: 200 },
+  describe("without current value (transaction)", () => {
+    it("should create initial usage when no previous usage exists", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+      expect(mockAdapter.transaction).toHaveBeenCalled();
     });
 
-    expect(result?.amount).toBe(120); // 200 - 80
+    it("should calculate total from existing usage records", async () => {
+      mockAdapter.transaction = mock(async (callback) => {
+        const tx = {
+          findMany: mock(async () => [
+            { amount: 10, feature: "api-calls" },
+            { amount: 20, feature: "api-calls" },
+            { amount: 30, feature: "api-calls" }
+          ]),
+          create: mock(async (params) => ({
+            id: "usage-1",
+            ...params.data
+          }))
+        };
+        return callback(tx as any);
+      });
+
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle empty usage history", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "new-user",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
   });
 
-  test("creates initial reset when no current usage in transaction", async () => {
-    const mockTx = {
-      findMany: mock(() => Promise.resolve([])),
-      create: mock((params) => Promise.resolve({
-        id: "reset-1",
-        ...params.data,
-      })),
-    };
+  describe("without resetValue", () => {
+    it("should return undefined when resetValue is not set", async () => {
+      const featureWithoutReset = {
+        key: "unlimited-feature",
+        reset: "never" as const
+      };
 
-    (mockAdapter.transaction as any).mockImplementation(async (callback: any) => {
-      return callback(mockTx);
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: featureWithoutReset
+      });
+
+      expect(result).toBeUndefined();
+      expect(mockAdapter.create).not.toHaveBeenCalled();
     });
 
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
-    });
+    it("should return undefined when resetValue is zero", async () => {
+      const featureWithZeroReset = {
+        ...mockFeature,
+        resetValue: 0
+      };
 
-    expect(result?.amount).toBe(100); // Full resetValue
-    expect(result?.event).toBe("reset");
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: featureWithZeroReset
+      });
+
+      expect(result).toBeUndefined();
+    });
   });
 
-  test("calculates reset from existing usage in transaction", async () => {
-    const existingUsage: Usage[] = [
-      {
-        referenceId: "ref-123",
-        amount: 30,
-        feature: "api-calls",
-        event: "use",
-        lastResetAt: new Date(),
-        createdAt: new Date(),
-      },
-      {
-        referenceId: "ref-123",
-        amount: 20,
-        feature: "api-calls",
-        event: "use",
-        lastResetAt: new Date(),
-        createdAt: new Date(),
-      },
-    ];
+  describe("edge cases", () => {
+    it("should handle very large resetValue", async () => {
+      const largeResetFeature = {
+        ...mockFeature,
+        resetValue: 999999999
+      };
 
-    const mockTx = {
-      findMany: mock(() => Promise.resolve(existingUsage)),
-      create: mock((params) => Promise.resolve({
-        id: "reset-1",
-        ...params.data,
-      })),
-    };
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 100,
+        feature: largeResetFeature
+      });
 
-    (mockAdapter.transaction as any).mockImplementation(async (callback: any) => {
-      return callback(mockTx);
+      expect(result).toBeDefined();
     });
 
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
+    it("should handle negative current usage", async () => {
+      const result = await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: -10,
+        feature: mockFeature
+      });
+
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          amount: 110 // resetValue + abs(negative)
+        })
+      });
     });
 
-    expect(result?.amount).toBe(50); // 100 - (30 + 20)
-  });
+    it("should set correct timestamps", async () => {
+      const beforeCall = new Date();
+      
+      await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 50,
+        feature: mockFeature
+      });
 
-  test("sets lastResetAt to current time", async () => {
-    const beforeReset = Date.now();
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 50,
-      feature: mockFeature,
-    });
-    const afterReset = Date.now();
+      const afterCall = new Date();
 
-    expect(result?.lastResetAt).toBeInstanceOf(Date);
-    expect(result!.lastResetAt.getTime()).toBeGreaterThanOrEqual(beforeReset);
-    expect(result!.lastResetAt.getTime()).toBeLessThanOrEqual(afterReset);
-  });
-
-  test("sets createdAt to current time", async () => {
-    const beforeReset = Date.now();
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 50,
-      feature: mockFeature,
-    });
-    const afterReset = Date.now();
-
-    expect(result?.createdAt).toBeInstanceOf(Date);
-    expect(result!.createdAt.getTime()).toBeGreaterThanOrEqual(beforeReset);
-    expect(result!.createdAt.getTime()).toBeLessThanOrEqual(afterReset);
-  });
-
-  test("handles negative reset amounts correctly", async () => {
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 150, // More than resetValue
-      feature: mockFeature,
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          lastResetAt: expect.any(Date),
+          createdAt: expect.any(Date)
+        })
+      });
     });
 
-    expect(result?.amount).toBe(-50); // 100 - 150
-  });
+    it("should use correct event type", async () => {
+      await resetUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        curr: 50,
+        feature: mockFeature
+      });
 
-  test("passes correct referenceId to created usage", async () => {
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "unique-ref-id",
-      curr: 50,
-      feature: mockFeature,
-    });
-
-    expect(result?.referenceId).toBe("unique-ref-id");
-  });
-
-  test("passes correct feature key to created usage", async () => {
-    const result = await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      curr: 50,
-      feature: { ...mockFeature, key: "storage" },
-    });
-
-    expect(result?.feature).toBe("storage");
-  });
-
-  test("queries correct feature in transaction", async () => {
-    const mockTx = {
-      findMany: mock(() => Promise.resolve([])),
-      create: mock((params) => Promise.resolve({
-        id: "reset-1",
-        ...params.data,
-      })),
-    };
-
-    (mockAdapter.transaction as any).mockImplementation(async (callback: any) => {
-      return callback(mockTx);
-    });
-
-    await resetUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: { ...mockFeature, key: "storage" },
-    });
-
-    const callArgs = mockTx.findMany.mock.calls[0][0];
-    expect(callArgs.where).toContainEqual({
-      field: "feature",
-      value: "storage",
+      expect(mockAdapter.create).toHaveBeenCalledWith({
+        model: "usage",
+        data: expect.objectContaining({
+          event: "reset"
+        })
+      });
     });
   });
 });

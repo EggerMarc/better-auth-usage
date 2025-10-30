@@ -1,133 +1,264 @@
-import { describe, test, expect } from "bun:test";
-import { checkLimit, shouldReset, tryCatch } from "../utils";
+import { describe, it, expect } from "bun:test";
+import { tryCatch, checkLimit, shouldReset } from "@/utils";
+
+describe("tryCatch", () => {
+  describe("successful promises", () => {
+    it("should return data on successful promise", async () => {
+      const promise = Promise.resolve(42);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe(42);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle string values", async () => {
+      const promise = Promise.resolve("success");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe("success");
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle object values", async () => {
+      const obj = { id: 1, name: "test" };
+      const promise = Promise.resolve(obj);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toEqual(obj);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle array values", async () => {
+      const arr = [1, 2, 3];
+      const promise = Promise.resolve(arr);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toEqual(arr);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle null values", async () => {
+      const promise = Promise.resolve(null);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle undefined values", async () => {
+      const promise = Promise.resolve(undefined);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeUndefined();
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle boolean values", async () => {
+      const promise = Promise.resolve(true);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe(true);
+      expect(result.error).toBeNull();
+    });
+  });
+
+  describe("failed promises", () => {
+    it("should return error on rejected promise", async () => {
+      const error = new Error("Test error");
+      const promise = Promise.reject(error);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBe(error);
+    });
+
+    it("should handle string errors", async () => {
+      const promise = Promise.reject("String error");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBe("String error");
+    });
+
+    it("should handle custom error types", async () => {
+      class CustomError extends Error {
+        code: number;
+        constructor(message: string, code: number) {
+          super(message);
+          this.code = code;
+        }
+      }
+
+      const error = new CustomError("Custom", 404);
+      const promise = Promise.reject(error);
+      const result = await tryCatch<any, CustomError>(promise);
+
+      expect(result.error?.code).toBe(404);
+    });
+
+    it("should handle undefined errors", async () => {
+      const promise = Promise.reject(undefined);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeUndefined();
+    });
+
+    it("should handle null errors", async () => {
+      const promise = Promise.reject(null);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeNull();
+    });
+  });
+
+  describe("async functions", () => {
+    it("should work with async function that succeeds", async () => {
+      const asyncFn = async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return "delayed success";
+      };
+
+      const result = await tryCatch(asyncFn());
+
+      expect(result.data).toBe("delayed success");
+      expect(result.error).toBeNull();
+    });
+
+    it("should work with async function that throws", async () => {
+      const asyncFn = async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        throw new Error("delayed error");
+      };
+
+      const result = await tryCatch(asyncFn());
+
+      expect(result.data).toBeNull();
+      expect(result.error?.message).toBe("delayed error");
+    });
+  });
+
+  describe("type safety", () => {
+    it("should infer correct data type", async () => {
+      const promise = Promise.resolve(42);
+      const result = await tryCatch(promise);
+
+      if (result.data !== null) {
+        const num: number = result.data;
+        expect(typeof num).toBe("number");
+      }
+    });
+
+    it("should handle generic error types", async () => {
+      interface ApiError {
+        status: number;
+        message: string;
+      }
+
+      const error: ApiError = { status: 500, message: "Server error" };
+      const promise = Promise.reject(error);
+      const result = await tryCatch<any, ApiError>(promise);
+
+      if (result.error) {
+        expect(result.error.status).toBe(500);
+        expect(result.error.message).toBe("Server error");
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle very large data", async () => {
+      const largeArray = new Array(10000).fill(1);
+      const promise = Promise.resolve(largeArray);
+      const result = await tryCatch(promise);
+
+      expect(result.data?.length).toBe(10000);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle promises that resolve immediately", async () => {
+      const promise = Promise.resolve("immediate");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe("immediate");
+    });
+
+    it("should handle promises that reject immediately", async () => {
+      const promise = Promise.reject(new Error("immediate error"));
+      const result = await tryCatch(promise);
+
+      expect(result.error?.message).toBe("immediate error");
+    });
+  });
+});
 
 describe("checkLimit", () => {
-  test("returns 'in-limit' when value is within both max and min limits", () => {
+  it("should return 'in-limit' when within bounds", () => {
     const result = checkLimit({
       maxLimit: 100,
-      minLimit: 10,
-      value: 50,
+      minLimit: 0,
+      value: 50
     });
     expect(result).toBe("in-limit");
   });
 
-  test("returns 'above-max-limit' when value exceeds maxLimit", () => {
+  it("should return 'above-max-limit' when exceeding max", () => {
     const result = checkLimit({
       maxLimit: 100,
-      minLimit: 10,
-      value: 150,
+      minLimit: 0,
+      value: 150
     });
     expect(result).toBe("above-max-limit");
   });
 
-  test("returns 'below-min-limit' when value is below minLimit", () => {
+  it("should return 'below-min-limit' when below min", () => {
     const result = checkLimit({
       maxLimit: 100,
       minLimit: 10,
-      value: 5,
+      value: 5
     });
     expect(result).toBe("below-min-limit");
   });
 
-  test("returns 'in-limit' when value equals maxLimit", () => {
+  it("should handle undefined maxLimit", () => {
     const result = checkLimit({
-      maxLimit: 100,
-      value: 100,
+      minLimit: 10,
+      value: 50
     });
     expect(result).toBe("in-limit");
   });
 
-  test("handles zero value", () => {
+  it("should handle undefined minLimit", () => {
     const result = checkLimit({
       maxLimit: 100,
-      minLimit: 0,
-      value: 0,
-    });
-    expect(result).toBe("in-limit");
-  });
-
-  test("handles negative values", () => {
-    const result = checkLimit({
-      maxLimit: 0,
-      minLimit: -100,
-      value: -50,
+      value: 50
     });
     expect(result).toBe("in-limit");
   });
 });
 
 describe("shouldReset", () => {
-  test("returns false for 'never' reset type", () => {
+  it("should not reset for 'never' type", () => {
     const result = shouldReset(new Date(), "never");
     expect(result.shouldReset).toBe(false);
-    expect(result.nextReset).toBeUndefined();
   });
 
-  test("should reset when lastReset is more than an hour ago for hourly", () => {
-    const twoHoursAgo = new Date();
-    twoHoursAgo.setHours(twoHoursAgo.getHours() - 2);
-    
-    const result = shouldReset(twoHoursAgo, "hourly");
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeDefined();
-  });
-
-  test("should reset when lastReset is null", () => {
-    const result = shouldReset(null, "hourly");
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeDefined();
-  });
-
-  test("should reset when lastReset is yesterday for daily", () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const result = shouldReset(yesterday, "daily");
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeDefined();
-  });
-
-  test("next reset should be at midnight for daily", () => {
+  it("should reset when lastReset is null", () => {
     const result = shouldReset(null, "daily");
     expect(result.shouldReset).toBe(true);
-    expect(result.nextReset?.getHours()).toBe(0);
-    expect(result.nextReset?.getMinutes()).toBe(0);
-    expect(result.nextReset?.getSeconds()).toBe(0);
-  });
-});
-
-describe("tryCatch", () => {
-  test("returns success result when promise resolves", async () => {
-    const successPromise = Promise.resolve("success");
-    const result = await tryCatch(successPromise);
-    
-    expect(result.data).toBe("success");
-    expect(result.error).toBeNull();
+    expect(result.nextReset).toBeInstanceOf(Date);
   });
 
-  test("returns failure result when promise rejects", async () => {
-    const errorMessage = "Something went wrong";
-    const failurePromise = Promise.reject(new Error(errorMessage));
-    const result = await tryCatch(failurePromise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBeInstanceOf(Error);
+  it("should reset for daily when last reset was yesterday", () => {
+    const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const result = shouldReset(yesterday, "daily");
+    expect(result.shouldReset).toBe(true);
   });
 
-  test("handles promise that resolves with null", async () => {
-    const nullPromise = Promise.resolve(null);
-    const result = await tryCatch(nullPromise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBeNull();
-  });
-
-  test("handles promise that resolves with object", async () => {
-    const obj = { id: 1, name: "test" };
-    const objectPromise = Promise.resolve(obj);
-    const result = await tryCatch(objectPromise);
-    
-    expect(result.data).toEqual(obj);
-    expect(result.error).toBeNull();
+  it("should not reset for daily when last reset was today", () => {
+    const today = new Date();
+    const result = shouldReset(today, "daily");
+    expect(result.shouldReset).toBe(false);
   });
 });

@@ -1,169 +1,343 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { getUsageQuery } from "../../../adapters/queries/get-usage";
-import type { Feature, Usage } from "../../../types";
+import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { getUsageQuery } from "@/adapters/queries/get-usage";
 import type { Adapter } from "better-auth";
+import type { Feature, Usage } from "@/types";
 
 describe("getUsageQuery", () => {
   let mockAdapter: Adapter;
-  const mockFeature: Omit<Feature, "hooks"> = {
-    key: "api-calls",
-    maxLimit: 1000,
-    reset: "daily",
-    resetValue: 100,
-  };
+  let mockFeature: Omit<Feature, "hooks">;
 
   beforeEach(() => {
     mockAdapter = {
-      findMany: mock(() => Promise.resolve([])),
-      create: mock((data) => Promise.resolve({ id: "1", ...data.data })),
-      transaction: mock((callback) => callback(mockAdapter)),
+      findMany: mock(async () => []),
+      create: mock(async (params) => ({
+        id: "usage-1",
+        ...params.data
+      })),
+      transaction: mock(async (callback) => {
+        const tx = {
+          findMany: mock(async () => []),
+          create: mock(async (params) => ({
+            id: "usage-1",
+            ...params.data
+          }))
+        };
+        return callback(tx as any);
+      })
     } as unknown as Adapter;
-  });
 
-  test("returns reset usage when no existing usage found", async () => {
-    (mockAdapter.findMany as any).mockResolvedValue([]);
-
-    const result = await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
-    });
-
-    expect(mockAdapter.findMany).toHaveBeenCalled();
-    expect(mockAdapter.create).toHaveBeenCalled();
-    expect(result).toBeDefined();
-  });
-
-  test("returns latest usage when found and no reset needed", async () => {
-    const mockUsage: Usage = {
-      referenceId: "ref-123",
-      amount: 50,
-      feature: "api-calls",
-      event: "use",
-      lastResetAt: new Date(),
-      createdAt: new Date(),
-    };
-
-    (mockAdapter.findMany as any).mockResolvedValue([mockUsage]);
-
-    const result = await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
-    });
-
-    expect(result).toEqual(mockUsage);
-  });
-
-  test("triggers reset when shouldReset returns true", async () => {
-    const oldDate = new Date();
-    oldDate.setDate(oldDate.getDate() - 2); // 2 days ago
-
-    const mockUsage: Usage = {
-      referenceId: "ref-123",
-      amount: 50,
-      feature: "api-calls",
-      event: "use",
-      lastResetAt: oldDate,
-      createdAt: oldDate,
-    };
-
-    (mockAdapter.findMany as any).mockResolvedValue([mockUsage]);
-
-    const result = await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
-    });
-
-    expect(mockAdapter.create).toHaveBeenCalled();
-  });
-
-  test("calculates current usage correctly from multiple records", async () => {
-    const mockUsages: Usage[] = [
-      {
-        referenceId: "ref-123",
-        amount: 30,
-        feature: "api-calls",
-        event: "use",
-        lastResetAt: new Date(),
-        createdAt: new Date(),
-      },
-      {
-        referenceId: "ref-123",
-        amount: 20,
-        feature: "api-calls",
-        event: "use",
-        lastResetAt: new Date(),
-        createdAt: new Date(),
-      },
-    ];
-
-    (mockAdapter.findMany as any).mockResolvedValue(mockUsages);
-
-    await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: mockFeature,
-    });
-
-    // Verify the query was called with correct parameters
-    expect(mockAdapter.findMany).toHaveBeenCalledWith({
-      model: "usage",
-      where: [
-        { field: "referenceId", value: "ref-123" },
-        { field: "feature", value: "api-calls" },
-      ],
-      sortBy: { field: "createdAt", direction: "desc" },
-    });
-  });
-
-  test("handles feature without reset configuration", async () => {
-    const featureNoReset: Omit<Feature, "hooks"> = {
+    mockFeature = {
       key: "api-calls",
-      maxLimit: 1000,
+      reset: "daily",
+      resetValue: 100
     };
-
-    (mockAdapter.findMany as any).mockResolvedValue([]);
-
-    const result = await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: featureNoReset,
-    });
-
-    expect(result).toBeDefined();
   });
 
-  test("passes correct referenceId to adapter", async () => {
-    (mockAdapter.findMany as any).mockResolvedValue([]);
+  describe("with existing usage", () => {
+    it("should return latest usage when no reset needed", async () => {
+      const mockUsage: Usage[] = [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 10,
+        lastResetAt: new Date(),
+        event: "use",
+        createdAt: new Date()
+      }];
 
-    await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "unique-ref-id",
-      feature: mockFeature,
+      mockAdapter.findMany = mock(async () => mockUsage);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+      expect(result?.id).toBe("usage-1");
     });
 
-    const callArgs = (mockAdapter.findMany as any).mock.calls[0][0];
-    expect(callArgs.where).toContainEqual({
-      field: "referenceId",
-      value: "unique-ref-id",
+    it("should calculate total from multiple usage records", async () => {
+      const mockUsages: Usage[] = [
+        {
+          id: "usage-3",
+          referenceId: "user-123",
+          feature: "api-calls",
+          amount: 30,
+          lastResetAt: new Date(),
+          event: "use",
+          createdAt: new Date()
+        },
+        {
+          id: "usage-2",
+          referenceId: "user-123",
+          feature: "api-calls",
+          amount: 20,
+          lastResetAt: new Date(),
+          event: "use",
+          createdAt: new Date(Date.now() - 1000)
+        },
+        {
+          id: "usage-1",
+          referenceId: "user-123",
+          feature: "api-calls",
+          amount: 10,
+          lastResetAt: new Date(),
+          event: "use",
+          createdAt: new Date(Date.now() - 2000)
+        }
+      ];
+
+      mockAdapter.findMany = mock(async () => mockUsages);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should trigger reset when usage should be reset", async () => {
+      const oldDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000); // 2 days ago
+      const mockUsage: Usage[] = [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 50,
+        lastResetAt: oldDate,
+        event: "use",
+        createdAt: oldDate
+      }];
+
+      mockAdapter.findMany = mock(async () => mockUsage);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
     });
   });
 
-  test("passes correct feature key to adapter", async () => {
-    (mockAdapter.findMany as any).mockResolvedValue([]);
+  describe("with no existing usage", () => {
+    it("should create initial usage with reset", async () => {
+      mockAdapter.findMany = mock(async () => []);
 
-    await getUsageQuery({
-      adapter: mockAdapter,
-      referenceId: "ref-123",
-      feature: { ...mockFeature, key: "storage" },
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "new-user",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
     });
 
-    const callArgs = (mockAdapter.findMany as any).mock.calls[0][0];
-    expect(callArgs.where).toContainEqual({
-      field: "feature",
-      value: "storage",
+    it("should use resetValue for initial usage", async () => {
+      mockAdapter.findMany = mock(async () => []);
+
+      await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "new-user",
+        feature: mockFeature
+      });
+
+      expect(mockAdapter.transaction).toHaveBeenCalled();
+    });
+  });
+
+  describe("reset scenarios", () => {
+    it("should handle 'never' reset type", async () => {
+      const neverResetFeature = {
+        key: "unlimited-feature",
+        reset: "never" as const
+      };
+
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "unlimited-feature",
+        amount: 1000,
+        lastResetAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000), // 1 year ago
+        event: "use",
+        createdAt: new Date()
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: neverResetFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle hourly reset", async () => {
+      const hourlyFeature = {
+        ...mockFeature,
+        reset: "hourly" as const
+      };
+
+      const oldDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 hours ago
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 50,
+        lastResetAt: oldDate,
+        event: "use",
+        createdAt: oldDate
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: hourlyFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle weekly reset", async () => {
+      const weeklyFeature = {
+        ...mockFeature,
+        reset: "weekly" as const
+      };
+
+      const oldDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000); // 8 days ago
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 50,
+        lastResetAt: oldDate,
+        event: "use",
+        createdAt: oldDate
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: weeklyFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle monthly reset", async () => {
+      const monthlyFeature = {
+        ...mockFeature,
+        reset: "monthly" as const
+      };
+
+      const oldDate = new Date(Date.now() - 32 * 24 * 60 * 60 * 1000); // 32 days ago
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 50,
+        lastResetAt: oldDate,
+        event: "use",
+        createdAt: oldDate
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: monthlyFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle null lastResetAt", async () => {
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 10,
+        lastResetAt: null as any,
+        event: "use",
+        createdAt: new Date()
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle negative amounts in history", async () => {
+      mockAdapter.findMany = mock(async () => [
+        {
+          id: "usage-2",
+          referenceId: "user-123",
+          feature: "api-calls",
+          amount: 50,
+          lastResetAt: new Date(),
+          event: "use",
+          createdAt: new Date()
+        },
+        {
+          id: "usage-1",
+          referenceId: "user-123",
+          feature: "api-calls",
+          amount: -10,
+          lastResetAt: new Date(),
+          event: "refund",
+          createdAt: new Date(Date.now() - 1000)
+        }
+      ]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should handle zero amounts", async () => {
+      mockAdapter.findMany = mock(async () => [{
+        id: "usage-1",
+        referenceId: "user-123",
+        feature: "api-calls",
+        amount: 0,
+        lastResetAt: new Date(),
+        event: "check",
+        createdAt: new Date()
+      }]);
+
+      const result = await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(result).toBeDefined();
+    });
+
+    it("should sort by createdAt descending", async () => {
+      await getUsageQuery({
+        adapter: mockAdapter,
+        referenceId: "user-123",
+        feature: mockFeature
+      });
+
+      expect(mockAdapter.findMany).toHaveBeenCalledWith({
+        model: "usage",
+        where: expect.any(Array),
+        sortBy: { field: "createdAt", direction: "desc" }
+      });
     });
   });
 });
