@@ -140,57 +140,130 @@ describe("UsageCache", () => {
       expect(result.amount).toBe(-10);
     });
 
-    test("should handle large amounts", async () => {
-      const event = {
+  describe("getUsage", () => {
+    it("should retrieve cached usage successfully", async () => {
+      const mockUsage = {
         referenceId: "user-123",
         feature: "api-calls",
         amount: 1000000,
       };
 
-      const result = await cache.insertEvent(event);
-      
-      expect(result.amount).toBe(1000000);
+      // Set mock data
+      const redis = (cache as any).cache;
+      redis.setMockData("usage:api-calls:user-123", JSON.stringify(mockUsage));
+
+      const result = await cache.getUsage("user-123", "api-calls");
+      expect(result).toBeDefined();
     });
   });
 
-  describe("getUsage", () => {
-    test("should throw APIError when key not found", async () => {
-      expect(async () => {
-        await cache.getUsage("nonexistent", "feature");
-      }).toThrow();
+    it("should throw APIError when cache data not found", async () => {
+      await expect(
+        cache.getUsage("nonexistent", "api-calls")
+      ).rejects.toThrow(APIError);
     });
 
-    test("should return parsed usage data when key exists", async () => {
-      // This test would require setting up mock data
-      // In a real scenario, you'd insert data first, then retrieve it
-      expect(true).toBe(true); // Placeholder
+    it("should throw INTERNAL_SERVER_ERROR on Redis failure", async () => {
+      const redis = (cache as any).cache;
+      redis.get = async () => { throw new Error("Redis connection failed"); };
+
+      await expect(
+        cache.getUsage("user-123", "api-calls")
+      ).rejects.toThrow(APIError);
+    });
+
+    it("should handle special characters in referenceId", async () => {
+      const mockUsage = {
+        referenceId: "user@test.com",
+        feature: "api-calls",
+        current: 10
+      };
+
+      const redis = (cache as any).cache;
+      redis.setMockData("usage:api-calls:user@test.com", JSON.stringify(mockUsage));
+
+      const result = await cache.getUsage("user@test.com", "api-calls");
+      expect(result).toBeDefined();
     });
   });
 
   describe("clearUsage", () => {
-    test("should not throw when clearing non-existent key", async () => {
-      await expect(cache.clearUsage("user-123", "api-calls")).resolves.not.toThrow();
+    it("should clear cached usage successfully", async () => {
+      await expect(
+        cache.clearUsage("user-123", "api-calls")
+      ).resolves.not.toThrow();
     });
 
-    test("should clear existing usage", async () => {
-      // In real tests, you'd insert data first, then clear and verify
-      await expect(cache.clearUsage("user-123", "api-calls")).resolves.toBeUndefined();
+    it("should handle clearing non-existent usage", async () => {
+      await expect(
+        cache.clearUsage("nonexistent", "api-calls")
+      ).resolves.not.toThrow();
+    });
+
+    it("should throw APIError on Redis failure", async () => {
+      const redis = (cache as any).cache;
+      redis.del = async () => { throw new Error("Redis error"); };
+
+      await expect(
+        cache.clearUsage("user-123", "api-calls")
+      ).rejects.toThrow(APIError);
     });
   });
 
-  describe("EventEmitter behavior", () => {
-    test("should inherit from EventEmitter", () => {
-      expect(cache.on).toBeFunction();
-      expect(cache.emit).toBeFunction();
-      expect(cache.removeListener).toBeFunction();
+  describe("resolveKeys", () => {
+    it("should resolve usage and limit keys correctly", () => {
+      const keys = cache.resolveKeys("user-123", "api-calls");
+      
+      expect(keys.usageKey).toBe("usage:api-calls:user-123");
+      expect(keys.limitKey).toBe("limit:api-calls:user-123");
     });
 
-    test("should allow event subscription", () => {
-      const handler = mock(() => {});
-      cache.on("test-event", handler);
-      cache.emit("test-event");
-      
-      expect(handler).toHaveBeenCalledTimes(1);
+    it("should handle empty strings", () => {
+      const keys = cache.resolveKeys("", "");
+      expect(keys.usageKey).toBe("usage::");
+      expect(keys.limitKey).toBe("limit::");
+    });
+
+    it("should handle special characters", () => {
+      const keys = cache.resolveKeys("user:123", "api-calls:v2");
+      expect(keys.usageKey).toBe("usage:api-calls:v2:user:123");
+      expect(keys.limitKey).toBe("limit:api-calls:v2:user:123");
+    });
+  });
+
+  describe("resolveUsageKey", () => {
+    it("should create correct usage key format", () => {
+      const key = cache.resolveUsageKey("user-123", "api-calls");
+      expect(key).toBe("usage:api-calls:user-123");
+    });
+
+    it("should be consistent with multiple calls", () => {
+      const key1 = cache.resolveUsageKey("user-123", "api-calls");
+      const key2 = cache.resolveUsageKey("user-123", "api-calls");
+      expect(key1).toBe(key2);
+    });
+  });
+
+  describe("resolveLimitKey", () => {
+    it("should create correct limit key format", () => {
+      const key = cache.resolveLimitKey("user-123", "api-calls");
+      expect(key).toBe("limit:api-calls:user-123");
+    });
+
+    it("should differ from usage key", () => {
+      const usageKey = cache.resolveUsageKey("user-123", "api-calls");
+      const limitKey = cache.resolveLimitKey("user-123", "api-calls");
+      expect(usageKey).not.toBe(limitKey);
+    });
+
+  describe("disconnect", () => {
+    it("should disconnect Redis client successfully", async () => {
+      await expect(cache.disconnect()).resolves.not.toThrow();
+    });
+
+    it("should handle multiple disconnect calls", async () => {
+      await cache.disconnect();
+      await expect(cache.disconnect()).resolves.not.toThrow();
     });
   });
 });

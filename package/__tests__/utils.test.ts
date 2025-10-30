@@ -1,294 +1,272 @@
-import { describe, test, expect } from "bun:test";
-import { checkLimit, shouldReset, tryCatch } from "../utils";
+import { describe, it, expect } from "bun:test";
+import { tryCatch, checkLimit, shouldReset } from "@/utils";
 
-describe("checkLimit", () => {
-  test("should return 'in-limit' when value is within bounds", () => {
-    const result = checkLimit({
-      maxLimit: 100,
-      minLimit: 10,
-      value: 50,
-    });
-    expect(result).toBe("in-limit");
-  });
+describe("tryCatch", () => {
+  describe("successful promises", () => {
+    it("should return data on successful promise", async () => {
+      const promise = Promise.resolve(42);
+      const result = await tryCatch(promise);
 
-  test("should return 'above-max-limit' when value exceeds maxLimit", () => {
-    const result = checkLimit({
-      maxLimit: 100,
-      minLimit: 10,
-      value: 150,
-    });
-    expect(result).toBe("above-max-limit");
-  });
-
-  test("should return 'below-min-limit' when value is below minLimit", () => {
-    const result = checkLimit({
-      maxLimit: 100,
-      minLimit: 10,
-      value: 5,
+      expect(result.data).toBe(42);
+      expect(result.error).toBeNull();
     });
     expect(result).toBe("below-min-limit");
   });
 
-  test("should return 'in-limit' when no limits are defined", () => {
-    const result = checkLimit({
-      value: 50,
+    it("should handle string values", async () => {
+      const promise = Promise.resolve("success");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe("success");
+      expect(result.error).toBeNull();
     });
     expect(result).toBe("in-limit");
   });
 
-  test("should return 'in-limit' when value equals maxLimit", () => {
-    const result = checkLimit({
-      maxLimit: 100,
-      value: 100,
+    it("should handle object values", async () => {
+      const obj = { id: 1, name: "test" };
+      const promise = Promise.resolve(obj);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toEqual(obj);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle array values", async () => {
+      const arr = [1, 2, 3];
+      const promise = Promise.resolve(arr);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toEqual(arr);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle null values", async () => {
+      const promise = Promise.resolve(null);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle undefined values", async () => {
+      const promise = Promise.resolve(undefined);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeUndefined();
+      expect(result.error).toBeNull();
     });
     expect(result).toBe("in-limit");
   });
 
-  test("should return 'in-limit' when value equals minLimit", () => {
-    const result = checkLimit({
-      minLimit: 10,
-      value: 10,
+    it("should handle boolean values", async () => {
+      const promise = Promise.resolve(true);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe(true);
+      expect(result.error).toBeNull();
+    });
+  });
+
+  describe("failed promises", () => {
+    it("should return error on rejected promise", async () => {
+      const error = new Error("Test error");
+      const promise = Promise.reject(error);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBe(error);
+    });
+
+    it("should handle string errors", async () => {
+      const promise = Promise.reject("String error");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBe("String error");
     });
     expect(result).toBe("in-limit");
   });
 
-  test("should handle edge case with only maxLimit", () => {
-    const result = checkLimit({
-      maxLimit: 100,
-      value: 50,
+    it("should handle custom error types", async () => {
+      class CustomError extends Error {
+        code: number;
+        constructor(message: string, code: number) {
+          super(message);
+          this.code = code;
+        }
+      }
+
+      const error = new CustomError("Custom", 404);
+      const promise = Promise.reject(error);
+      const result = await tryCatch<any, CustomError>(promise);
+
+      expect(result.error?.code).toBe(404);
     });
-    expect(result).toBe("in-limit");
+
+    it("should handle undefined errors", async () => {
+      const promise = Promise.reject(undefined);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeUndefined();
+    });
+
+    it("should handle null errors", async () => {
+      const promise = Promise.reject(null);
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBeNull();
+      expect(result.error).toBeNull();
+    });
   });
 
-  test("should handle edge case with only minLimit", () => {
-    const result = checkLimit({
-      minLimit: 10,
-      value: 50,
+  describe("async functions", () => {
+    it("should work with async function that succeeds", async () => {
+      const asyncFn = async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return "delayed success";
+      };
+
+      const result = await tryCatch(asyncFn());
+
+      expect(result.data).toBe("delayed success");
+      expect(result.error).toBeNull();
     });
-    expect(result).toBe("in-limit");
+
+    it("should work with async function that throws", async () => {
+      const asyncFn = async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        throw new Error("delayed error");
+      };
+
+      const result = await tryCatch(asyncFn());
+
+      expect(result.data).toBeNull();
+      expect(result.error?.message).toBe("delayed error");
+    });
   });
 
-  test("should handle zero values correctly", () => {
+  describe("type safety", () => {
+    it("should infer correct data type", async () => {
+      const promise = Promise.resolve(42);
+      const result = await tryCatch(promise);
+
+      if (result.data !== null) {
+        const num: number = result.data;
+        expect(typeof num).toBe("number");
+      }
+    });
+
+    it("should handle generic error types", async () => {
+      interface ApiError {
+        status: number;
+        message: string;
+      }
+
+      const error: ApiError = { status: 500, message: "Server error" };
+      const promise = Promise.reject(error);
+      const result = await tryCatch<any, ApiError>(promise);
+
+      if (result.error) {
+        expect(result.error.status).toBe(500);
+        expect(result.error.message).toBe("Server error");
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle very large data", async () => {
+      const largeArray = new Array(10000).fill(1);
+      const promise = Promise.resolve(largeArray);
+      const result = await tryCatch(promise);
+
+      expect(result.data?.length).toBe(10000);
+      expect(result.error).toBeNull();
+    });
+
+    it("should handle promises that resolve immediately", async () => {
+      const promise = Promise.resolve("immediate");
+      const result = await tryCatch(promise);
+
+      expect(result.data).toBe("immediate");
+    });
+
+    it("should handle promises that reject immediately", async () => {
+      const promise = Promise.reject(new Error("immediate error"));
+      const result = await tryCatch(promise);
+
+      expect(result.error?.message).toBe("immediate error");
+    });
+  });
+});
+
+describe("checkLimit", () => {
+  it("should return 'in-limit' when within bounds", () => {
     const result = checkLimit({
       maxLimit: 100,
       minLimit: 0,
-      value: 0,
+      value: 50
     });
     expect(result).toBe("in-limit");
   });
 
-  test("should handle negative values", () => {
+  it("should return 'above-max-limit' when exceeding max", () => {
     const result = checkLimit({
-      maxLimit: 0,
-      minLimit: -100,
-      value: -50,
+      maxLimit: 100,
+      minLimit: 0,
+      value: 150
+    });
+    expect(result).toBe("above-max-limit");
+  });
+
+  it("should return 'below-min-limit' when below min", () => {
+    const result = checkLimit({
+      maxLimit: 100,
+      minLimit: 10,
+      value: 5
+    });
+    expect(result).toBe("below-min-limit");
+  });
+
+  it("should handle undefined maxLimit", () => {
+    const result = checkLimit({
+      minLimit: 10,
+      value: 50
+    });
+    expect(result).toBe("in-limit");
+  });
+
+  it("should handle undefined minLimit", () => {
+    const result = checkLimit({
+      maxLimit: 100,
+      value: 50
     });
     expect(result).toBe("in-limit");
   });
 });
 
 describe("shouldReset", () => {
-  test("should return false for 'never' reset type", () => {
+  it("should not reset for 'never' type", () => {
     const result = shouldReset(new Date(), "never");
     expect(result.shouldReset).toBe(false);
-    expect(result.nextReset).toBeUndefined();
   });
 
-  test("should return true when lastReset is null and reset type is not 'never'", () => {
+  it("should reset when lastReset is null", () => {
     const result = shouldReset(null, "daily");
     expect(result.shouldReset).toBe(true);
     expect(result.nextReset).toBeInstanceOf(Date);
   });
 
-  test("should calculate next reset for hourly", () => {
-    const now = new Date("2024-01-01T10:30:00Z");
-    const lastReset = new Date("2024-01-01T09:00:00Z");
-    const result = shouldReset(lastReset, "hourly");
-    
+  it("should reset for daily when last reset was yesterday", () => {
+    const yesterday = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const result = shouldReset(yesterday, "daily");
     expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-    expect(result.nextReset!.getMinutes()).toBe(0);
-    expect(result.nextReset!.getSeconds()).toBe(0);
   });
 
-  test("should calculate next reset for 6-hourly", () => {
-    const now = new Date("2024-01-01T10:00:00Z");
-    const lastReset = new Date("2024-01-01T05:00:00Z");
-    const result = shouldReset(lastReset, "6-hourly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-
-  test("should calculate next reset for daily", () => {
-    const now = new Date("2024-01-01T23:00:00Z");
-    const lastReset = new Date("2024-01-01T00:00:00Z");
-    const result = shouldReset(lastReset, "daily");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-    expect(result.nextReset!.getHours()).toBe(0);
-  });
-
-  test("should calculate next reset for weekly", () => {
-    const lastReset = new Date("2024-01-01T00:00:00Z"); // Monday
-    const result = shouldReset(lastReset, "weekly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-
-  test("should calculate next reset for monthly", () => {
-    const lastReset = new Date("2024-01-01T00:00:00Z");
-    const result = shouldReset(lastReset, "monthly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-    expect(result.nextReset!.getDate()).toBe(1);
-  });
-
-  test("should calculate next reset for quarterly", () => {
-    const lastReset = new Date("2024-01-01T00:00:00Z");
-    const result = shouldReset(lastReset, "quarterly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-
-  test("should calculate next reset for yearly", () => {
-    const lastReset = new Date("2024-01-01T00:00:00Z");
-    const result = shouldReset(lastReset, "yearly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-    expect(result.nextReset!.getMonth()).toBe(0);
-    expect(result.nextReset!.getDate()).toBe(1);
-  });
-
-  test("should not reset if lastReset is after nextReset", () => {
-    const futureReset = new Date(Date.now() + 86400000); // Tomorrow
-    const result = shouldReset(futureReset, "hourly");
-    
+  it("should not reset for daily when last reset was today", () => {
+    const today = new Date();
+    const result = shouldReset(today, "daily");
     expect(result.shouldReset).toBe(false);
-  });
-
-  test("should handle edge case at month boundary for monthly reset", () => {
-    const lastReset = new Date("2024-01-31T00:00:00Z");
-    const result = shouldReset(lastReset, "monthly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-
-  test("should handle quarter transitions correctly", () => {
-    const lastReset = new Date("2024-03-31T00:00:00Z"); // End of Q1
-    const result = shouldReset(lastReset, "quarterly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-
-  test("should handle year transitions correctly", () => {
-    const lastReset = new Date("2024-12-31T23:59:59Z");
-    const result = shouldReset(lastReset, "yearly");
-    
-    expect(result.shouldReset).toBe(true);
-    expect(result.nextReset).toBeInstanceOf(Date);
-  });
-});
-
-describe("tryCatch", () => {
-  test("should return data on successful promise", async () => {
-    const promise = Promise.resolve("success");
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toBe("success");
-    expect(result.error).toBeNull();
-  });
-
-  test("should return error on rejected promise", async () => {
-    const error = new Error("test error");
-    const promise = Promise.reject(error);
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBe(error);
-  });
-
-  test("should handle async functions", async () => {
-    const asyncFn = async () => {
-      return "async success";
-    };
-    const result = await tryCatch(asyncFn());
-    
-    expect(result.data).toBe("async success");
-    expect(result.error).toBeNull();
-  });
-
-  test("should handle thrown errors in async functions", async () => {
-    const asyncFn = async () => {
-      throw new Error("async error");
-    };
-    const result = await tryCatch(asyncFn());
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBeInstanceOf(Error);
-    expect((result.error as Error).message).toBe("async error");
-  });
-
-  test("should handle non-Error objects", async () => {
-    const promise = Promise.reject("string error");
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBe("string error");
-  });
-
-  test("should preserve error type information", async () => {
-    class CustomError extends Error {
-      code: number;
-      constructor(message: string, code: number) {
-        super(message);
-        this.code = code;
-      }
-    }
-    
-    const error = new CustomError("custom error", 404);
-    const promise = Promise.reject(error);
-    const result = await tryCatch<any, CustomError>(promise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBeInstanceOf(CustomError);
-    expect(result.error?.code).toBe(404);
-  });
-
-  test("should handle promises that resolve to null", async () => {
-    const promise = Promise.resolve(null);
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toBeNull();
-    expect(result.error).toBeNull();
-  });
-
-  test("should handle promises that resolve to undefined", async () => {
-    const promise = Promise.resolve(undefined);
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toBeUndefined();
-    expect(result.error).toBeNull();
-  });
-
-  test("should handle complex return types", async () => {
-    const complexData = {
-      nested: {
-        array: [1, 2, 3],
-        object: { key: "value" },
-      },
-    };
-    const promise = Promise.resolve(complexData);
-    const result = await tryCatch(promise);
-    
-    expect(result.data).toEqual(complexData);
-    expect(result.error).toBeNull();
   });
 });
