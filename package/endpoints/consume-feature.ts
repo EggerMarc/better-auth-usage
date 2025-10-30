@@ -6,14 +6,16 @@ import type { UsageOptionsWithCache } from "package/types";
 import { z } from "zod"
 
 /**
- * Create an authenticated POST endpoint at /usage/consume that records meter usage for a feature.
+ * Create an authenticated POST endpoint at /usage/consume that records feature meter usage.
  *
- * The endpoint validates the request body, resolves the target feature (including any override),
- * looks up the customer by referenceId, runs optional feature hooks (before/after), and inserts a usage record.
+ * Validates the request body, resolves the target feature and optional override, looks up the customer,
+ * optionally invokes feature `before`/`after` hooks, inserts a usage record, and returns the inserted row.
  *
  * @param features - Feature definitions available for consumption
  * @param overrides - Optional override definitions that adjust feature behavior or limits
- * @returns The configured authenticated endpoint that handles consumption requests and returns the inserted usage record
+ * @param cache - Optional cache layer used by the endpoint for lookups or state
+ * @param tracker - Optional external tracker used to obtain current usage instead of the database
+ * @returns The configured authenticated endpoint which handles consumption requests and returns the inserted usage record
  */
 export function getConsumeEndpoint({
     features, overrides, cache, tracker

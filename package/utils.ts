@@ -38,6 +38,13 @@ export function shouldReset(
     return { shouldReset: false, nextReset: nextResetTime };
 }
 
+/**
+ * Calculate the next reset timestamp after a given base date according to a reset cadence.
+ *
+ * @param base - The reference date from which the next reset is computed
+ * @param reset - The reset cadence: "hourly", "6-hourly", "daily", "weekly", "monthly", "quarterly", "yearly", or "never"
+ * @returns The Date representing the next reset time; for `"never"` returns the provided `base`
+ */
 function computeNextResetTime(base: Date, reset: ResetType): Date {
     const next = new Date(base);
 
@@ -107,6 +114,11 @@ type Failure<E> = {
 
 type Result<T, E = Error> = Success<T> | Failure<E>;
 
+/**
+ * Execute a promise and return its outcome as a discriminated Result object.
+ *
+ * @returns A Result where `data` holds the fulfilled value and `error` is `null`, or `data` is `null` and `error` holds the caught error.
+ */
 export async function tryCatch<T, E = Error>(
     promise: Promise<T>,
 ): Promise<Result<T, E>> {
