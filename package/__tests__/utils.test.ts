@@ -10,6 +10,8 @@ describe("tryCatch", () => {
       expect(result.data).toBe(42);
       expect(result.error).toBeNull();
     });
+    expect(result).toBe("below-min-limit");
+  });
 
     it("should handle string values", async () => {
       const promise = Promise.resolve("success");
@@ -18,6 +20,8 @@ describe("tryCatch", () => {
       expect(result.data).toBe("success");
       expect(result.error).toBeNull();
     });
+    expect(result).toBe("in-limit");
+  });
 
     it("should handle object values", async () => {
       const obj = { id: 1, name: "test" };
@@ -52,6 +56,8 @@ describe("tryCatch", () => {
       expect(result.data).toBeUndefined();
       expect(result.error).toBeNull();
     });
+    expect(result).toBe("in-limit");
+  });
 
     it("should handle boolean values", async () => {
       const promise = Promise.resolve(true);
@@ -79,6 +85,8 @@ describe("tryCatch", () => {
       expect(result.data).toBeNull();
       expect(result.error).toBe("String error");
     });
+    expect(result).toBe("in-limit");
+  });
 
     it("should handle custom error types", async () => {
       class CustomError extends Error {

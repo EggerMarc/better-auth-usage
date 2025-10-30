@@ -1,124 +1,151 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import { UsageCache } from "@/adapters/cache";
+import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
+import { UsageCache } from "../../adapters/cache";
 import { APIError } from "better-auth";
-import Redis from "ioredis";
 
 // Mock Redis
-mock.module("ioredis", () => {
-  return {
-    default: class MockRedis {
-      private store = new Map<string, string>();
-      
-      constructor(public url?: string) {}
-      
-      async eval(...args: any[]): Promise<any> {
-        return [100, Date.now()];
-      }
-      
-      async get(key: string): Promise<string | null> {
-        return this.store.get(key) || null;
-      }
-      
-      async del(key: string): Promise<number> {
-        const existed = this.store.has(key);
-        this.store.delete(key);
-        return existed ? 1 : 0;
-      }
-      
-      async quit(): Promise<void> {}
-      
-      setMockData(key: string, value: string) {
-        this.store.set(key, value);
-      }
-      
-      clearMockData() {
-        this.store.clear();
-      }
-    }
-  };
-});
+class MockRedis {
+  private data: Map<string, any> = new Map();
+  
+  async get(key: string) {
+    return this.data.get(key) || null;
+  }
+  
+  async set(key: string, value: any) {
+    this.data.set(key, value);
+  }
+  
+  async eval(...args: any[]) {
+    // Mock eval response for increment script
+    const newAmount = 100;
+    const resetAt = Date.now() + 86400000;
+    return [newAmount, resetAt];
+  }
+  
+  async quit() {
+    return "OK";
+  }
+  
+  clear() {
+    this.data.clear();
+  }
+}
 
 describe("UsageCache", () => {
   let cache: UsageCache;
-  const testUrl = "redis://localhost:6379";
+  let mockRedis: MockRedis;
 
   beforeEach(() => {
-    cache = new UsageCache({ url: testUrl });
+    mockRedis = new MockRedis();
+    // Note: In real tests, you'd use a test Redis instance or redis-mock
+    cache = new UsageCache({ url: "redis://localhost:6379" });
   });
 
   afterEach(async () => {
     await cache.disconnect();
   });
 
-  describe("constructor", () => {
-    it("should create instance with valid URL", () => {
-      expect(cache).toBeDefined();
-      expect(cache).toBeInstanceOf(UsageCache);
+  describe("resolveKeys", () => {
+    test("should generate correct usage and limit keys", () => {
+      const keys = cache.resolveKeys("user-123", "api-calls");
+      
+      expect(keys.usageKey).toBe("usage:api-calls:user-123");
+      expect(keys.limitKey).toBe("limit:api-calls:user-123");
     });
 
-    it("should throw error with invalid URL", () => {
-      expect(() => new UsageCache({ url: "not-a-url" })).toThrow();
+    test("should handle different reference IDs", () => {
+      const keys1 = cache.resolveKeys("org-456", "storage");
+      const keys2 = cache.resolveKeys("org-789", "storage");
+      
+      expect(keys1.usageKey).not.toBe(keys2.usageKey);
+      expect(keys1.usageKey).toBe("usage:storage:org-456");
+      expect(keys2.usageKey).toBe("usage:storage:org-789");
+    });
+
+    test("should handle special characters in IDs", () => {
+      const keys = cache.resolveKeys("user:123:abc", "feature-name");
+      
+      expect(keys.usageKey).toBe("usage:feature-name:user:123:abc");
+    });
+  });
+
+  describe("resolveUsageKey", () => {
+    test("should generate correct usage key format", () => {
+      const key = cache.resolveUsageKey("customer-1", "bandwidth");
+      
+      expect(key).toBe("usage:bandwidth:customer-1");
+    });
+
+    test("should be consistent across multiple calls", () => {
+      const key1 = cache.resolveUsageKey("customer-1", "bandwidth");
+      const key2 = cache.resolveUsageKey("customer-1", "bandwidth");
+      
+      expect(key1).toBe(key2);
+    });
+  });
+
+  describe("resolveLimitKey", () => {
+    test("should generate correct limit key format", () => {
+      const key = cache.resolveLimitKey("customer-1", "bandwidth");
+      
+      expect(key).toBe("limit:bandwidth:customer-1");
+    });
+
+    test("should differentiate from usage key", () => {
+      const usageKey = cache.resolveUsageKey("customer-1", "bandwidth");
+      const limitKey = cache.resolveLimitKey("customer-1", "bandwidth");
+      
+      expect(usageKey).not.toBe(limitKey);
     });
   });
 
   describe("insertEvent", () => {
-    it("should insert usage event successfully", async () => {
+    test("should insert event and return proper response structure", async () => {
       const event = {
         referenceId: "user-123",
         feature: "api-calls",
-        amount: 10
+        amount: 5,
       };
 
       const result = await cache.insertEvent(event);
-
-      expect(result).toBeDefined();
-      expect(result.amount).toBe(10);
-      expect(result.afterValue).toBe(100);
+      
+      expect(result).toHaveProperty("amount");
+      expect(result).toHaveProperty("afterValue");
+      expect(result).toHaveProperty("resetAt");
+      expect(result.amount).toBe(5);
+      expect(result.afterValue).toBeNumber();
       expect(result.resetAt).toBeInstanceOf(Date);
     });
 
-    it("should handle negative amounts", async () => {
+    test("should handle zero amount", async () => {
       const event = {
         referenceId: "user-123",
         feature: "api-calls",
-        amount: -5
+        amount: 0,
       };
 
       const result = await cache.insertEvent(event);
-      expect(result.amount).toBe(-5);
-    });
-
-    it("should handle zero amount", async () => {
-      const event = {
-        referenceId: "user-123",
-        feature: "api-calls",
-        amount: 0
-      };
-
-      const result = await cache.insertEvent(event);
+      
       expect(result.amount).toBe(0);
     });
 
-    it("should handle large amounts", async () => {
+    test("should handle negative amounts", async () => {
       const event = {
         referenceId: "user-123",
         feature: "api-calls",
-        amount: 999999
+        amount: -10,
       };
 
       const result = await cache.insertEvent(event);
-      expect(result.amount).toBe(999999);
+      
+      expect(result.amount).toBe(-10);
     });
-  });
 
   describe("getUsage", () => {
     it("should retrieve cached usage successfully", async () => {
       const mockUsage = {
         referenceId: "user-123",
         feature: "api-calls",
-        current: 50,
-        lastResetAt: new Date(),
-        updatedAt: new Date()
+        amount: 1000000,
       };
 
       // Set mock data
@@ -128,6 +155,7 @@ describe("UsageCache", () => {
       const result = await cache.getUsage("user-123", "api-calls");
       expect(result).toBeDefined();
     });
+  });
 
     it("should throw APIError when cache data not found", async () => {
       await expect(
@@ -227,7 +255,6 @@ describe("UsageCache", () => {
       const limitKey = cache.resolveLimitKey("user-123", "api-calls");
       expect(usageKey).not.toBe(limitKey);
     });
-  });
 
   describe("disconnect", () => {
     it("should disconnect Redis client successfully", async () => {

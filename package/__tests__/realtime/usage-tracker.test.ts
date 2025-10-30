@@ -84,7 +84,7 @@ describe("UsageTracker", () => {
         amount: 100,
         afterValue: 500,
         resetAt: new Date(),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       await tracker.publishUpdate(update);
@@ -98,7 +98,7 @@ describe("UsageTracker", () => {
         amount: 1,
         afterValue: 101,
         resetAt: new Date(),
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
 
       await expect(tracker.publishUpdate(update)).resolves.not.toThrow();

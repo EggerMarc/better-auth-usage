@@ -415,6 +415,7 @@ describe("UsageWebSocketServer", () => {
       expect(mockSocket.join).toHaveBeenCalledTimes(1);
       expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user-123");
     });
+  });
 
     it("should handle concurrent subscriptions", async () => {
       const handler = (mockIo as any)._connectionHandler;

@@ -5,8 +5,26 @@
         "type": "git",
         "url": "git+https://github.com/EggerMarc/better-auth-usage.git"
     },
+    "description": "better auth usage plugin",
     "main": "./dist/index.js",
-    "module": "./dist/index.js",
+    "author": "Marc Egger",
+    "license": "MIT",
+    "homepage": "https://github.com/EggerMarc/better-auth-usage#readme",
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "test": "bun test",
+        "test:watch": "bun test --watch",
+        "test:coverage": "bun test --coverage"
+    },
+    "type": "module",
+    "types": "./dist/index.d.ts",
+    "dependencies": {
+        "events": "^3.3.0",
+        "ioredis": "^5.8.2",
+        "socket.io": "^4.8.1",
+        "zod": "^4.1.9"
+    },
     "devDependencies": {
         "@types/bun": "^1.1.14",
         "tsup": "^8.3.5",
@@ -38,28 +56,10 @@
         "auth",
         "better",
         "usage",
-        "typescript"
-    ],
-    "license": "MIT",
-    "peerDependenciesMeta": {
-        "better-auth": {
-            "optional": false
-        }
-    },
-    "publishConfig": {
-        "access": "public"
-    },
-    "scripts": {
-        "test": "bun test",
-        "build": "tsup",
-        "dev": "tsup --watch"
-    },
-    "type": "module",
-    "types": "./dist/index.d.ts",
-    "dependencies": {
-        "events": "^3.3.0",
-        "ioredis": "^5.8.2",
-        "socket.io": "^4.8.1",
-        "zod": "^4.1.9"
-    }
+        "consumption",
+        "consumption-tracking",
+        "credits",
+        "better-auth-plugin",
+        "credits-tracking"
+    ]
 }
