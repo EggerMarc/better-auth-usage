@@ -3,10 +3,11 @@ import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
 import type { UsageOptionsWithCache } from "package/types";
 import { getUsageAdapter } from "package/adapters";
-import { checkLimit } from "package/utils";
+import { checkLimit, tryCatch } from "package/utils";
 import { usageMiddleware } from "package/middlewares/usage";
 import { resolveGetCustomer } from "package/resolvers/get-customer"
 import { resolveGetUsage } from "@/resolvers/get-usage";
+
 /**
  * Creates an authenticated POST endpoint at /usage/check that validates the request body and checks a customer's latest usage against a feature's configured limits.
  *
@@ -77,10 +78,18 @@ export function getCheckEndpoint(options: UsageOptionsWithCache) {
                 throw new APIError("NOT_FOUND", { message: "Feature not found" });
             }
 
-            const usage = await resolveGetUsage({
-                referenceId: ctx.body.referenceId,
-                adapter, options, feature
-            })
+            const { data: usage, error } = await tryCatch(
+                resolveGetUsage({
+                    referenceId: ctx.body.referenceId,
+                    adapter, options, feature
+                })
+            )
+
+            if (error) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Internal error getting usage for feature ${feature.key}, ${error.message}`
+                })
+            }
 
             return checkLimit({
                 minLimit: feature.minLimit,

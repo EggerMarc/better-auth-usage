@@ -110,22 +110,17 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
 
         endpoints: {
             getFeature: getFeatureEndpoint(options),
-
             consumeFeature: getConsumeEndpoint({
                 ...options,
                 cache,
                 tracker,
             }),
-
             listFeatures: getFeaturesEndpoint(options),
-
             checkUsage: getCheckEndpoint({
                 ...options,
                 cache
             }),
-
-            upsertCustomer: getUpsertCustomerEndpoint(),
-
+            upsertCustomer: getUpsertCustomerEndpoint(options),
             syncUsage: getSyncEndpoint({
                 ...options,
                 cache,

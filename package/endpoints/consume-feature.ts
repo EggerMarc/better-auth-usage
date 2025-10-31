@@ -1,5 +1,8 @@
 import { getUsageAdapter } from "@/adapters";
+import { resolveGetCustomer } from "@/resolvers/get-customer";
 import { resolveGetUsage } from "@/resolvers/get-usage";
+import { resolveInsertUsage } from "@/resolvers/insert-usage";
+import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
@@ -21,7 +24,6 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
             method: "POST",
             middleware: [
                 sessionMiddleware,
-                usageMiddleware(options),
             ],
             body: z.object({
                 featureKey: z.string(),
@@ -64,16 +66,6 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId,
-                cache: options.cache
-            });
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
-            }
-
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
@@ -81,45 +73,43 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
                 overrides: options.overrides
             });
 
-            const current = await resolveGetUsage({
+            const {
+                data: customer,
+                error: customerError
+            } = await tryCatch(resolveGetCustomer({
                 referenceId: ctx.body.referenceId,
-                feature,
                 options,
                 adapter
-            })
+            }));
 
-            if (feature.hooks?.before) {
-                await feature.hooks.before({
-                    customer,
-                    usage: {
-                        amount: ctx.body.amount,
-                        beforeAmount: current.amount,
-                        afterAmount: ctx.body.amount + current.amount
-                    },
-                    feature,
-                });
+            if (customerError) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: "Internal server error fetching customer"
+                })
             }
 
-            const res = await adapter.insertUsage({
-                referenceId: customer.referenceId,
-                event: ctx.body.event,
-                feature: feature,
-                amount: ctx.body.amount,
-            });
-
-            if (feature.hooks?.after) {
-                await feature.hooks.after({
-                    customer,
-                    feature,
-                    usage: {
-                        amount: ctx.body.amount,
-                        beforeAmount: current.amount,
-                        afterAmount: current.amount + ctx.body.amount
-                    }
-                });
+            if (!customer) {
+                throw new APIError("NOT_FOUND", {
+                    message: "Customer not found, register customer first"
+                })
             }
 
-            return res;
+            const { data, error } = await tryCatch(
+                resolveInsertUsage({
+                    referenceId: ctx.body.referenceId,
+                    amount: ctx.body.amount,
+                    event: ctx.body.event,
+                    feature,
+                    adapter,
+                    options
+                })
+            );
+            if (error || !data) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Internal server error consuming feature ${feature.key}, for customer ${customer.referenceId}.\n\t${error.message}`
+                })
+            }
+            return data;
         }
     )
 }

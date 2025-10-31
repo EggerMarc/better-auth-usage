@@ -7,13 +7,14 @@ import { resolveResetUsage } from "./reset-usage"
 interface ResolveInsertUsageParams {
     referenceId: string,
     amount: number,
+    event: string,
     feature: Feature
     adapter: UsageAdapter,
     options: UsageOptionsWithCache
 }
 
 export const resolveInsertUsage = async ({
-    referenceId, amount, feature, adapter, options
+    referenceId, amount, event, feature, adapter, options
 }: ResolveInsertUsageParams) => {
     const [current, customer] = await Promise.all([
         resolveGetUsage({ referenceId, feature, adapter, options }),
@@ -32,7 +33,6 @@ export const resolveInsertUsage = async ({
     }
 
     // resolve the insert
-
     let data = null
 
     if (options.cache) {
@@ -40,7 +40,7 @@ export const resolveInsertUsage = async ({
             referenceId,
             amount,
             feature,
-            event: "usage",
+            event,
             lastResetAt: current.lastResetAt,
         }).catch(() => {
             console.log(`[ERROR][]`)
@@ -50,7 +50,7 @@ export const resolveInsertUsage = async ({
             referenceId,
             amount,
             feature: feature.key,
-            event: "usage"
+            event
         })
     }
 

@@ -1,3 +1,5 @@
+import { resolveGetCustomer } from "@/resolvers/get-customer";
+import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
@@ -52,12 +54,6 @@ export function getSyncEndpoint(options: UsageOptionsWithCache) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
-            });
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
-            }
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
@@ -65,7 +61,12 @@ export function getSyncEndpoint(options: UsageOptionsWithCache) {
                 overrides: options.overrides
             });
 
-            const usage = await resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options })
+            const { data: usage, error } = await tryCatch(resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options }))
+            if (error || !usage) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Failed to sync usage on feature ${feature.key}, ${error ? error.message : 'usage not synched'}`
+                })
+            }
             return usage
         }
     )
