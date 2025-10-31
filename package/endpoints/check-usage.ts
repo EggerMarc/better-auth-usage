@@ -9,11 +9,10 @@ import { resolveGetCustomer } from "package/resolvers/get-customer"
 import { resolveGetUsage } from "@/resolvers/get-usage";
 
 /**
- * Creates an authenticated POST endpoint at /usage/check that validates the request body and checks a customer's latest usage against a feature's configured limits.
+ * Create an authenticated POST endpoint at /usage/check that validates the request body and verifies a customer's latest usage against a feature's configured limits.
  *
- * @param features - Feature definitions available for lookup and limit evaluation.
- * @param overrides - Optional override definitions that can alter or extend feature definitions.
- * @returns The configured authenticated endpoint which responds with a status string describing the usage check result.
+ * @param options - Usage options (features, optional overrides, and cache settings) used to resolve features and control lookup behavior.
+ * @returns The configured authenticated endpoint whose response is a status string describing the usage check result.
  */
 export function getCheckEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint(

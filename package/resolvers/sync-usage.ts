@@ -11,7 +11,15 @@ interface ResolveResetUsageParams {
 }
 
 
-// Checks if we need to reset, if so, run resetLogic
+/**
+ * Determines whether a feature's usage should be reset and performs the reset if needed.
+ *
+ * @param referenceId - Identifier for the entity whose usage is evaluated
+ * @param feature - Feature configuration (without hooks) including reset rules and limits
+ * @param options - Runtime options that may include a cache implementation used to update limits and record reset events
+ * @param adapter - Adapter used to perform remote reset operations when no cache is available
+ * @returns The data produced by the reset operation (e.g., the cache event result or adapter response) when a reset occurs, or `undefined` if no reset was performed
+ */
 export async function resolveSyncUsage({
     referenceId,
     feature,
@@ -66,4 +74,3 @@ export async function resolveSyncUsage({
     })
     return resetData
 }
-

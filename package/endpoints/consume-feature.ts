@@ -12,10 +12,8 @@ import { z } from "zod"
 /**
  * Create an authenticated POST endpoint at /usage/consume that records metered usage for a feature.
  *
- * @param features - Feature definitions available for consumption
- * @param overrides - Optional override definitions that adjust feature behavior or limits
- * @param tracker - Optional tracker used to obtain current usage before consuming
- * @returns The configured authenticated endpoint that inserts and returns the inserted usage record
+ * @param options - Runtime options used by the endpoint, including feature definitions, override configurations, adapter selection, and caching behavior
+ * @returns The configured authenticated endpoint that inserts a usage record and returns the inserted usage data
  */
 export function getConsumeEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint(

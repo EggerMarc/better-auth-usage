@@ -2,11 +2,11 @@ import type { Feature, Usage } from "@/types";
 import type { Adapter, TransactionAdapter } from "better-auth";
 
 /**
- * Retrieve the current usage state for a given reference and feature, triggering and returning a reset record when no usage exists or a reset is required.
+ * Build a Usage object for a reference and feature where the returned record is the most recent usage entry with its `amount` replaced by the total across all matching usage records.
  *
- * @param referenceId - The identifier for the entity whose usage is being queried
- * @param feature - The feature (without hooks) whose usage and reset policy to evaluate
- * @returns The most recent `Usage` record for the given `referenceId` and `feature`, or the `Usage` record produced by a reset operation when no records exist or a reset is due
+ * @param referenceId - Identifier of the entity whose usage is queried
+ * @param feature - Feature (without `hooks`) whose usage records to evaluate
+ * @returns A `Usage` object copied from the most recent matching record with `amount` set to the sum of `amount` from all matching records
  */
 export async function getUsageQuery({
     adapter,
@@ -32,4 +32,3 @@ export async function getUsageQuery({
         amount: current
     } as Usage
 }
-
