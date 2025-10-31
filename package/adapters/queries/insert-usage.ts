@@ -13,11 +13,15 @@ export interface InsertUsageQueryParams {
 }
 
 /**
- * Insert a usage record for a feature using the provided adapter.
+ * Create a new usage record for a feature.
  *
- * @param referenceId - Identifier that ties the usage to an external entity (e.g., subscription or user)
- * @param featureKey - Key of the feature being consumed
- * @param lastResetAt - Timestamp when usage counters for the feature were last reset
+ * The record's `lastResetAt` will be the provided value; if `lastResetAt` is not provided,
+ * the function uses the existing usage's `lastResetAt` for the reference and feature when available,
+ * otherwise the current date.
+ *
+ * @param referenceId - Identifier that ties the usage to an external entity (for example, a subscription or user)
+ * @param feature - Feature descriptor; the feature's `key` is stored on the created usage record
+ * @param lastResetAt - Timestamp when usage counters for the feature were last reset; if provided, this value is used for the new record
  * @param amount - Quantity of usage to record
  * @param event - Event name describing the usage action (defaults to `"use"`)
  * @returns The created `Usage` record

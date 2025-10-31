@@ -130,6 +130,16 @@ export async function tryCatch<T, E = Error>(
     }
 }
 
+/**
+ * Convert data from a storage-specific shape into the canonical `Usage` shape.
+ *
+ * When `source` is `"cache"`, the function maps a `cached_Usage` record into a `Usage` object.
+ * When `source` is `"db"`, the function returns the supplied `Usage` value unchanged.
+ *
+ * @param data - Input record: a `cached_Usage` when `source` is `"cache"`, or a `Usage` when `source` is `"db"`.
+ * @param source - The origin of `data`, either `"cache"` or `"db"`.
+ * @returns A `Usage` object normalized to the canonical shape.
+ */
 export function normalizeData<
     TSource extends "cache" | "db"
 >(

@@ -9,6 +9,16 @@ interface ResolveGetCustomerParams {
     options: UsageOptionsWithCache
 }
 
+/**
+ * Fetches a Customer by referenceId, preferring a configured cache and falling back to the adapter.
+ *
+ * @param referenceId - The customer reference identifier to look up
+ * @param adapter - Adapter used to retrieve the customer from the primary data store
+ * @param options - Options that may include a cache; when `options.cache` is present, the function will attempt a cache read before querying the adapter and will asynchronously write a successful result back to the cache
+ * @returns The Customer matching `referenceId`
+ * @throws APIError with code `INTERNAL_SERVER_ERROR` if a cache read or database read fails
+ * @throws APIError with code `NOT_FOUND` if no customer is found in the database
+ */
 export async function resolveGetCustomer({ referenceId, options, adapter }: ResolveGetCustomerParams): Promise<Customer> {
     if (options.cache) {
         const { data: customer, error } = await tryCatch(options.cache.getCustomer(referenceId))

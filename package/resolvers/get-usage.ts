@@ -10,6 +10,19 @@ interface ResolveGetUsageParams {
     adapter: UsageAdapter
 }
 
+/**
+ * Retrieve usage for a reference and feature, preferring cache and falling back to the adapter.
+ *
+ * Attempts to load usage from `options.cache` when available; if not found or cache is absent, fetches from `adapter`. When data is returned from the adapter, updates the cache (limit and event) if a cache is configured.
+ *
+ * @param referenceId - Identifier for the usage owner (for example, a tenant or user ID)
+ * @param feature - Feature metadata describing the usage key and reset/limit configuration
+ * @param options - Runtime options that may include a cache implementation
+ * @param adapter - Persistence adapter used to fetch usage when not available in cache
+ * @returns The resolved `Usage` record normalized for its source
+ * @throws APIError with code `INTERNAL_SERVER_ERROR` if reading from cache or the adapter fails
+ * @throws APIError with code `NOT_FOUND` if no usage is found in the adapter
+ */
 export async function resolveGetUsage({
     referenceId,
     feature,
@@ -69,4 +82,3 @@ export async function resolveGetUsage({
     }
     return normalizeData(data, "db")
 }
-

@@ -10,6 +10,14 @@ export interface ResetUsageQueryParams {
 }
 
 
+/**
+ * Create a usage reset entry for a feature and reference when the feature defines a reset value.
+ *
+ * @param referenceId - Identifier for the entity whose usage is being reset
+ * @param curr - Optional current accumulated usage; when provided the reset amount is computed as `feature.resetValue - curr`
+ * @param feature - Feature descriptor (without hooks) containing at least `key` and `resetValue`
+ * @returns The created `Usage` record when a reset entry is added, `undefined` if no reset was performed
+ */
 export async function resetUsageQuery({
     adapter,
     referenceId,
@@ -75,4 +83,3 @@ export async function resetUsageQuery({
     })
     return transaction
 }
-

@@ -15,7 +15,17 @@ interface ResolveResetUsageParams {
 }
 
 
-// Checks if we need to reset, if so, run resetLogic
+/**
+ * Perform a usage reset for a feature when its reset condition is met.
+ *
+ * If the feature has no reset configuration or no reset is required, the function returns without action.
+ *
+ * @param referenceId - Identifier for the entity whose usage is being evaluated
+ * @param feature - Feature configuration (without hooks); its `reset` field controls reset behavior and `resetValue` is used to compute the reset delta
+ * @param options - Usage options; when `options.cache` is present, cache is updated and used to record the reset event
+ * @param adapter - Usage adapter used to execute a reset when the cache is not available or to notify the backing store
+ * @returns The reset event data returned by the cache insertion or the adapter's `resetUsage` result when a reset is performed; otherwise `undefined`
+ */
 export async function resolveResetUsage({
     referenceId,
     feature,
@@ -71,4 +81,3 @@ export async function resolveResetUsage({
 
     return resetData
 }
-
