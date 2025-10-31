@@ -1,8 +1,5 @@
 import type { Feature, Usage } from "@/types";
-import type { Adapter } from "better-auth";
-import { resetUsageQuery } from "./reset-usage";
-import { shouldReset } from "@/utils";
-import type { UsageCache } from "../cache";
+import type { Adapter, TransactionAdapter } from "better-auth";
 
 /**
  * Retrieve the current usage state for a given reference and feature, triggering and returning a reset record when no usage exists or a reset is required.
@@ -16,7 +13,7 @@ export async function getUsageQuery({
     referenceId,
     feature,
 }: {
-    adapter: Adapter,
+    adapter: Adapter | TransactionAdapter,
     referenceId: string,
     feature: Omit<Feature, "hooks">,
 }) {
@@ -28,30 +25,11 @@ export async function getUsageQuery({
         ],
         sortBy: { field: "createdAt", direction: "desc" },
     })
-
-    if (usage.length === 0) {
-        const reset = await resetUsageQuery({
-            adapter,
-            referenceId,
-            curr: feature.resetValue ?? 0,
-            feature
-        })
-
-        return reset
-    }
     const last = usage[0];
     const current = usage.reduce((value, { amount }) => amount + value, 0)
-    const reset = shouldReset(last ? (last.lastResetAt ?? null) : null, feature.reset ?? "never");
-    if (reset.shouldReset && reset.nextReset) {
-        // trigger sync
-        const reset = await resetUsageQuery({
-            adapter,
-            referenceId,
-            curr: current,
-            feature,
-        })
-        return reset
-    }
-    return last
+    return {
+        ...last,
+        amount: current
+    } as Usage
 }
 

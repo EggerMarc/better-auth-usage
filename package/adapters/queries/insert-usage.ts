@@ -1,5 +1,16 @@
-import type { Usage } from "@/types";
-import type { Adapter, TransactionAdapter } from "better-auth";
+import type { Feature, Usage } from "@/types";
+import type { Adapter } from "better-auth";
+import { getUsageQuery } from "./get-usage";
+
+
+export interface InsertUsageQueryParams {
+    amount: number,
+    referenceId: string,
+    event: string,
+    lastResetAt: Date,
+    feature: Omit<Feature, "hooks">
+    adapter: Adapter,
+}
 
 /**
  * Insert a usage record for a feature using the provided adapter.
@@ -14,27 +25,45 @@ import type { Adapter, TransactionAdapter } from "better-auth";
 export async function insertUsageQuery({
     adapter,
     referenceId,
-    featureKey,
+    feature,
     lastResetAt,
     amount,
     event = "use"
-}: {
-    adapter: Adapter | TransactionAdapter,
-    referenceId: string,
-    featureKey: string,
-    lastResetAt: Date,
-    amount: number,
-    event: string
-}) {
-    return await adapter.create<Usage>({
-        model: "usage",
-        data: {
+}: InsertUsageQueryParams) {
+    if (lastResetAt) {
+        await adapter.create<Usage>({
+            model: "usage",
+            data: {
+                referenceId,
+                amount,
+                lastResetAt,
+                event,
+                feature: feature.key,
+                createdAt: new Date()
+            }
+        })
+    }
+
+
+    const transaction = await adapter.transaction(async (tx) => {
+        const usage = await getUsageQuery({
+            adapter: tx,
             referenceId,
-            amount,
-            lastResetAt,
-            event,
-            feature: featureKey,
-            createdAt: new Date()
-        }
+            feature
+        });
+
+
+        return await tx.create<Usage>({
+            model: "usage",
+            data: {
+                referenceId,
+                amount,
+                lastResetAt: usage?.lastResetAt ?? new Date(),
+                event,
+                feature: feature.key,
+                createdAt: new Date()
+            }
+        })
     })
+    return transaction
 }
