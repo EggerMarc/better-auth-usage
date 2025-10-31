@@ -1,3 +1,7 @@
+/* DEPRECATE NOTICE
+ * Due to bad naming, this function is a duplicate of sync-usage.ts
+ * Use that, I'll delete this in no time
+ */
 import type { Feature, UsageOptionsWithCache } from "../types"
 import type { UsageAdapter } from "@/adapters"
 import { resolveGetUsage } from "./get-usage"

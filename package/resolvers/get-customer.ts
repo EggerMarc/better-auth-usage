@@ -13,8 +13,9 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
     if (options.cache) {
         const { data: customer, error } = await tryCatch(options.cache.getCustomer(referenceId))
         if (error) {
-            //TODO handle error
-            throw new APIError()
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed getting customer ${referenceId} from cache`
+            })
         }
         if (customer) {
             return customer
@@ -24,18 +25,21 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
     const { data: customer, error } = await tryCatch(adapter.getCustomer({ referenceId }));
 
     if (error) {
-        // TODO handle error
-        throw new APIError()
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Failed getting customer ${referenceId} from DB`
+        })
     }
 
     if (!customer) {
         // TODO handle not found
-        throw new APIError()
+        throw new APIError("NOT_FOUND", {
+            message: `Customer ${referenceId} not found in db`
+        })
     }
 
     if (options.cache) {
-        options.cache.setCustomer(customer).catch(() => {
-            console.log(new APIError().message)
+        options.cache.setCustomer(customer).catch((error) => {
+            console.log(error)
         })
     }
 

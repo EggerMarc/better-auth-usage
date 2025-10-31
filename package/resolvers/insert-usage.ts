@@ -2,7 +2,9 @@ import type { UsageAdapter } from "@/adapters"
 import type { Feature, UsageOptionsWithCache } from "@/types"
 import { resolveGetUsage } from "./get-usage"
 import { resolveGetCustomer } from "./get-customer"
-import { resolveResetUsage } from "./reset-usage"
+import { tryCatch } from "@/utils"
+import { APIError } from "better-auth"
+import { resolveSyncUsage } from "./sync-usage"
 
 interface ResolveInsertUsageParams {
     referenceId: string,
@@ -16,15 +18,24 @@ interface ResolveInsertUsageParams {
 export const resolveInsertUsage = async ({
     referenceId, amount, event, feature, adapter, options
 }: ResolveInsertUsageParams) => {
-    const [current, customer] = await Promise.all([
+    const { data: usageAndCustomer, error } = await tryCatch(Promise.all([
         resolveGetUsage({ referenceId, feature, adapter, options }),
         resolveGetCustomer({ referenceId, options, adapter })
-    ])
+    ]))
+
+    if (error) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Failed to resolve either usage or customer\n${error.message}`
+        })
+    }
+    const [currentUsage, customer] = usageAndCustomer;
+
+
     if (feature.hooks?.before) {
         await feature.hooks.before({
             usage: {
-                beforeAmount: current.amount,
-                afterAmount: current.amount + amount,
+                beforeAmount: currentUsage.amount,
+                afterAmount: currentUsage.amount + amount,
                 amount,
             },
             customer,
@@ -41,34 +52,49 @@ export const resolveInsertUsage = async ({
             amount,
             feature,
             event,
-            lastResetAt: current.lastResetAt,
+            lastResetAt: currentUsage.lastResetAt,
         }).catch(() => {
             console.log(`[ERROR][]`)
         })
 
-        data = await options.cache.insertEvent({
+        let { data, error } = await tryCatch(options.cache.insertEvent({
             referenceId,
             amount,
             feature: feature.key,
             event
         })
+        )
+
+        if (error || !data) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to insert usage on cache \n${error ? error.message : "No data returned"}`
+            })
+        }
+
     }
 
     if (!data) {
-        data = await adapter.insertUsage({
+        let { data, error } = await tryCatch(adapter.insertUsage({
             referenceId,
             amount,
             feature,
             event: "usage",
-            lastResetAt: current.lastResetAt,
-        })
+            lastResetAt: currentUsage.lastResetAt,
+        }))
+
+
+        if (error || !data) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to insert usage on db \n${error ? error.message : "No data returned"}`
+            })
+        }
     }
 
     if (feature.hooks?.after) {
         await feature.hooks.after({
             usage: {
-                beforeAmount: current.amount,
-                afterAmount: current.amount + amount,
+                beforeAmount: currentUsage.amount,
+                afterAmount: currentUsage.amount + amount,
                 amount,
             },
             customer,
@@ -76,7 +102,7 @@ export const resolveInsertUsage = async ({
         })
     }
 
-    resolveResetUsage({
+    resolveSyncUsage({
         referenceId, feature, options, adapter
     }).catch(() => { })
     return data

@@ -18,13 +18,25 @@ export async function resolveGetUsage({
 }: ResolveGetUsageParams): Promise<Usage> {
 
     if (options.cache) {
-        const { data } = await tryCatch(options.cache.getUsage(referenceId, feature))
+        const { data, error } = await tryCatch(options.cache.getUsage(referenceId, feature))
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed getting usage ${feature.key} from cache\n${error.message}`
+            })
+        }
+
         if (data) {
             return normalizeData(data, "cache")
         }
     }
 
-    const { data } = await tryCatch(adapter.getUsage({ referenceId, feature }));
+    const { data, error } = await tryCatch(adapter.getUsage({ referenceId, feature }));
+
+    if (error) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Failed getting usage ${feature.key} from db\n${error.message}`
+        })
+    }
 
     if (data) {
         if (feature.reset) {
@@ -44,14 +56,16 @@ export async function resolveGetUsage({
 
         if (options.cache) {
             // For safekeeping, set the limit, the feature will have it
-            await options.cache.insertEvent({
+            options.cache.insertEvent({
                 ...data,
-            })
+            }).catch(() => { })
         }
     }
     if (!data) {
         // TODO handle case where we get no data
-        throw new APIError("NOT_FOUND")
+        throw new APIError("NOT_FOUND", {
+            message: `Usage ${feature.key} not found in db`
+        })
     }
     return normalizeData(data, "db")
 }
