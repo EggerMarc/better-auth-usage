@@ -1,5 +1,6 @@
 import type { UsageOptionsWithCache } from "@/types";
-import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+import { tryCatch } from "@/utils";
+import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
 
@@ -45,7 +46,14 @@ export function getUpsertCustomerEndpoint(options: UsageOptionsWithCache) {
         }
     }, async (ctx) => {
         const adapter = getUsageAdapter(ctx.context);
-        const customer = await adapter.upsertCustomer(ctx.body, options.cache);
+        const { data: customer, error } = await tryCatch(adapter.upsertCustomer(ctx.body));
+        if (error) {
+            return error
+        }
+        if (!customer) {
+            // TODO find correct error if no customer is upserted (should be illegal and covered in error)
+            return new APIError()
+        }
         return customer
     })
 }

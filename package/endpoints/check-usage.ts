@@ -1,11 +1,12 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptions } from "package/types";
+import type { UsageOptionsWithCache } from "package/types";
 import { getUsageAdapter } from "package/adapters";
 import { checkLimit } from "package/utils";
 import { usageMiddleware } from "package/middlewares/usage";
-
+import { resolveGetCustomer } from "package/resolvers/get-customer"
+import { resolveGetUsage } from "@/resolvers/get-usage";
 /**
  * Creates an authenticated POST endpoint at /usage/check that validates the request body and checks a customer's latest usage against a feature's configured limits.
  *
@@ -13,7 +14,7 @@ import { usageMiddleware } from "package/middlewares/usage";
  * @param overrides - Optional override definitions that can alter or extend feature definitions.
  * @returns The configured authenticated endpoint which responds with a status string describing the usage check result.
  */
-export function getCheckEndpoint({ features, overrides }: UsageOptions) {
+export function getCheckEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint(
         "/usage/check",
         {
@@ -23,6 +24,7 @@ export function getCheckEndpoint({ features, overrides }: UsageOptions) {
                 referenceId: z.string(),
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
+                amount: z.number().optional()
             }),
             metadata: {
                 openapi: {
@@ -37,6 +39,7 @@ export function getCheckEndpoint({ features, overrides }: UsageOptions) {
                                         referenceId: { type: "string" },
                                         featureKey: { type: "string" },
                                         overrideKey: { type: "string" },
+                                        amount: { type: "string" }
                                     },
                                     required: ["referenceId", "featureKey"],
                                 },
@@ -53,32 +56,36 @@ export function getCheckEndpoint({ features, overrides }: UsageOptions) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
+            const customer = resolveGetCustomer({
+                referenceId: ctx.body.referenceId,
+                adapter,
+                options
             });
 
             if (!customer) {
                 throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` })
-            }
+            };
+
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
+
             if (!feature) {
                 throw new APIError("NOT_FOUND", { message: "Feature not found" });
             }
 
-            const usage = await adapter.findLatestUsage({
+            const usage = await resolveGetUsage({
                 referenceId: ctx.body.referenceId,
-                featureKey: feature.key,
-            });
+                adapter, options, feature
+            })
 
             return checkLimit({
                 minLimit: feature.minLimit,
                 maxLimit: feature.maxLimit,
-                value: usage?.afterAmount ?? 0,
+                value: usage.amount + (ctx.body.amount ?? 0),
             });
         }
     )

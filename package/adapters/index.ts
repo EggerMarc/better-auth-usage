@@ -9,7 +9,6 @@ import { getLatestUsageQuery, type LatestUsageQueryParams } from "./queries/get-
 
 export const getUsageAdapter = (context: AuthContext) => {
     const adapter = context.adapter;
-
     return {
         getLatestUsage: async ({
             referenceId,
