@@ -5,8 +5,9 @@ import { insertUsageQuery } from "./queries/insert-usage";
 import { getUsageQuery } from "./queries/get-usage";
 import type { UsageCache } from "./cache";
 
-export const getUsageAdapter = (context: AuthContext) => {
+export const getUsageAdapter = (context: AuthContext, cache?: UsageCache) => {
     const adapter = context.adapter;
+
     return {
         findLatestUsage: async ({
             referenceId,
@@ -93,13 +94,13 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage
         },
 
-        syncUsage: async ({ referenceId, feature }: {
+        syncUsage: async ({ referenceId, feature, }: {
             referenceId: string,
             feature: {
                 key: string,
                 reset: ResetType,
                 resetValue?: number,
-            }
+            },
         }) => {
             const usage = await getUsageQuery({
                 adapter,
@@ -109,7 +110,7 @@ export const getUsageAdapter = (context: AuthContext) => {
             return usage
         },
 
-        getCustomer: async ({ referenceId, cache }: { referenceId: string, cache?: UsageCache }) => {
+        getCustomer: async ({ referenceId, }: { referenceId: string, }) => {
             let customer: Customer | null = null;
             if (cache) {
                 customer = await cache.getCustomer(referenceId)
@@ -152,7 +153,7 @@ export const getUsageAdapter = (context: AuthContext) => {
                 }
 
                 if (cache) {
-                    cache.setCustomer(customer)
+                    await cache.setCustomer(customer)
                 }
                 return customer
             });

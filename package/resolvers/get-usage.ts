@@ -16,6 +16,7 @@ export async function resolveGetUsage({
     options,
     adapter
 }: ResolveGetUsageParams): Promise<Usage> {
+
     let { data, error } = options.cache ? await tryCatch(
         options.cache.getUsage(referenceId, feature)
     ) : await tryCatch(
@@ -30,29 +31,28 @@ export async function resolveGetUsage({
         })
     }
 
-    if (!data) {
-        if (options.cache) {
-            let { data: adapterData, error: adapterError } = await tryCatch(
-                adapter.getUsage({
-                    referenceId, feature
-                })
-            );
+    if (!data && options.cache) {
+        let { data: adapterData, error: adapterError } = await tryCatch(
+            adapter.getUsage({
+                referenceId, feature
+            })
+        );
 
-            if (adapterError) {
-                throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to get from adapter`
-                })
-            }
+        if (adapterError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to get from adapter`
+            })
+        }
 
-            if (adapterData) {
-                await options.cache.insertEvent({
-                    referenceId,
-                    feature: feature.key,
-                    amount: adapterData.amount,
-                })
+        if (adapterData) {
+            await options.cache.insertEvent({
+                referenceId,
+                feature: feature.key,
+                amount: adapterData.amount,
+                event: adapterData.event
+            });
 
-                return normalizeData(adapterData, "db")
-            }
+            return normalizeData(adapterData, "db")
         }
 
         return {

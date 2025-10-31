@@ -1,4 +1,5 @@
 import type {
+    cached_Limits,
     Customer,
     Feature,
     cached_Usage as Usage,
@@ -134,6 +135,15 @@ export class UsageCache extends EventEmitter {
 
     async setCustomer(customer: Customer) {
         await this.cache.set(`customer:${customer.referenceId}`, JSON.stringify(customer))
+    }
+
+    async setLimit(referenceId: string, featureKey: string, limits: cached_Limits) {
+        const { limitKey } = this.resolveKeys(referenceId, featureKey);
+        const { error } = await tryCatch(this.cache.set(limitKey, limits));
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to insert limits for ${limitKey}, ${error.message}` })
+        }
+        return limits
     }
 }
 

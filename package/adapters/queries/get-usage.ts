@@ -2,6 +2,7 @@ import type { Feature, Usage } from "@/types";
 import type { Adapter } from "better-auth";
 import { resetUsageQuery } from "./reset-usage";
 import { shouldReset } from "@/utils";
+import type { UsageCache } from "../cache";
 
 /**
  * Retrieve the current usage state for a given reference and feature, triggering and returning a reset record when no usage exists or a reset is required.
@@ -14,10 +15,12 @@ export async function getUsageQuery({
     adapter,
     referenceId,
     feature,
+    cache
 }: {
     adapter: Adapter,
     referenceId: string,
-    feature: Omit<Feature, "hooks">
+    feature: Omit<Feature, "hooks">,
+    cache?: UsageCache
 }) {
 
     const usage = await adapter.findMany<Usage>({

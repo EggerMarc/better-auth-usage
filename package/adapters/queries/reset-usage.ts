@@ -1,5 +1,6 @@
 import type { Feature, Usage } from "@/types"
 import { APIError, type Adapter } from "better-auth"
+import type { UsageCache } from "../cache"
 
 
 /**
@@ -26,6 +27,7 @@ export async function resetUsageQuery({
     }
 
     if (curr) {
+
         const usage = await adapter.create<Usage>({
             model: "usage",
             data: {
@@ -82,5 +84,3 @@ export async function resetUsageQuery({
     return transaction
 }
 
-export interface ResetError extends APIError { };
-export interface ResetSuccess { }; // TODO
