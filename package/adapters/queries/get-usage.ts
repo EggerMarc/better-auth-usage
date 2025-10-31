@@ -15,14 +15,11 @@ export async function getUsageQuery({
     adapter,
     referenceId,
     feature,
-    cache
 }: {
     adapter: Adapter,
     referenceId: string,
     feature: Omit<Feature, "hooks">,
-    cache?: UsageCache
 }) {
-
     const usage = await adapter.findMany<Usage>({
         model: "usage",
         where: [
@@ -36,7 +33,7 @@ export async function getUsageQuery({
         const reset = await resetUsageQuery({
             adapter,
             referenceId,
-            curr: 0,
+            curr: feature.resetValue ?? 0,
             feature
         })
 

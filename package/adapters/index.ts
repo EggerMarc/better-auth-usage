@@ -94,22 +94,6 @@ export const getUsageAdapter = (context: AuthContext, cache?: UsageCache) => {
             return usage
         },
 
-        syncUsage: async ({ referenceId, feature, }: {
-            referenceId: string,
-            feature: {
-                key: string,
-                reset: ResetType,
-                resetValue?: number,
-            },
-        }) => {
-            const usage = await getUsageQuery({
-                adapter,
-                referenceId,
-                feature
-            });
-            return usage
-        },
-
         getCustomer: async ({ referenceId, }: { referenceId: string, }) => {
             let customer: Customer | null = null;
             if (cache) {

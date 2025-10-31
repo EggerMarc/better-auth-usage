@@ -75,13 +75,6 @@ export class UsageTracker extends EventEmitter {
         console.log(`[UsageTracker] Published update to channel: ${channel}`);
     }
 
-    /**
-     * Get current usage (delegates to cache)
-     */
-    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">) {
-        return this.cache.getUsage(referenceId, feature);
-    }
-
     async disconnect() {
         await Promise.all([
             this.pubClient.quit(),

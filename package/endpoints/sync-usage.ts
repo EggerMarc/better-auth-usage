@@ -2,7 +2,7 @@ import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
 import { resolveSyncUsage } from "package/resolvers/sync-usage";
-import type { UsageOptions } from "package/types";
+import type { UsageOptionsWithCache } from "package/types";
 import { z } from "zod"
 
 /**
@@ -15,7 +15,7 @@ import { z } from "zod"
  * @param options - Configuration containing available features and overrides used to resolve the feature for sync
  * @returns The configured authenticated endpoint for syncing customer usage; responds with the resolved usage value or a 404 when the customer is not found
  */
-export function getSyncEndpoint({ features, overrides }: UsageOptions) {
+export function getSyncEndpoint(options: UsageOptionsWithCache) {
     return createAuthEndpoint(
         "/usage/sync",
         {
@@ -61,11 +61,11 @@ export function getSyncEndpoint({ features, overrides }: UsageOptions) {
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
 
-            const usage = await resolveSyncUsage({ adapter, feature, customer })
+            const usage = await resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options })
             return usage
         }
     )

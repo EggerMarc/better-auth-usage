@@ -1,6 +1,6 @@
 import type { UsageAdapter } from "@/adapters";
 import type { cached_Usage, Feature, Usage, UsageOptionsWithCache } from "@/types"
-import { tryCatch } from "@/utils"
+import { normalizeData, tryCatch } from "@/utils"
 import { APIError } from "better-auth"
 
 interface ResolveGetUsageParams {
@@ -16,75 +16,33 @@ export async function resolveGetUsage({
     options,
     adapter
 }: ResolveGetUsageParams): Promise<Usage> {
-
-    let { data, error } = options.cache ? await tryCatch(
-        options.cache.getUsage(referenceId, feature)
-    ) : await tryCatch(
-        adapter.getUsage({
-            referenceId, feature
-        })
-    );
-
-    if (error) {
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: `Failed to get`
-        })
-    }
-
-    if (!data && options.cache) {
-        let { data: adapterData, error: adapterError } = await tryCatch(
-            adapter.getUsage({
-                referenceId, feature
-            })
-        );
-
-        if (adapterError) {
-            throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `Failed to get from adapter`
-            })
+    if (options.cache) {
+        const { data } = await tryCatch(options.cache.getUsage(referenceId, feature))
+        if (data) {
+            return normalizeData(data, "cache")
         }
+    }
+    const { data } = await tryCatch(adapter.getUsage({ referenceId, feature }))
+    if (data) {
+        if (options.cache) {
+            // For safekeeping, set the limit, the feature will have it
+            options.cache.setLimit(referenceId, feature.key, {
+                referenceId: data.referenceId,
+                feature: data.feature,
+                lastResetAt: data.lastResetAt,
+                minLimit: feature.minLimit,
+                maxLimit: feature.maxLimit,
+            }).catch()
 
-        if (adapterData) {
             await options.cache.insertEvent({
-                referenceId,
-                feature: feature.key,
-                amount: adapterData.amount,
-                event: adapterData.event
-            });
-
-            return normalizeData(adapterData, "db")
+                ...data
+            })
         }
-
-        return {
-            referenceId,
-            feature: feature.key,
-            amount: 0,
-            event: undefined,
-            createdAt: new Date(),
-        } as Usage;
     }
-
-    return normalizeData(data, options.cache ? "cache" : "db")
+    if (!data) {
+        // TODO handle case where we get no data
+        throw new APIError("NOT_FOUND")
+    }
+    return normalizeData(data, "db")
 }
 
-function normalizeData<
-    TSource extends "cache" | "db"
->(
-    data: TSource extends "cache" ? cached_Usage : Usage,
-    source: TSource
-): Usage {
-    if (source === "cache") {
-        const d = (data as cached_Usage)
-
-        return {
-            referenceId: d.referenceId,
-            feature: d.feature,
-            amount: d.current,
-            event: undefined,
-            createdAt: d.updatedAt,
-            lastResetAt: d.lastResetAt
-        } as Usage
-    }
-
-    return data as Usage
-}

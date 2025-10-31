@@ -1,4 +1,4 @@
-import type { ConsumptionLimitType, ResetType } from "./types.ts";
+import type { cached_Usage, ConsumptionLimitType, ResetType, Usage } from "./types.ts";
 
 interface CheckLimitProps {
     maxLimit?: number,
@@ -128,4 +128,26 @@ export async function tryCatch<T, E = Error>(
     } catch (error) {
         return { data: null, error: error as E };
     }
+}
+
+export function normalizeData<
+    TSource extends "cache" | "db"
+>(
+    data: TSource extends "cache" ? cached_Usage : Usage,
+    source: TSource
+): Usage {
+    if (source === "cache") {
+        const d = (data as cached_Usage)
+
+        return {
+            referenceId: d.referenceId,
+            feature: d.feature,
+            amount: d.current,
+            event: undefined,
+            createdAt: d.updatedAt,
+            lastResetAt: d.lastResetAt
+        } as Usage
+    }
+
+    return data as Usage
 }

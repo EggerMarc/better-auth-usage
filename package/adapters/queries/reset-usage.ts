@@ -27,7 +27,6 @@ export async function resetUsageQuery({
     }
 
     if (curr) {
-
         const usage = await adapter.create<Usage>({
             model: "usage",
             data: {
@@ -39,7 +38,6 @@ export async function resetUsageQuery({
                 createdAt: new Date()
             }
         })
-
         return usage
     }
 
