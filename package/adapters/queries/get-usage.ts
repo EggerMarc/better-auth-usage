@@ -1,6 +1,6 @@
 import type { Feature, Usage } from "@/types";
-import type { Adapter, TransactionAdapter } from "better-auth";
-
+import { APIError, type Adapter, type TransactionAdapter } from "better-auth";
+import { tryCatch } from "@/utils";
 /**
  * Build a Usage object for a reference and feature where the returned record is the most recent usage entry with its `amount` replaced by the total across all matching usage records.
  *
@@ -17,14 +17,39 @@ export async function getUsageQuery({
     referenceId: string,
     feature: Omit<Feature, "hooks">,
 }) {
-    const usage = await adapter.findMany<Usage>({
+    const { data: usage, error } = await tryCatch(adapter.findMany<Usage>({
         model: "usage",
         where: [
             { field: "referenceId", value: referenceId },
             { field: "feature", value: feature.key }
         ],
         sortBy: { field: "createdAt", direction: "desc" },
-    })
+    }))
+
+    if (error) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Failed to get usage from db, thrown the following error\n${error.message}`
+        })
+    }
+
+    if (!usage || usage.length === 0) {
+        const now = new Date()
+        const initialUsage: Usage = {
+            referenceId,
+            amount: feature.resetValue ?? 0,
+            feature: feature.key,
+            createdAt: now,
+            lastResetAt: now,
+            event: "sync"
+        }
+
+        adapter.create<Usage>({ model: "usage", data: initialUsage }).catch(() => {
+            console.log(`[ERROR][USAGE] Failed to add initial usage for customer ${referenceId} on feature ${feature.key}`)
+        })
+
+        return initialUsage
+    }
+
     const last = usage[0];
     const current = usage.reduce((value, { amount }) => amount + value, 0)
     return {

@@ -12,6 +12,7 @@ import {
     getFeatureEndpoint,
     getConsumeEndpoint
 } from "./endpoints/";
+import { getUsageAdapter, type UsageAdapter } from "./adapters";
 
 /**
  * Creates a usage plugin configured with the provided options.
@@ -26,11 +27,16 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     let tracker: UsageTracker | undefined;
     let wsServer: UsageWebSocketServer | undefined;
     let io: SocketServer | undefined;
+    let serverAdapter: UsageAdapter;
     const runtimeOptions: UsageOptionsWithCache = { ...options };
+
+
     return {
         id: "@eggermarc/usage",
 
-        async init() {
+        async init(ctx) {
+            serverAdapter = getUsageAdapter(ctx)
+
             if (!options.cacheOptions) {
                 console.log("[better-auth-usage] Running without cache (DB-only mode)");
                 return;

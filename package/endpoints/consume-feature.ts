@@ -1,12 +1,11 @@
 import { getUsageAdapter } from "@/adapters";
-import { resolveGetCustomer } from "@/resolvers/get-customer";
-import { resolveGetUsage } from "@/resolvers/get-usage";
+import { getCustomerMiddleware } from "@/middlewares/customer";
+import { getUsageMiddleware } from "@/middlewares/usage";
 import { resolveInsertUsage } from "@/resolvers/insert-usage";
 import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptionsWithCache } from "package/types";
+import type { EndpointParams } from "package/types";
 import { z } from "zod"
 
 /**
@@ -15,13 +14,15 @@ import { z } from "zod"
  * @param options - Runtime options used by the endpoint, including feature definitions, override configurations, adapter selection, and caching behavior
  * @returns The configured authenticated endpoint that inserts a usage record and returns the inserted usage data
  */
-export function getConsumeEndpoint(options: UsageOptionsWithCache) {
+export function getConsumeEndpoint({ options, adapter }: EndpointParams) {
     return createAuthEndpoint(
         "/usage/consume",
         {
             method: "POST",
             middleware: [
                 sessionMiddleware,
+                getUsageMiddleware({ ...options }),
+                getCustomerMiddleware({ options, adapter })
             ],
             body: z.object({
                 featureKey: z.string(),
@@ -71,27 +72,6 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
                 overrides: options.overrides
             });
 
-            const {
-                data: customer,
-                error: customerError
-            } = await tryCatch(resolveGetCustomer({
-                referenceId: ctx.body.referenceId,
-                options,
-                adapter
-            }));
-
-            if (customerError) {
-                throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: "Internal server error fetching customer"
-                })
-            }
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", {
-                    message: "Customer not found, register customer first"
-                })
-            }
-
             const { data, error } = await tryCatch(
                 resolveInsertUsage({
                     referenceId: ctx.body.referenceId,
@@ -104,7 +84,7 @@ export function getConsumeEndpoint(options: UsageOptionsWithCache) {
             );
             if (error || !data) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Internal server error consuming feature ${feature.key}, for customer ${customer.referenceId}.\n\t${error.message}`
+                    message: `Failed to sync usage on feature ${feature.key}\n${error ? error.message : 'data not found'}`
                 })
             }
             return data;

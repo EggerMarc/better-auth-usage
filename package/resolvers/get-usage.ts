@@ -63,7 +63,9 @@ export async function resolveGetUsage({
                     lastResetAt: data.lastResetAt,
                     minLimit: feature.minLimit,
                     maxLimit: feature.maxLimit,
-                }).catch()
+                }).catch(() => {
+                    console.log("[ERROR][USAGE] Error setting limits in cache")
+                })
             }
         }
 
@@ -71,7 +73,9 @@ export async function resolveGetUsage({
             // For safekeeping, set the limit, the feature will have it
             options.cache.insertEvent({
                 ...data,
-            }).catch(() => { })
+            }).catch(() => {
+                console.log("[ERROR][USAGE] Error inserting event in cache")
+            })
         }
     }
     if (!data) {

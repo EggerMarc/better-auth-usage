@@ -1,12 +1,12 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptionsWithCache } from "package/types";
+import type { EndpointParams } from "package/types";
 import { getUsageAdapter } from "package/adapters";
 import { checkLimit, tryCatch } from "package/utils";
-import { usageMiddleware } from "package/middlewares/usage";
-import { resolveGetCustomer } from "package/resolvers/get-customer"
+import { getUsageMiddleware } from "package/middlewares/usage";
 import { resolveGetUsage } from "@/resolvers/get-usage";
+import { getCustomerMiddleware } from "@/middlewares/customer";
 
 /**
  * Create an authenticated POST endpoint at /usage/check that validates the request body and verifies a customer's latest usage against a feature's configured limits.
@@ -14,12 +14,15 @@ import { resolveGetUsage } from "@/resolvers/get-usage";
  * @param options - Usage options (features, optional overrides, and cache settings) used to resolve features and control lookup behavior.
  * @returns The configured authenticated endpoint whose response is a status string describing the usage check result.
  */
-export function getCheckEndpoint(options: UsageOptionsWithCache) {
+export function getCheckEndpoint({ options, adapter }: EndpointParams) {
     return createAuthEndpoint(
         "/usage/check",
         {
             method: "POST", // changed to POST so we can rely on body validation consistently
-            middleware: [sessionMiddleware, usageMiddleware],
+            middleware: [sessionMiddleware, getUsageMiddleware({
+                features: options.features,
+                overrides: options.overrides
+            }), getCustomerMiddleware({ options, adapter })],
             body: z.object({
                 referenceId: z.string(),
                 featureKey: z.string(),
@@ -56,16 +59,6 @@ export function getCheckEndpoint(options: UsageOptionsWithCache) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-            const customer = resolveGetCustomer({
-                referenceId: ctx.body.referenceId,
-                adapter,
-                options
-            });
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` })
-            };
-
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,

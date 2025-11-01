@@ -1,4 +1,3 @@
-import { resolveGetCustomer } from "@/resolvers/get-customer";
 import { resolveUpsertCustomer } from "@/resolvers/upsert-customer";
 import type { UsageOptionsWithCache } from "@/types";
 import { tryCatch } from "@/utils";

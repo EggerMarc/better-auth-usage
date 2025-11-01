@@ -35,7 +35,7 @@ export async function insertUsageQuery({
     event = "use"
 }: InsertUsageQueryParams) {
     if (lastResetAt) {
-        await adapter.create<Usage>({
+        return adapter.create<Usage>({
             model: "usage",
             data: {
                 referenceId,
@@ -49,7 +49,7 @@ export async function insertUsageQuery({
     }
 
 
-    const transaction = await adapter.transaction(async (tx) => {
+    return adapter.transaction(async (tx) => {
         const usage = await getUsageQuery({
             adapter: tx,
             referenceId,
@@ -69,5 +69,4 @@ export async function insertUsageQuery({
             }
         })
     })
-    return transaction
 }

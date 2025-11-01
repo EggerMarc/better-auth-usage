@@ -28,8 +28,8 @@ export const resolveInsertUsage = async ({
             message: `Failed to resolve either usage or customer\n${error.message}`
         })
     }
-    const [currentUsage, customer] = usageAndCustomer;
 
+    const [currentUsage, customer] = usageAndCustomer;
 
     if (feature.hooks?.before) {
         await feature.hooks.before({
@@ -44,7 +44,7 @@ export const resolveInsertUsage = async ({
     }
 
     // resolve the insert
-    let data = null
+    let insertResult = null
 
     if (options.cache) {
         adapter.insertUsage({
@@ -57,24 +57,25 @@ export const resolveInsertUsage = async ({
             console.log(`[ERROR][]`)
         })
 
-        let { data, error } = await tryCatch(options.cache.insertEvent({
-            referenceId,
-            amount,
-            feature: feature.key,
-            event
-        })
+        let { data: cacheResult, error } = await tryCatch(
+            options.cache.insertEvent({
+                referenceId,
+                amount,
+                feature: feature.key,
+                event
+            })
         )
 
-        if (error || !data) {
+        if (error || !cacheResult) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
                 message: `Failed to insert usage on cache \n${error ? error.message : "No data returned"}`
             })
         }
-
+        insertResult = cacheResult
     }
 
-    if (!data) {
-        let { data, error } = await tryCatch(adapter.insertUsage({
+    if (!insertResult) {
+        let { data: dbResult, error } = await tryCatch(adapter.insertUsage({
             referenceId,
             amount,
             feature,
@@ -83,11 +84,13 @@ export const resolveInsertUsage = async ({
         }))
 
 
-        if (error || !data) {
+        if (error || !dbResult) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
                 message: `Failed to insert usage on db \n${error ? error.message : "No data returned"}`
             })
         }
+
+        insertResult = dbResult
     }
 
     if (feature.hooks?.after) {
@@ -105,5 +108,5 @@ export const resolveInsertUsage = async ({
     resolveSyncUsage({
         referenceId, feature, options, adapter
     }).catch(() => { })
-    return data
+    return insertResult
 }

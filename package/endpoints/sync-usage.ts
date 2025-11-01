@@ -1,10 +1,10 @@
-import { resolveGetCustomer } from "@/resolvers/get-customer";
+import { getCustomerMiddleware } from "@/middlewares/customer";
 import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
 import { resolveSyncUsage } from "package/resolvers/sync-usage";
-import type { UsageOptionsWithCache } from "package/types";
+import type { EndpointParams } from "package/types";
 import { z } from "zod"
 
 /**
@@ -13,7 +13,7 @@ import { z } from "zod"
  * @param options - Configuration containing available features, overrides, and cache used to resolve the feature and perform the sync
  * @returns The authenticated endpoint that returns the synchronized usage record for the provided `referenceId` and `featureKey`
  */
-export function getSyncEndpoint(options: UsageOptionsWithCache) {
+export function getSyncEndpoint({ options, adapter }: EndpointParams) {
     return createAuthEndpoint(
         "/usage/sync",
         {
@@ -23,6 +23,7 @@ export function getSyncEndpoint(options: UsageOptionsWithCache) {
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
             }),
+            middleware: [getCustomerMiddleware({ options, adapter })],
             metadata: {
                 openapi: {
                     description: "Syncs customer usage based on reset rules (inserts a reset row if due).",
@@ -57,10 +58,12 @@ export function getSyncEndpoint(options: UsageOptionsWithCache) {
                 overrides: options.overrides
             });
 
-            const { data: usage, error } = await tryCatch(resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options }))
+            const { data: usage, error } = await tryCatch(
+                resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options })
+            );
             if (error || !usage) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to sync usage on feature ${feature.key}, ${error ? error.message : 'usage not synched'}`
+                    message: `Failed to sync usage on feature ${feature.key}, ${error ? error.message : 'usage not found'}`
                 })
             }
             return usage

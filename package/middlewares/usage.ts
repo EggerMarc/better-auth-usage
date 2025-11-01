@@ -11,7 +11,7 @@ import type { UsageOptions } from "package/types";
  * @returns A middleware function that, when `ctx.body.referenceId` and `ctx.body.featureKey` are present, resolves the feature and enforces its `authorizeReference` check.
  * @throws APIError with type `"UNAUTHORIZED"` if the resolved feature's `authorizeReference` returns `false`
  */
-export function usageMiddleware({ features, overrides }: UsageOptions) {
+export function getUsageMiddleware({ features, overrides }: UsageOptions) {
     return createAuthMiddleware(async (ctx) => {
         if (ctx.body?.referenceId && ctx.body?.featureKey) {
             const feature = resolveFeature({

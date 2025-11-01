@@ -218,6 +218,13 @@ export interface UsageOptionsWithCache extends UsageOptions {
     tracker?: UsageTracker;
 }
 
+/*
+ *
+ */
+export interface EndpointParams {
+    options: UsageOptionsWithCache,
+    adapter: UsageAdapter
+}
 
 /**
  * Caching Types

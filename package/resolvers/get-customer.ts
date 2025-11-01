@@ -41,7 +41,6 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
     }
 
     if (!customer) {
-        // TODO handle not found
         throw new APIError("NOT_FOUND", {
             message: `Customer ${referenceId} not found in db`
         })
