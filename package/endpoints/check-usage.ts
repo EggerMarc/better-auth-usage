@@ -1,28 +1,33 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptions } from "package/types";
+import type { EndpointParams } from "package/types";
 import { getUsageAdapter } from "package/adapters";
-import { checkLimit } from "package/utils";
-import { usageMiddleware } from "package/middlewares/usage";
+import { checkLimit, tryCatch } from "package/utils";
+import { getUsageMiddleware } from "package/middlewares/usage";
+import { resolveGetUsage } from "@/resolvers/get-usage";
+import { getCustomerMiddleware } from "@/middlewares/customer";
 
 /**
- * Creates an authenticated POST endpoint at /usage/check that validates the request body and checks a customer's latest usage against a feature's configured limits.
+ * Create an authenticated POST endpoint at /usage/check that validates the request body and verifies a customer's latest usage against a feature's configured limits.
  *
- * @param features - Feature definitions available for lookup and limit evaluation.
- * @param overrides - Optional override definitions that can alter or extend feature definitions.
- * @returns The configured authenticated endpoint which responds with a status string describing the usage check result.
+ * @param options - Usage options (features, optional overrides, and cache settings) used to resolve features and control lookup behavior.
+ * @returns The configured authenticated endpoint whose response is a status string describing the usage check result.
  */
-export function getCheckEndpoint({ features, overrides }: UsageOptions) {
+export function getCheckEndpoint({ options, adapter }: EndpointParams) {
     return createAuthEndpoint(
         "/usage/check",
         {
             method: "POST", // changed to POST so we can rely on body validation consistently
-            middleware: [sessionMiddleware, usageMiddleware],
+            middleware: [sessionMiddleware, getUsageMiddleware({
+                features: options.features,
+                overrides: options.overrides
+            }), getCustomerMiddleware({ options, adapter })],
             body: z.object({
                 referenceId: z.string(),
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
+                amount: z.number().optional()
             }),
             metadata: {
                 openapi: {
@@ -37,6 +42,7 @@ export function getCheckEndpoint({ features, overrides }: UsageOptions) {
                                         referenceId: { type: "string" },
                                         featureKey: { type: "string" },
                                         overrideKey: { type: "string" },
+                                        amount: { type: "string" }
                                     },
                                     required: ["referenceId", "featureKey"],
                                 },
@@ -53,32 +59,34 @@ export function getCheckEndpoint({ features, overrides }: UsageOptions) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
-            });
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` })
-            }
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
+
             if (!feature) {
                 throw new APIError("NOT_FOUND", { message: "Feature not found" });
             }
 
-            const usage = await adapter.findLatestUsage({
-                referenceId: ctx.body.referenceId,
-                featureKey: feature.key,
-            });
+            const { data: usage, error } = await tryCatch(
+                resolveGetUsage({
+                    referenceId: ctx.body.referenceId,
+                    adapter, options, feature
+                })
+            )
+
+            if (error) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Internal error getting usage for feature ${feature.key}, ${error.message}`
+                })
+            }
 
             return checkLimit({
                 minLimit: feature.minLimit,
                 maxLimit: feature.maxLimit,
-                value: usage?.afterAmount ?? 0,
+                value: usage.amount + (ctx.body.amount ?? 0),
             });
         }
     )

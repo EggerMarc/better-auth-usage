@@ -1,4 +1,5 @@
 import type {
+    cached_Limits,
     Customer,
     Feature,
     cached_Usage as Usage,
@@ -41,17 +42,22 @@ export class UsageCache extends EventEmitter {
         referenceId,
         feature,
         amount,
+        event,
     }: UsageEvent) {
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
 
-        const { data, error } = await tryCatch(this.cache.eval(
-            incrementScript, // lua script
-            2, // number of keys
-            usageKey,
-            limitKey,
-            amount,
-            Date.now().toString()
-        ))
+        const { data, error } = await tryCatch(
+            this
+                .cache
+                .eval(
+                    incrementScript, // lua script
+                    2, // number of keys
+                    usageKey,
+                    limitKey,
+                    amount,
+                    Date.now().toString()
+                )
+        )
 
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -62,7 +68,7 @@ export class UsageCache extends EventEmitter {
         try {
             const [newAmount, resetAt] = data as [number, number];
             return usageEventSchema.parse({
-                amount, afterValue: newAmount, resetAt: new Date(resetAt)
+                amount, afterValue: newAmount, resetAt: new Date(resetAt), event
             }) as UsageEvent
         } catch (err) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -134,6 +140,15 @@ export class UsageCache extends EventEmitter {
 
     async setCustomer(customer: Customer) {
         await this.cache.set(`customer:${customer.referenceId}`, JSON.stringify(customer))
+    }
+
+    async setLimit(referenceId: string, featureKey: string, limits: cached_Limits) {
+        const { limitKey } = this.resolveKeys(referenceId, featureKey);
+        const { error } = await tryCatch(this.cache.set(limitKey, JSON.stringify(limits)));
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to insert limits for ${limitKey}, ${error.message}` })
+        }
+        return limits
     }
 }
 

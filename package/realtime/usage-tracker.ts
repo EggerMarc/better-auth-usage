@@ -2,18 +2,10 @@ import EventEmitter from "events";
 import Redis from "ioredis";
 import { Server as SocketServer } from "socket.io";
 import { UsageCache } from "../adapters/cache";
-import type { Feature } from "@/types";
+import type { Feature, cached_UsageEvent } from "@/types";
+import { cached_usageEventSchema } from "@/schema";
 import { tryCatch } from "@/utils";
-import { APIError } from "better-auth";
 
-export interface UsageUpdate {
-    referenceId: string;
-    feature: string;
-    amount: number;
-    afterValue: number;
-    resetAt: Date;
-    timestamp: number;
-}
 
 export class UsageTracker extends EventEmitter {
     private pubClient: Redis;
@@ -49,19 +41,10 @@ export class UsageTracker extends EventEmitter {
         // Subscribe to all usage update channels
         this.subClient.psubscribe(`${this.CHANNEL_PREFIX}*`);
         this.subClient.on("pmessage", (_pattern, _channel, message) => {
-            try {
-                const update: UsageUpdate = JSON.parse(message);
-                if (!update.referenceId || !update.feature || update.afterValue === undefined) {
-                    console.error("[UsageTracker] Invalid message structure:", message);
-                    return;
-                }
-                this.emit("usage:update", update);
-                this.broadcastUpdate(update);
-            } catch (err) {
-                console.error("[UsageTracker] Error processing pub/sub message:", err);
-                console.error("[UsageTracker] Error processing pub/sub message:", err, "message:", message);
-                // Consider: this.emit("error", err) to allow error handling by consumers
-            }
+            const update = cached_usageEventSchema.parse(message);
+            this.cache.insertEvent(update)
+            this.emit("usage:update", update);
+            this.broadcastUpdate(update);
         });
     }
 
@@ -70,7 +53,7 @@ export class UsageTracker extends EventEmitter {
      * Room naming: "usage:{feature}:{referenceId}"
      * This matches the Redis key pattern: usage:api-calls:org-123
      */
-    private broadcastUpdate(update: UsageUpdate) {
+    private broadcastUpdate(update: cached_UsageEvent) {
         const room = `usage:${update.feature}:${update.referenceId}`;
         this.io.to(room).emit("usage:updated", update);
         console.log(`[UsageTracker] Broadcasted update to room: ${room}`);
@@ -80,7 +63,7 @@ export class UsageTracker extends EventEmitter {
      * Publish a usage update to Redis pub/sub.
      * Channel naming: "usage:updates:{feature}:{referenceId}"
      */
-    async publishUpdate(update: UsageUpdate) {
+    async publishUpdate(update: cached_UsageEvent) {
         const channel = `${this.CHANNEL_PREFIX}${update.feature}:${update.referenceId}`;
         const { error } = await tryCatch(this.pubClient.publish(channel, JSON.stringify(update)));
 
@@ -88,14 +71,8 @@ export class UsageTracker extends EventEmitter {
             // TODO map to APIError
             throw new Error(error.message)
         }
-        console.log(`[UsageTracker] Published update to channel: ${channel}`);
-    }
 
-    /**
-     * Get current usage (delegates to cache)
-     */
-    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">) {
-        return this.cache.getUsage(referenceId, feature);
+        console.log(`[UsageTracker] Published update to channel: ${channel}`);
     }
 
     async disconnect() {

@@ -1,21 +1,19 @@
+import { getCustomerMiddleware } from "@/middlewares/customer";
+import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
 import { resolveSyncUsage } from "package/resolvers/sync-usage";
-import type { UsageOptions } from "package/types";
+import type { EndpointParams } from "package/types";
 import { z } from "zod"
 
 /**
  * Create an authenticated POST endpoint at /usage/sync that synchronizes a customer's usage according to reset rules.
  *
- * The endpoint validates a JSON body containing `referenceId`, `featureKey`, and optional `overrideKey`, looks up the customer,
- * resolves the feature (considering provided features and overrides), and returns the resolved sync usage. If the customer is not found,
- * the endpoint responds with a 404 error.
- *
- * @param options - Configuration containing available features and overrides used to resolve the feature for sync
- * @returns The configured authenticated endpoint for syncing customer usage; responds with the resolved usage value or a 404 when the customer is not found
+ * @param options - Configuration containing available features, overrides, and cache used to resolve the feature and perform the sync
+ * @returns The authenticated endpoint that returns the synchronized usage record for the provided `referenceId` and `featureKey`
  */
-export function getSyncEndpoint({ features, overrides }: UsageOptions) {
+export function getSyncEndpoint({ options, adapter }: EndpointParams) {
     return createAuthEndpoint(
         "/usage/sync",
         {
@@ -25,6 +23,7 @@ export function getSyncEndpoint({ features, overrides }: UsageOptions) {
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
             }),
+            middleware: [getCustomerMiddleware({ options, adapter })],
             metadata: {
                 openapi: {
                     description: "Syncs customer usage based on reset rules (inserts a reset row if due).",
@@ -52,20 +51,21 @@ export function getSyncEndpoint({ features, overrides }: UsageOptions) {
         },
         async (ctx) => {
             const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
-            });
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
-            }
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
 
-            const usage = await resolveSyncUsage({ adapter, feature, customer })
+            const { data: usage, error } = await tryCatch(
+                resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options })
+            );
+            if (error || !usage) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Failed to sync usage on feature ${feature.key}, ${error ? error.message : 'usage not found'}`
+                })
+            }
             return usage
         }
     )

@@ -1,6 +1,6 @@
 import type { UsageAdapter } from "@/adapters";
-import type { cached_Usage, Feature, Usage, UsageOptionsWithCache } from "@/types"
-import { tryCatch } from "@/utils"
+import type { Feature, Usage, UsageOptionsWithCache } from "@/types"
+import { normalizeData, shouldReset, tryCatch } from "@/utils"
 import { APIError } from "better-auth"
 
 interface ResolveGetUsageParams {
@@ -10,81 +10,79 @@ interface ResolveGetUsageParams {
     adapter: UsageAdapter
 }
 
+/**
+ * Retrieve usage for a reference and feature, preferring cache and falling back to the adapter.
+ *
+ * Attempts to load usage from `options.cache` when available; if not found or cache is absent, fetches from `adapter`. When data is returned from the adapter, updates the cache (limit and event) if a cache is configured.
+ *
+ * @param referenceId - Identifier for the usage owner (for example, a tenant or user ID)
+ * @param feature - Feature metadata describing the usage key and reset/limit configuration
+ * @param options - Runtime options that may include a cache implementation
+ * @param adapter - Persistence adapter used to fetch usage when not available in cache
+ * @returns The resolved `Usage` record normalized for its source
+ * @throws APIError with code `INTERNAL_SERVER_ERROR` if reading from cache or the adapter fails
+ * @throws APIError with code `NOT_FOUND` if no usage is found in the adapter
+ */
 export async function resolveGetUsage({
     referenceId,
     feature,
     options,
     adapter
 }: ResolveGetUsageParams): Promise<Usage> {
-    let { data, error } = options.cache ? await tryCatch(
-        options.cache.getUsage(referenceId, feature)
-    ) : await tryCatch(
-        adapter.getUsage({
-            referenceId, feature
-        })
-    );
+
+    if (options.cache) {
+        const { data, error } = await tryCatch(options.cache.getUsage(referenceId, feature))
+        if (error) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed getting usage ${feature.key} from cache\n${error.message}`
+            })
+        }
+
+        if (data) {
+            return normalizeData(data, "cache")
+        }
+    }
+
+    const { data, error } = await tryCatch(adapter.getUsage({ referenceId, feature }));
 
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: `Failed to get`
+            message: `Failed getting usage ${feature.key} from db\n${error.message}`
         })
     }
 
-    if (!data) {
-        if (options.cache) {
-            let { data: adapterData, error: adapterError } = await tryCatch(
-                adapter.getUsage({
-                    referenceId, feature
-                })
-            );
+    if (data) {
+        if (feature.reset) {
+            const reset = shouldReset(data?.lastResetAt, feature.reset);
 
-            if (adapterError) {
-                throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to get from adapter`
+            if (options.cache) {
+                options.cache.setLimit(referenceId, feature.key, {
+                    referenceId: data.referenceId,
+                    feature: data.feature,
+                    resetAt: reset.nextReset,
+                    lastResetAt: data.lastResetAt,
+                    minLimit: feature.minLimit,
+                    maxLimit: feature.maxLimit,
+                }).catch(() => {
+                    console.log("[ERROR][USAGE] Error setting limits in cache")
                 })
-            }
-
-            if (adapterData) {
-                await options.cache.insertEvent({
-                    referenceId,
-                    feature: feature.key,
-                    amount: adapterData.amount,
-                })
-
-                return normalizeData(adapterData, "db")
             }
         }
 
-        return {
-            referenceId,
-            feature: feature.key,
-            amount: 0,
-            event: undefined,
-            createdAt: new Date(),
-        } as Usage;
+        if (options.cache) {
+            // For safekeeping, set the limit, the feature will have it
+            options.cache.insertEvent({
+                ...data,
+            }).catch(() => {
+                console.log("[ERROR][USAGE] Error inserting event in cache")
+            })
+        }
     }
-
-    return normalizeData(data, options.cache ? "cache" : "db")
-}
-
-function normalizeData<
-    TSource extends "cache" | "db"
->(
-    data: TSource extends "cache" ? cached_Usage : Usage,
-    source: TSource
-): Usage {
-    if (source === "cache") {
-        const d = (data as cached_Usage)
-
-        return {
-            referenceId: d.referenceId,
-            feature: d.feature,
-            amount: d.current,
-            event: undefined,
-            createdAt: d.updatedAt,
-            lastResetAt: d.lastResetAt
-        } as Usage
+    if (!data) {
+        // TODO handle case where we get no data
+        throw new APIError("NOT_FOUND", {
+            message: `Usage ${feature.key} not found in db`
+        })
     }
-
-    return data as Usage
+    return normalizeData(data, "db")
 }

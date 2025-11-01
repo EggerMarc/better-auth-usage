@@ -1,4 +1,4 @@
-import type { ConsumptionLimitType, ResetType } from "./types.ts";
+import type { cached_Usage, ConsumptionLimitType, ResetType, Usage } from "./types.ts";
 
 interface CheckLimitProps {
     maxLimit?: number,
@@ -128,4 +128,36 @@ export async function tryCatch<T, E = Error>(
     } catch (error) {
         return { data: null, error: error as E };
     }
+}
+
+/**
+ * Convert data from a storage-specific shape into the canonical `Usage` shape.
+ *
+ * When `source` is `"cache"`, the function maps a `cached_Usage` record into a `Usage` object.
+ * When `source` is `"db"`, the function returns the supplied `Usage` value unchanged.
+ *
+ * @param data - Input record: a `cached_Usage` when `source` is `"cache"`, or a `Usage` when `source` is `"db"`.
+ * @param source - The origin of `data`, either `"cache"` or `"db"`.
+ * @returns A `Usage` object normalized to the canonical shape.
+ */
+export function normalizeData<
+    TSource extends "cache" | "db"
+>(
+    data: TSource extends "cache" ? cached_Usage : Usage,
+    source: TSource
+): Usage {
+    if (source === "cache") {
+        const d = (data as cached_Usage)
+
+        return {
+            referenceId: d.referenceId,
+            feature: d.feature,
+            amount: d.current,
+            event: undefined,
+            createdAt: d.updatedAt,
+            lastResetAt: d.lastResetAt
+        } as Usage
+    }
+
+    return data as Usage
 }

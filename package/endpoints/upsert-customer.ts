@@ -1,5 +1,7 @@
+import { resolveUpsertCustomer } from "@/resolvers/upsert-customer";
 import type { UsageOptionsWithCache } from "@/types";
-import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+import { tryCatch } from "@/utils";
+import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
 
@@ -39,13 +41,31 @@ export function getUpsertCustomerEndpoint(options: UsageOptionsWithCache) {
                         200: {
                             description: "Successful Upsert",
                         },
+                        500: {
+                            description: "Internal server error",
+                        }
                     },
                 },
             },
         }
     }, async (ctx) => {
         const adapter = getUsageAdapter(ctx.context);
-        const customer = await adapter.upsertCustomer(ctx.body, options.cache);
+        const { data: customer, error } = await tryCatch(
+            resolveUpsertCustomer({
+                adapter, options, customer: {
+                    referenceId: ctx.body.referenceId,
+                    referenceType: ctx.body.referenceType,
+                    name: ctx.body.name,
+                    email: ctx.body.email,
+                    overrideKey: ctx.body.overrideKey
+                }
+            })
+        );
+        if (error || !customer) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to upsert customer ${ctx.body.referenceId}, ${error ? error.message : 'customer not upserted'}`
+            })
+        }
         return customer
     })
 }

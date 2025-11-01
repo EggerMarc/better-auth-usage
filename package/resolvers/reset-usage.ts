@@ -1,78 +1,83 @@
-import { APIError, type Adapter } from "better-auth"
-import { Feature, Usage } from "../types"
+/* DEPRECATE NOTICE
+ * Due to bad naming, this function is a duplicate of sync-usage.ts
+ * Use that, I'll delete this in no time
+ */
+import type { Feature, UsageOptionsWithCache } from "../types"
+import type { UsageAdapter } from "@/adapters"
+import { resolveGetUsage } from "./get-usage"
+import { shouldReset } from "@/utils"
+
+interface ResolveResetUsageParams {
+    referenceId: string,
+    feature: Omit<Feature, "hooks">,
+    options: UsageOptionsWithCache,
+    adapter: UsageAdapter
+}
+
 
 /**
- * Create a "reset" usage record to adjust stored usage to the feature's configured reset value when appropriate.
+ * Perform a usage reset for a feature when its reset condition is met.
  *
- * If the feature has no `resetValue` the function does nothing. If `curr` is provided it records a reset with amount equal to `feature.resetValue - curr`. If `curr` is omitted it sums existing usage for the reference and records a reset with amount equal to `feature.resetValue - total` when prior usage exists.
+ * If the feature has no reset configuration or no reset is required, the function returns without action.
  *
- * @param curr - Optional current usage amount used to compute the reset delta when provided
- * @param feature - Feature configuration (without hooks); `resetValue` and `key` are used to determine and label the reset
+ * @param referenceId - Identifier for the entity whose usage is being evaluated
+ * @param feature - Feature configuration (without hooks); its `reset` field controls reset behavior and `resetValue` is used to compute the reset delta
+ * @param options - Usage options; when `options.cache` is present, cache is updated and used to record the reset event
+ * @param adapter - Usage adapter used to execute a reset when the cache is not available or to notify the backing store
+ * @returns The reset event data returned by the cache insertion or the adapter's `resetUsage` result when a reset is performed; otherwise `undefined`
  */
 export async function resolveResetUsage({
-    adapter,
     referenceId,
-    referenceType,
-    curr,
     feature,
-}: {
-    adapter: Adapter,
-    referenceId: string,
-    referenceType: string,
-    curr?: number,
-    feature: Omit<Feature, "hooks">
-}) {
-
-    if (feature.resetValue === undefined || feature.resetValue === null) {
+    options,
+    adapter
+}: ResolveResetUsageParams) {
+    if (!feature.reset) {
         return
     }
 
+    const data = await resolveGetUsage({ referenceId, feature, options, adapter });
+    const reset = shouldReset(data.lastResetAt, feature.reset);
 
-    if (curr !== undefined) {
-        const usage = await adapter.create<Usage>({
-            model: "usage",
-            data: {
-                amount: feature.resetValue - curr,
-                feature: feature.key,
-                referenceId,
-                event: "reset",
-                lastResetAt: new Date(),
-                createdAt: new Date()
-            }
-        })
-
-        return usage
+    if (options.cache) {
+        options.cache.setLimit(referenceId, feature.key, {
+            referenceId,
+            feature: feature.key,
+            lastResetAt: data.lastResetAt,
+            maxLimit: feature.maxLimit,
+            minLimit: feature.minLimit,
+            resetValue: feature.resetValue,
+            resetAt: reset.nextReset,
+        }).catch(() => { console.log("[ERROR][CACHE] Failed to update limit") })
     }
 
-    const transaction = await adapter.transaction(async (tx) => {
-        const currentUsage = await tx.findMany<Usage>({
-            model: "usage",
-            where: [
-                { field: "referenceId", value: referenceId },
-                { field: "feature", value: feature.key },
-            ],
-            sortBy: { field: "createdAt", direction: "desc" }
-        })
-        if (currentUsage.length === 0) {
-            return // Sync
-        }
-        const total = currentUsage.reduce((curr, { amount }) => amount + curr, 0)
-        const usage = await tx.create<Usage>({
-            model: "usage",
-            data: {
-                amount: feature.resetValue! - total,
-                feature: feature.key,
-                event: "reset",
+    if (!reset.shouldReset) {
+        return
+    } else {
+        if (options.cache) {
+            // Non blocking 
+            adapter.resetUsage({
                 referenceId,
-                lastResetAt: new Date(),
-                createdAt: new Date()
-            }
-        })
-        return usage
+                feature,
+                curr: data.amount,
+            }).catch()
+
+            const resetData = await options.cache.insertEvent({
+                referenceId,
+                feature: feature.key,
+                amount: (feature.resetValue ?? 0 - data.amount),
+                event: "reset"
+            })
+
+            return resetData
+        }
+    }
+
+    const resetData = await adapter.resetUsage({
+        referenceId,
+        feature,
+        curr: data.amount,
     })
 
-    return transaction
+    return resetData
 }
-
-export interface ResetError extends APIError { };
-export interface ResetSuccess { }; // TODO

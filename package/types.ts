@@ -1,6 +1,6 @@
 import type { UsageCache } from "./adapters/cache.ts";
 import type { UsageTracker } from "./realtime/usage-tracker.ts";
-import { cached_usageEventSchema, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
+import { cached_limitsSchema, cached_usageEventSchema, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
 import { z } from "zod";
 import type { UsageAdapter } from "./adapters/index.ts";
 
@@ -218,9 +218,17 @@ export interface UsageOptionsWithCache extends UsageOptions {
     tracker?: UsageTracker;
 }
 
+/*
+ *
+ */
+export interface EndpointParams {
+    options: UsageOptionsWithCache,
+    adapter: UsageAdapter
+}
 
 /**
  * Caching Types
  */
 export type cached_Usage = z.infer<typeof cached_usageSchema>;
 export type cached_UsageEvent = z.infer<typeof cached_usageEventSchema>;
+export type cached_Limits = z.infer<typeof cached_limitsSchema>;
