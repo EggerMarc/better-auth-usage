@@ -13,7 +13,7 @@ import {
     getConsumeEndpoint
 } from "./endpoints/";
 import { getUsageAdapter, type UsageAdapter } from "./adapters";
-
+import { type AuthContext } from "better-auth";
 /**
  * Creates a usage plugin configured with the provided options.
  *
@@ -34,7 +34,7 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     return {
         id: "@eggermarc/usage",
 
-        async init(ctx) {
+        async init(ctx: AuthContext) {
             serverAdapter = getUsageAdapter(ctx)
 
             if (!options.cacheOptions) {
@@ -117,20 +117,18 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         endpoints: {
             getFeature: getFeatureEndpoint(options),
             consumeFeature: getConsumeEndpoint({
-                ...options,
-                cache,
-                tracker,
+                options,
+                adapter: serverAdapter!
             }),
             listFeatures: getFeaturesEndpoint(options),
             checkUsage: getCheckEndpoint({
-                ...options,
-                cache
+                options,
+                adapter: serverAdapter!
             }),
             upsertCustomer: getUpsertCustomerEndpoint(options),
             syncUsage: getSyncEndpoint({
-                ...options,
-                cache,
-                tracker
+                options,
+                adapter: serverAdapter!
             })
         },
     } satisfies BetterAuthPlugin;

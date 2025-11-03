@@ -10,23 +10,27 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true
     },
-    plugins: [usage({
-        features: {
-            "clicks": {
-                reset: "monthly",
-                resetValue: 0,
-                maxLimit: 100,
-                minLimit: -100
-            }
-        },
-        overrides: {
-            "authenticated": {
-                features: {
-                    "clicks": {
-                        resetValue: "never
-                    }
-                }
-            }
-        }
-    }) as BetterAuthPlugin]
+    plugins: [
+        usage({
+            features: {
+                clicks: {
+                    key: "clicks",
+                    reset: "monthly",
+                    resetValue: 0,
+                    maxLimit: 100,
+                    minLimit: -100,
+                },
+            },
+            overrides: {
+                authenticated: {
+                    features: {
+                        clicks: {
+                            resetValue: 0,
+                        },
+                    },
+                },
+            },
+
+        }) as BetterAuthPlugin,
+    ]
 });
