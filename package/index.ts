@@ -13,7 +13,8 @@ import {
     getConsumeEndpoint
 } from "./endpoints/";
 import { getUsageAdapter, type UsageAdapter } from "./adapters";
-
+import type { AuthContext } from "better-auth";
+import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
 /**
  * Creates a usage plugin configured with the provided options.
  *
@@ -27,14 +28,13 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     let tracker: UsageTracker | undefined;
     let wsServer: UsageWebSocketServer | undefined;
     let io: SocketServer | undefined;
-    let serverAdapter: UsageAdapter;
+    let serverAdapter: UsageAdapter | undefined;
     const runtimeOptions: UsageOptionsWithCache = { ...options };
 
-
     return {
-        id: "@eggermarc/usage",
+        id: "usage",
 
-        async init(ctx) {
+        async init(ctx: AuthContext): Promise<void> {
             serverAdapter = getUsageAdapter(ctx)
 
             if (!options.cacheOptions) {
@@ -96,7 +96,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         schema: {
             usage: {
                 fields: {
-                    referenceId: { type: "string", required: true, input: true },
+                    referenceId: {
+                        type: "string",
+                        required: true,
+                        input: true
+                    },
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
@@ -106,8 +110,17 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             },
             customer: {
                 fields: {
-                    referenceId: { type: "string", required: true, input: true, unique: true },
-                    referenceType: { type: "string", required: true, input: true },
+                    referenceId: {
+                        type: "string",
+                        required: true,
+                        input: true,
+                        unique: true
+                    },
+                    referenceType: {
+                        type: "string",
+                        required: true,
+                        input: true
+                    },
                     email: { type: "string", required: false, input: true },
                     name: { type: "string", required: false, input: true }
                 },
@@ -117,21 +130,24 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         endpoints: {
             getFeature: getFeatureEndpoint(options),
             consumeFeature: getConsumeEndpoint({
-                ...options,
-                cache,
-                tracker,
+                options,
+                adapter: serverAdapter!
             }),
             listFeatures: getFeaturesEndpoint(options),
             checkUsage: getCheckEndpoint({
-                ...options,
-                cache
+                options,
+                adapter: serverAdapter!
+            }),
+            checkCustomer: getCheckCustomerEndpoint({
+                options,
+                adapter: serverAdapter!
             }),
             upsertCustomer: getUpsertCustomerEndpoint(options),
             syncUsage: getSyncEndpoint({
-                ...options,
-                cache,
-                tracker
+                options,
+                adapter: serverAdapter!
             })
+
         },
-    } satisfies BetterAuthPlugin;
+    } as BetterAuthPlugin;
 }

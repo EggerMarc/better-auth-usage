@@ -6,7 +6,8 @@
         "**/*.tsx"
     ],
     "compilerOptions": {
-        "baseUrl": ".","target": "ES2017",
+        "baseUrl": ".",
+        "target": "ES2017",
         "lib": [
             "dom",
             "dom.iterable",
@@ -31,6 +32,9 @@
         "paths": {
             "@/*": [
                 "./*"
+            ],
+            "package/*": [
+                "../../dist/*"
             ]
         }
     },

@@ -83,11 +83,16 @@ export function getCheckEndpoint({ options, adapter }: EndpointParams) {
                 })
             }
 
-            return checkLimit({
-                minLimit: feature.minLimit,
+            return {
+                status: checkLimit({
+                    minLimit: feature.minLimit,
+                    maxLimit: feature.maxLimit,
+                    value: usage.amount + (ctx.body.amount ?? 0),
+                }),
                 maxLimit: feature.maxLimit,
-                value: usage.amount + (ctx.body.amount ?? 0),
-            });
+                minLimit: feature.minLimit,
+                currentAmount: usage.amount
+            };
         }
     )
 }

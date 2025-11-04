@@ -1,4 +1,10 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+} from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -58,4 +64,22 @@ export const verification = pgTable("verification", {
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
+});
+
+export const usage = pgTable("usage", {
+  id: text("id").primaryKey(),
+  referenceId: text("reference_id").notNull(),
+  feature: text("feature").notNull(),
+  amount: integer("amount").notNull(),
+  event: text("event").notNull(),
+  lastResetAt: timestamp("last_reset_at").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+});
+
+export const customer = pgTable("customer", {
+  id: text("id").primaryKey(),
+  referenceId: text("reference_id").notNull().unique(),
+  referenceType: text("reference_type").notNull(),
+  email: text("email"),
+  name: text("name"),
 });

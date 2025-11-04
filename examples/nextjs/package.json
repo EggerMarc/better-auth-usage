@@ -19,6 +19,7 @@
         "ws": "^8.18.3"
     },
     "devDependencies": {
+        "package": "../../dist",
         "@tailwindcss/postcss": "^4.1.16",
         "@types/bun": "latest",
         "@types/node": "^20.19.24",

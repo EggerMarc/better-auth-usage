@@ -1,8 +1,44 @@
 "use client"
 
+import { authClient } from "@/lib/auth-client";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 
 export default function Home() {
+    const [currentAmount, setCurrentAmount] = useState<number>(0);
+
+    const handleOnCheckClick = async () => {
+        const data = await authClient
+            .usage
+            .check({
+                referenceId: "global",
+                featureKey: "clicks"
+            })
+
+        console.log(data)
+        setCurrentAmount(data.currentAmount)
+    }
+
+    const handleIncrease = async () => {
+        const data = await authClient.usage.consume({
+            referenceId: "global",
+            featureKey: "clicks",
+            amount: 1
+        })
+        console.log(data)
+        setCurrentAmount(Number(data.amount) + currentAmount)
+    }
+
+    const handleDecrease = async () => {
+        const data = await authClient.usage.consume({
+            referenceId: "global",
+            featureKey: "clicks",
+            amount: -1
+        })
+        console.log(data)
+        setCurrentAmount(Number(data.amount) + currentAmount)
+    }
+
     return (
         <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
             <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
@@ -60,6 +96,21 @@ export default function Home() {
                     >
                         Documentation
                     </a>
+                    <button
+                        className="flex h-12 w-fit items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
+                        onClick={handleOnCheckClick}
+                    >Check Customer!</button>
+                    <div className="w-fit flex flex-row items-center">
+                        <button
+                            className="flex h-12 w-fit items-center justify-center gap-2 rounded-l-full bg-foreground px-3 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+                            onClick={handleIncrease}
+                        >+</button>
+                        <div className="h-full w-fit place-content-center px-2 border-y-2 border-foreground">Amount </div>
+                        <button
+                            className="flex h-12 w-fit items-center justify-center gap-2 rounded-r-full bg-foreground px-3 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] "
+                            onClick={handleDecrease}
+                        >-</button>
+                    </div>
                 </div>
             </main>
         </div>

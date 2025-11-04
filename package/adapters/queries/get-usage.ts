@@ -33,6 +33,7 @@ export async function getUsageQuery({
     }
 
     if (!usage || usage.length === 0) {
+        // Not sure how I feel with this. If somehow we bypass a customer, we enter a value that doesn't exist.
         const now = new Date()
         const initialUsage: Usage = {
             referenceId,

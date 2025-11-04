@@ -1,7 +1,8 @@
-import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { betterAuth } from "better-auth";
+import { openAPI } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
-import { usage } from "../../../package/index.ts"
+import { usage } from "package/index"
 
 export const auth = betterAuth({
     database: drizzleAdapter(db, {
@@ -13,20 +14,35 @@ export const auth = betterAuth({
     plugins: [usage({
         features: {
             "clicks": {
+                key: "clicks",
                 reset: "monthly",
                 resetValue: 0,
                 maxLimit: 100,
-                minLimit: -100
+                minLimit: -100,
+
+                hooks: {
+                    before: (ctx) => {
+                        if (ctx.usage.afterAmount > 100) {
+                            console.log("above limit!")
+                        }
+
+                        if (ctx.usage.afterAmount < -100) {
+                            throw new Error("below limit!")
+                        }
+                    }
+                }
             }
         },
         overrides: {
             "authenticated": {
                 features: {
                     "clicks": {
-                        resetValue: "never
+                        reset: "never"
                     }
                 }
-            }
+            },
         }
-    }) as BetterAuthPlugin]
+    }),
+    openAPI()
+    ]
 });

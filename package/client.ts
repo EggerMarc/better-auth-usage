@@ -3,7 +3,7 @@ import type { BetterAuthClientPlugin } from "better-auth/types";
 
 export const usageClient = () => {
     return {
-        id: "@eggermarc/usage-client",
+        id: "usage",
         $InferServerPlugin: {} as ReturnType<typeof usage>,
         pathMethods: {
             "/usage/features": "GET",
@@ -12,6 +12,7 @@ export const usageClient = () => {
             "/usage/consume": "POST",
             "/usage/check": "POST",
             "/usage/sync": "POST",
+            "/usage/check-customer": "POST"
         },
-    } satisfies BetterAuthClientPlugin;
+    } as BetterAuthClientPlugin;
 };
