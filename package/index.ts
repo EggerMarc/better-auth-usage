@@ -13,8 +13,12 @@ import {
     getConsumeEndpoint
 } from "./endpoints/";
 import { getUsageAdapter, type UsageAdapter } from "./adapters";
+<<<<<<< HEAD
 import type { AuthContext } from "better-auth";
 import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
+=======
+import { type AuthContext } from "better-auth";
+>>>>>>> 2eff896b34629837ba6caaac13083bed44068b41
 /**
  * Creates a usage plugin configured with the provided options.
  *
@@ -34,7 +38,11 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     return {
         id: "usage",
 
+<<<<<<< HEAD
         async init(ctx: AuthContext): Promise<void> {
+=======
+        async init(ctx: AuthContext) {
+>>>>>>> 2eff896b34629837ba6caaac13083bed44068b41
             serverAdapter = getUsageAdapter(ctx)
 
             if (!options.cacheOptions) {
@@ -137,10 +145,13 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             checkUsage: getCheckEndpoint({
                 options,
                 adapter: serverAdapter!
+<<<<<<< HEAD
             }),
             checkCustomer: getCheckCustomerEndpoint({
                 options,
                 adapter: serverAdapter!
+=======
+>>>>>>> 2eff896b34629837ba6caaac13083bed44068b41
             }),
             upsertCustomer: getUpsertCustomerEndpoint(options),
             syncUsage: getSyncEndpoint({

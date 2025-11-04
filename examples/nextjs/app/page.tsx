@@ -14,7 +14,6 @@ export default function Home() {
                 referenceId: "global",
                 featureKey: "clicks"
             })
-
         console.log(data)
         setCurrentAmount(data.currentAmount)
     }

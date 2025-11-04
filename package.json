@@ -31,7 +31,11 @@
         "typescript": "^5.9.3"
     },
     "peerDependencies": {
+<<<<<<< HEAD
         "better-auth": "^1.3.12"
+=======
+        "better-auth": "^1.3.34"
+>>>>>>> 2eff896b34629837ba6caaac13083bed44068b41
     },
     "exports": {
         ".": {

@@ -43,6 +43,5 @@ export const auth = betterAuth({
             },
         }
     }),
-    openAPI()
-    ]
+    openAPI()]
 });
