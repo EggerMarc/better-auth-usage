@@ -17,7 +17,7 @@ export function getFeatureEndpoint({
     features, overrides
 }: UsageOptions) {
     return createAuthEndpoint(
-        "/usage/features/:featureKey",
+        "/usage/features/{featureKey}",
         {
             method: "GET",
             body: z.object({

@@ -17,15 +17,29 @@ export async function getUsageQuery({
     referenceId: string,
     feature: Omit<Feature, "hooks">,
 }) {
-    const { data: usage, error } = await tryCatch(adapter.findMany<Usage>({
+
+    const { data: usage, error } = await tryCatch(
+        adapter.findMany<Usage>({
+            model: "usage",
+            where: [
+                { field: "referenceId", value: referenceId },
+                { field: "feature", value: feature.key }
+            ],
+            sortBy: { field: "createdAt", direction: "desc" },
+        })
+    )
+
+    const many = await adapter.count({
         model: "usage",
         where: [
             { field: "referenceId", value: referenceId },
             { field: "feature", value: feature.key }
-        ],
-        sortBy: { field: "createdAt", direction: "desc" },
-    }))
+        ]
+    })
 
+    console.log(`[bau], count of usage: ${many}`)
+    const logCurrent = usage!.reduce((value, { amount }) => amount + value, 0)
+    console.log(`[bau] got this many ${logCurrent}, on ${usage!.length} items`)
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
             message: `Failed to get usage from db, thrown the following error\n${error.message}`

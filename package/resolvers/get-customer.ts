@@ -51,6 +51,11 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
     }
 
     if (options.cache) {
+        console.log(`Cache was empty, but we got this from db: ${JSON.stringify(customer)}`)
+    }
+
+    if (options.cache) {
+        console.log("synching to cache");
         options.cache.setCustomer(customer).catch((error) => {
             console.log(error)
         })

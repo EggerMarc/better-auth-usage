@@ -48,6 +48,8 @@ export async function resolveGetUsage({
         feature
     }));
 
+    console.log(`[better-auth-usage] Get usage resolver got: ${JSON.stringify(data)}`)
+
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
             message: `Failed getting usage ${feature.key} from db\n${error.message}`
@@ -87,5 +89,6 @@ export async function resolveGetUsage({
             message: `Usage ${feature.key} not found in db`
         })
     }
+
     return normalizeData(data, "db")
 }

@@ -1,5 +1,6 @@
+import { getUsageOptions } from "@/resolvers/options";
 import { resolveUpsertCustomer } from "@/resolvers/upsert-customer";
-import type { UsageOptionsWithCache } from "@/types";
+import type { UsageOptions, UsageOptionsWithCache } from "@/types";
 import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
@@ -13,7 +14,7 @@ import { customerSchema } from "package/schema";
  *
  * @returns The configured endpoint handler which accepts the customer payload and returns the upserted customer object
  */
-export function getUpsertCustomerEndpoint(options: UsageOptionsWithCache) {
+export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint("/usage/upsert-customer", {
         method: "POST",
         body: customerSchema,
@@ -49,7 +50,12 @@ export function getUpsertCustomerEndpoint(options: UsageOptionsWithCache) {
             },
         }
     }, async (ctx) => {
-        const adapter = getUsageAdapter(ctx.context);
+
+        const { options, adapter } = await getUsageOptions({
+            ctx: ctx.context, options: endpointOptions
+        });
+
+        //const adapter = getUsageAdapter(ctx.context);
         const { data: customer, error } = await tryCatch(
             resolveUpsertCustomer({
                 adapter, options, customer: {

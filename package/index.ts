@@ -1,4 +1,3 @@
-import { Server as SocketServer } from "socket.io";
 import { APIError, type BetterAuthPlugin } from "better-auth";
 import type { UsageOptions, UsageOptionsWithCache } from "./types";
 import { UsageCache } from "./adapters/cache";
@@ -12,7 +11,7 @@ import {
     getFeatureEndpoint,
     getConsumeEndpoint
 } from "./endpoints/";
-import { getUsageAdapter, type UsageAdapter } from "./adapters";
+import { type UsageAdapter } from "./adapters";
 import type { AuthContext } from "better-auth";
 import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
 /**
@@ -24,74 +23,8 @@ import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
  * @returns A BetterAuth plugin object containing `id`, `init()`, `schema`, and `endpoints` for usage tracking and customer management.
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
-    let cache: UsageCache | undefined;
-    let tracker: UsageTracker | undefined;
-    let wsServer: UsageWebSocketServer | undefined;
-    let io: SocketServer | undefined;
-    let serverAdapter: UsageAdapter | undefined;
-    const runtimeOptions: UsageOptionsWithCache = { ...options };
-
     return {
         id: "usage",
-
-        async init(ctx: AuthContext) {
-            serverAdapter = getUsageAdapter(ctx)
-
-            if (!options.cacheOptions) {
-                console.log("[better-auth-usage] Running without cache (DB-only mode)");
-                return;
-            }
-
-            console.log("[better-auth-usage] Initializing cache...");
-
-            cache = new UsageCache({
-                url: options.cacheOptions.redisUrl,
-            });
-            runtimeOptions.cache = cache;
-
-            if (options.cacheOptions.enableRealtime) {
-                if (!options.cacheOptions.port) {
-                    throw new Error("Port is required when enableRealtime is true");
-                }
-
-                console.log("[better-auth-usage] Realtime enabled, starting WebSocket server...");
-
-                io = new SocketServer({
-                    cors: options.cacheOptions.cors || {
-                        origin: "*",
-                        credentials: true
-                    }
-                });
-
-                const port = options.cacheOptions.port;
-                io.listen(port);
-                console.log(`[better-auth-usage] WebSocket server listening on port ${port}`);
-                try {
-                    tracker = new UsageTracker(
-                        options.cacheOptions.redisUrl,
-                        io,
-                        cache
-                    );
-                    await tracker.connect();
-                    runtimeOptions.tracker = tracker;
-                    console.log("[better-auth-usage] Pub/sub tracker connected");
-                } catch (err) {
-                    throw new APIError("INTERNAL_SERVER_ERROR", {
-                        message: `[ERROR][USAGE] Failed to initialize UsageTracker service ${err}`
-                    })
-                }
-
-                wsServer = new UsageWebSocketServer(
-                    io,
-                    tracker,
-                    runtimeOptions
-                );
-
-                console.log("[better-auth-usage] WebSocket handlers registered");
-            } else {
-                console.log("[better-auth-usage] Realtime disabled (cache-only mode)");
-            }
-        },
 
         schema: {
             usage: {
@@ -129,24 +62,12 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
 
         endpoints: {
             getFeature: getFeatureEndpoint(options),
-            consumeFeature: getConsumeEndpoint({
-                options,
-                adapter: serverAdapter!
-            }),
+            consumeFeature: getConsumeEndpoint(options),
             listFeatures: getFeaturesEndpoint(options),
-            checkUsage: getCheckEndpoint({
-                options,
-                adapter: serverAdapter!
-            }),
-            checkCustomer: getCheckCustomerEndpoint({
-                options,
-                adapter: serverAdapter!
-            }),
+            checkUsage: getCheckEndpoint(options),
+            checkCustomer: getCheckCustomerEndpoint(options),
             upsertCustomer: getUpsertCustomerEndpoint(options),
-            syncUsage: getSyncEndpoint({
-                options,
-                adapter: serverAdapter!
-            })
+            syncUsage: getSyncEndpoint(options)
 
         },
     } as BetterAuthPlugin;

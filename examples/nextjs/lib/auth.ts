@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { openAPI } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
@@ -41,7 +41,11 @@ export const auth = betterAuth({
                     }
                 }
             },
+        },
+        cacheOptions: {
+            redisUrl: process.env.REDIS_URL!,
+            port: 3000
         }
-    }),
+    }) as BetterAuthPlugin,
     openAPI()]
 });

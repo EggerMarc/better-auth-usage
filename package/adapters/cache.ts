@@ -44,6 +44,7 @@ export class UsageCache extends EventEmitter {
         amount,
         event,
     }: UsageEvent) {
+        console.log(`[bau][cache] Cache inserting: ${amount}`)
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
 
         const { data, error } = await tryCatch(
@@ -79,6 +80,7 @@ export class UsageCache extends EventEmitter {
     }
 
     async getUsage(referenceId: string, feature: Omit<Feature, "hooks">): Promise<Usage> {
+        console.log(`[bau][cache] getting usage`)
         const { usageKey } = this.resolveKeys(referenceId, feature.key)
         const { data, error } = await tryCatch(this.cache.get(usageKey));
 
@@ -128,13 +130,19 @@ export class UsageCache extends EventEmitter {
         await this.cache.quit()
     }
 
-    async getCustomer(referenceId: string): Promise<Customer> {
-        const { data, error } = await tryCatch(this.cache.get(`customer:${referenceId}`))
+    async getCustomer(referenceId: string): Promise<Customer | null> {
+        const { data, error } = await tryCatch(
+            this.cache.get(`customer:${referenceId}`)
+        )
 
         if (error) {
+            console.log(`\n\n\nFailed for some reason ${error.message}\n\n\n`)
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to get customer from cache for ${referenceId}` })
         }
-
+        if (!data) {
+            return null
+        }
+        console.log(`\n\n\ Got back some data: ${JSON.stringify(data)}\n\n\n`)
         return customerSchema.parse(data)
     }
 

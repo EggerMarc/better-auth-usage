@@ -2,10 +2,11 @@ import { getUsageAdapter } from "@/adapters";
 import { getCustomerMiddleware } from "@/middlewares/customer";
 import { getUsageMiddleware } from "@/middlewares/usage";
 import { resolveInsertUsage } from "@/resolvers/insert-usage";
+import { getUsageOptions } from "@/resolvers/options";
 import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { resolveFeature } from "package/resolvers/features";
-import type { EndpointParams } from "package/types";
+import type { EndpointParams, UsageOptions } from "package/types";
 import { z } from "zod"
 
 /**
@@ -14,15 +15,15 @@ import { z } from "zod"
  * @param options - Runtime options used by the endpoint, including feature definitions, override configurations, adapter selection, and caching behavior
  * @returns The configured authenticated endpoint that inserts a usage record and returns the inserted usage data
  */
-export function getConsumeEndpoint({ options, adapter }: EndpointParams) {
+export function getConsumeEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
         "/usage/consume",
         {
             method: "POST",
             middleware: [
                 sessionMiddleware,
-                getUsageMiddleware({ ...options }),
-                getCustomerMiddleware({ options, adapter })
+                //getUsageMiddleware({ ...options }),
+                //getCustomerMiddleware({ options, adapter })
             ],
             body: z.object({
                 featureKey: z.string(),
@@ -64,7 +65,9 @@ export function getConsumeEndpoint({ options, adapter }: EndpointParams) {
             },
         },
         async (ctx) => {
-            const adapter = getUsageAdapter(ctx.context);
+            const { options, adapter } = await getUsageOptions({
+                ctx: ctx.context, options: endpointOptions
+            });
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,

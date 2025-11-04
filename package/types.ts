@@ -201,7 +201,7 @@ export interface UsageOptions {
     cacheOptions?: {
         enableRealtime?: boolean,
         redisUrl: string;
-        port: number;
+        port?: number;
         cors?: {
             origin: string | string[];
             credentials?: boolean;
