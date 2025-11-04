@@ -77,6 +77,8 @@ export function getCheckEndpoint({ options, adapter }: EndpointParams) {
                 })
             )
 
+            console.log(`[better-auth-usage] got the following usage: ${usage}`)
+
             if (error) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
                     message: `Internal error getting usage for feature ${feature.key}, ${error.message}`

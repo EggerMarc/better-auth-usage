@@ -43,7 +43,10 @@ export async function resolveGetUsage({
         }
     }
 
-    const { data, error } = await tryCatch(adapter.getUsage({ referenceId, feature }));
+    const { data, error } = await tryCatch(adapter.getUsage({
+        referenceId,
+        feature
+    }));
 
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
