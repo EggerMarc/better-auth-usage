@@ -46,7 +46,8 @@ export class UsageCache extends EventEmitter {
     }: UsageEvent) {
         console.log(`[bau][cache] Cache inserting: ${amount}`)
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
-
+        const now = new Date().toISOString();
+        console.log(`Now is ${now}`)
         const { data, error } = await tryCatch(
             this
                 .cache
@@ -56,7 +57,7 @@ export class UsageCache extends EventEmitter {
                     usageKey,
                     limitKey,
                     amount,
-                    Date.now().toString()
+                    now
                 )
         )
 
@@ -68,6 +69,8 @@ export class UsageCache extends EventEmitter {
 
         try {
             const [newAmount, resetAt] = data as [number, number];
+
+            console.log(`Reset At: ${new Date(resetAt)}, ${resetAt}`)
             return usageEventSchema.parse({
                 amount, afterValue: newAmount, resetAt: new Date(resetAt), event
             }) as UsageEvent
@@ -79,22 +82,26 @@ export class UsageCache extends EventEmitter {
 
     }
 
-    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">): Promise<Usage> {
+    async getUsage(
+        referenceId: string,
+        feature: Omit<Feature, "hooks">
+    ): Promise<Usage | null> {
         console.log(`[bau][cache] getting usage`)
         const { usageKey } = this.resolveKeys(referenceId, feature.key)
-        const { data, error } = await tryCatch(this.cache.get(usageKey));
+        const { data, error } = await tryCatch(
+            this.cache.get(usageKey)
+        );
 
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${error.message}` })
         }
 
         if (!data) {
-            throw new APIError("NOT_FOUND", { message: `[ERROR][USAGE] Failed to get cached usage, ${usageKey}` })
+            return null
         }
 
         try {
-            const parsed = JSON.parse(data);
-            const validated = usageSchema.parse(parsed);
+            const validated = usageSchema.parse(JSON.parse(data));
             return validated as Usage;
         } catch (err) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -143,7 +150,24 @@ export class UsageCache extends EventEmitter {
             return null
         }
         console.log(`\n\n\ Got back some data: ${JSON.stringify(data)}\n\n\n`)
-        return customerSchema.parse(data)
+
+        const {
+            data: customer,
+            error: parsingError
+        } = customerSchema
+            .safeParse(JSON.parse(data))
+
+        if (parsingError) {
+            console.log(`PANIC ${parsingError.message}`)
+
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Got corrupt customer from cache: ${parsingError.message}`
+            })
+        }
+
+        console.log(customer)
+
+        return customer
     }
 
     async setCustomer(customer: Customer) {
@@ -152,8 +176,15 @@ export class UsageCache extends EventEmitter {
 
     async setLimit(referenceId: string, featureKey: string, limits: cached_Limits) {
         const { limitKey } = this.resolveKeys(referenceId, featureKey);
-        const { error } = await tryCatch(this.cache.set(limitKey, JSON.stringify(limits)));
+        const { error } = await tryCatch(
+            this.cache.hset(limitKey, {
+                ...limits,
+                // Need to be ISO string 
+                resetAt: limits.resetAt?.toISOString()
+            })
+        );
         if (error) {
+            console.log(`What's the problem now????? ${error.message}`)
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to insert limits for ${limitKey}, ${error.message}` })
         }
         return limits

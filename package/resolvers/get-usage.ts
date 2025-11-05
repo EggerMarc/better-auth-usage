@@ -29,9 +29,10 @@ export async function resolveGetUsage({
     options,
     adapter
 }: ResolveGetUsageParams): Promise<Usage> {
-
     if (options.cache) {
-        const { data, error } = await tryCatch(options.cache.getUsage(referenceId, feature))
+        const { data, error } = await tryCatch(
+            options.cache.getUsage(referenceId, feature)
+        )
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
                 message: `Failed getting usage ${feature.key} from cache\n${error.message}`
@@ -89,6 +90,5 @@ export async function resolveGetUsage({
             message: `Usage ${feature.key} not found in db`
         })
     }
-
     return normalizeData(data, "db")
 }
