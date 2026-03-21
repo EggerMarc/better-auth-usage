@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { usage } from "package/index"
 
 export const auth = betterAuth({
+    trustedOrigins: ["*"],
     database: drizzleAdapter(db, {
         provider: "pg",
     }),
@@ -44,8 +45,7 @@ export const auth = betterAuth({
         },
         cacheOptions: {
             redisUrl: process.env.REDIS_URL!,
-            port: 3000
-        }
+        },
     }) as BetterAuthPlugin,
     openAPI()]
 });

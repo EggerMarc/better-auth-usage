@@ -8,6 +8,7 @@ export default function Home() {
     const [currentAmount, setCurrentAmount] = useState<number>(0);
 
     const handleOnCheckClick = async () => {
+        console.log("Checking client")
         const data = await authClient
             .usage
             .check({
