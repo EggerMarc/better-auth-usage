@@ -49,6 +49,8 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
             },
         },
         async (ctx) => {
+
+            console.log("[LOG][ENDPOINT] Called check-customer for: ", ctx.body.referenceId)
             const { options, adapter } = await getUsageOptions({
                 ctx: ctx.context,
                 options: endpointOptions

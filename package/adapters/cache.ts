@@ -68,11 +68,13 @@ export class UsageCache extends EventEmitter {
         }
 
         try {
-            const [newAmount, resetAt] = data as [number, number];
+            const [newAmount, resetAt] = data as [number, number | undefined];
 
-            console.log(`Reset At: ${new Date(resetAt)}, ${resetAt}`)
             return usageEventSchema.parse({
-                amount, afterValue: newAmount, resetAt: new Date(resetAt), event
+                referenceId,
+                feature,
+                amount,
+                event,
             }) as UsageEvent
         } catch (err) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -86,28 +88,45 @@ export class UsageCache extends EventEmitter {
         referenceId: string,
         feature: Omit<Feature, "hooks">
     ): Promise<Usage | null> {
-        console.log(`[bau][cache] getting usage`)
-        const { usageKey } = this.resolveKeys(referenceId, feature.key)
-        const { data, error } = await tryCatch(
+        const { usageKey, limitKey } = this.resolveKeys(referenceId, feature.key)
+
+        const { data: rawCounter, error: counterError } = await tryCatch(
             this.cache.get(usageKey)
         );
 
-        if (error) {
-            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${error.message}` })
+        if (counterError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${counterError.message}` })
         }
 
-        if (!data) {
+        if (rawCounter === null) {
             return null
         }
 
-        try {
-            const validated = usageSchema.parse(JSON.parse(data));
-            return validated as Usage;
-        } catch (err) {
+        const current = Number(rawCounter);
+        if (Number.isNaN(current)) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `[ERROR][USAGE] Corrupted cache data for ${usageKey}`
+                message: `[ERROR][USAGE] Corrupted cache counter for ${usageKey}`
             });
         }
+
+        const { data: limitData, error: limitError } = await tryCatch(
+            this.cache.hgetall(limitKey)
+        );
+
+        if (limitError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `[ERROR][USAGE] Internal error getting limits ${limitKey}, ${limitError.message}`
+            });
+        }
+
+        return {
+            referenceId,
+            feature: feature.key,
+            current,
+            lastResetAt: limitData?.lastResetAt ? new Date(limitData.lastResetAt) : new Date(),
+            maxLimit: limitData?.maxLimit ? Number(limitData.maxLimit) : undefined,
+            minLimit: limitData?.minLimit ? Number(limitData.minLimit) : undefined,
+        } as Usage
     }
 
     async clearUsage(referenceId: string, feature: string): Promise<void> {
@@ -138,6 +157,8 @@ export class UsageCache extends EventEmitter {
     }
 
     async getCustomer(referenceId: string): Promise<Customer | null> {
+        console.log("[LOG][CACHE] Getting user from db: ", referenceId)
+
         const { data, error } = await tryCatch(
             this.cache.get(`customer:${referenceId}`)
         )
