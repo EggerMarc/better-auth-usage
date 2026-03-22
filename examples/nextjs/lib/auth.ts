@@ -4,8 +4,14 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
 import { usage } from "package/index"
 
+const appOrigin = process.env.APP_ORIGIN;
+if (!appOrigin) {
+    throw new Error("Missing APP_ORIGIN");
+}
+
+
 export const auth = betterAuth({
-    trustedOrigins: ["*"],
+    trustedOrigins: [appOrigin],
     database: drizzleAdapter(db, {
         provider: "pg",
     }),

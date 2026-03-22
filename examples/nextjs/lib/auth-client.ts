@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react"
-import { usageClient } from "../../../dist/client"
+import { usageClient } from "../../../package/client"
 import type { BetterAuthClientPlugin } from "better-auth"
 
 export const authClient = createAuthClient({

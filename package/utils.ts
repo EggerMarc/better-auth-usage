@@ -163,7 +163,7 @@ export function normalizeData<
             referenceId: d.referenceId,
             feature: d.feature,
             amount: d.current,
-            event: undefined,
+            event: "cache",
             createdAt: d.updatedAt,
             lastResetAt: d.lastResetAt
         } as Usage

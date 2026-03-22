@@ -20,7 +20,7 @@ export const resolveUpsertCustomer = async ({
         })
     }
 
-    options.cache && options.cache.setCustomer(customer).catch(() => {
+    options.cache && options.cache.setCustomer(data).catch(() => {
         console.log("[ERROR][CUSTOMER] Cache failed to insert customer")
     })
     return data

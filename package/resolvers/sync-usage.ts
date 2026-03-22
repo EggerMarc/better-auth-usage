@@ -54,7 +54,7 @@ export async function resolveSyncUsage({
                 referenceId,
                 feature,
                 curr: data.amount,
-            }).catch()
+            }).catch((err) => { console.log("[ERROR][DB] Failed to reset usage", { referenceId, feature: feature.key, err }) })
 
             const resetData = await options.cache.insertEvent({
                 referenceId,
