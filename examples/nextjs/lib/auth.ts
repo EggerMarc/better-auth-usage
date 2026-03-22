@@ -44,7 +44,7 @@ export const auth = betterAuth({
             },
         },
         cacheOptions: {
-            redisUrl: process.env.REDIS_URL!,
+            redisUrl: process.env.CACHE_URL!,
         },
     }) as BetterAuthPlugin,
     openAPI()]
