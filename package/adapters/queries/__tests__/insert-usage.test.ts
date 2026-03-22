@@ -26,7 +26,7 @@ describe("insertUsageQuery", () => {
             const result = await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt,
                 amount: 10,
                 event: "use"
@@ -51,7 +51,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt,
                 amount: 10,
                 event: "use"
@@ -75,7 +75,7 @@ describe("insertUsageQuery", () => {
                 await insertUsageQuery({
                     adapter: mockAdapter,
                     referenceId: "user-123",
-                    featureKey: "api-calls",
+                    feature: { key: "api-calls" },
                     lastResetAt: new Date(),
                     amount: 10,
                     event: eventType
@@ -97,7 +97,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 50,
                 event: "use"
@@ -114,7 +114,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 0,
                 event: "reset"
@@ -131,7 +131,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "credits",
+                feature: { key: "credits" },
                 lastResetAt: new Date(),
                 amount: -25,
                 event: "refund"
@@ -150,7 +150,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "org-enterprise",
-                featureKey: "storage",
+                feature: { key: "storage" },
                 lastResetAt: new Date(),
                 amount: largeAmount,
                 event: "use"
@@ -167,7 +167,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "bandwidth",
+                feature: { key: "bandwidth" },
                 lastResetAt: new Date(),
                 amount: 10.5,
                 event: "use"
@@ -188,7 +188,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"
@@ -208,7 +208,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: specificResetDate,
                 amount: 10,
                 event: "use"
@@ -229,7 +229,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"
@@ -248,7 +248,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: specialId,
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"
@@ -265,7 +265,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "",
+                feature: { key: "" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"
@@ -285,7 +285,7 @@ describe("insertUsageQuery", () => {
                 insertUsageQuery({
                     adapter: mockAdapter,
                     referenceId: "user-123",
-                    featureKey: "api-calls",
+                    feature: { key: "api-calls" },
                     lastResetAt: new Date(),
                     amount: 10,
                     event: "use"
@@ -299,7 +299,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"
@@ -319,7 +319,7 @@ describe("insertUsageQuery", () => {
             await insertUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
-                featureKey: "api-calls",
+                feature: { key: "api-calls" },
                 lastResetAt: new Date(),
                 amount: 10,
                 event: "use"

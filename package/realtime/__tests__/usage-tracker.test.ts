@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { Server as SocketServer } from "socket.io";
-import { UsageTracker, type UsageUpdate } from "../usage-tracker";
+import { UsageTracker } from "../usage-tracker";
 import { UsageCache } from "../../adapters/cache";
+import type { cached_UsageEvent } from "../../types";
 
 describe("UsageTracker", () => {
     let tracker: UsageTracker;
@@ -15,7 +16,9 @@ describe("UsageTracker", () => {
         mockPubClient = {
             connect: mock(async () => { }),
             publish: mock(async (channel: string, message: string) => { }),
-            quit: mock(async () => { })
+            quit: mock(async () => { }),
+            psubscribe: mock((pattern: string) => { }),
+            on: mock((event: string, handler: Function) => { })
         };
 
         mockSubClient = {
@@ -28,11 +31,15 @@ describe("UsageTracker", () => {
         // Mock Redis constructor - return pub client first, sub client second
         let callCount = 0;
         mock.module("ioredis", () => ({
-            default: mock(() => {
-                callCount++;
-                return callCount === 1 ? mockPubClient : mockSubClient;
-            })
+            default: class Redis {
+                constructor(_url: string) {
+                    callCount++;
+                    const target = callCount % 2 === 1 ? mockPubClient : mockSubClient;
+                    return target;
+                }
+            }
         }));
+
         mockIo = {
             to: mock((room: string) => ({
                 emit: mock((event: string, data: any) => { })
@@ -40,15 +47,17 @@ describe("UsageTracker", () => {
         } as any;
 
         mockCache = {
-            getUsage: mock(async (referenceId: string, feature: string) => ({
+            getUsage: mock(async (referenceId: string, feature: { key: string }) => ({
                 referenceId,
-                feature,
+                feature: feature.key,
                 current: 100,
                 lastResetAt: new Date(),
                 updatedAt: new Date()
-            }))
+            })),
+            insertEvent: mock(async () => { })
         } as any;
 
+        callCount = 0;
         tracker = new UsageTracker(testRedisUrl, mockIo, mockCache);
     });
 
@@ -76,38 +85,36 @@ describe("UsageTracker", () => {
 
     describe("connect", () => {
         it("should connect both Redis clients", async () => {
-            expect(await tracker.connect()).resolves.not.toThrow();
+            await tracker.connect();
         });
 
         it("should handle connection errors gracefully", async () => {
+            mockPubClient.connect = mock(async () => {
+                throw new Error("Connection refused");
+            });
             const badTracker = new UsageTracker("invalid-url", mockIo, mockCache);
-            expect(await badTracker.connect()).rejects.toThrow();
+            await expect(badTracker.connect()).rejects.toThrow();
             await badTracker.disconnect();
         });
     });
 
     describe("publishUpdate", () => {
         it("should publish usage update to correct channel", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
+                event: "increment"
             };
 
-            expect(await tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
         it("should format channel name correctly", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "org-456",
                 feature: "storage",
                 amount: 100,
-                afterValue: 500,
-                resetAt: new Date(),
-                timestamp: Date.now(),
             };
 
             await tracker.publishUpdate(update);
@@ -119,55 +126,64 @@ describe("UsageTracker", () => {
         });
 
         it("should handle special characters in referenceId", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user@test.com",
                 feature: "api-calls",
                 amount: 1,
-                afterValue: 101,
-                resetAt: new Date(),
-                timestamp: Date.now(),
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
         it("should handle negative amounts", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: -10,
-                afterValue: 90,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
         it("should handle zero amount", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 0,
-                afterValue: 100,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
     });
 
     describe("getUsage", () => {
+        const apiCallsFeature = {
+            key: "api-calls",
+            reset: "daily" as const,
+            resetValue: 1000
+        };
+
+        const storageFeature = {
+            key: "storage",
+            reset: "monthly" as const,
+            resetValue: 10000
+        };
+
+        const bandwidthFeature = {
+            key: "bandwidth",
+            reset: "daily" as const,
+            resetValue: 5000
+        };
+
         it("should delegate to cache.getUsage", async () => {
-            const result = await tracker.getUsage("user-123", "api-calls");
+            const result = await tracker.getUsage("user-123", apiCallsFeature);
 
             expect(result).toBeDefined();
-            expect(mockCache.getUsage).toHaveBeenCalledWith("user-123", "api-calls");
+            expect(mockCache.getUsage).toHaveBeenCalledWith("user-123", apiCallsFeature);
         });
 
         it("should return cached usage data", async () => {
-            const result = await tracker.getUsage("user-456", "storage");
+            const result = await tracker.getUsage("user-456", storageFeature);
 
             expect(result.referenceId).toBe("user-456");
             expect(result.feature).toBe("storage");
@@ -180,88 +196,74 @@ describe("UsageTracker", () => {
             });
 
             await expect(
-                tracker.getUsage("user-123", "api-calls")
+                tracker.getUsage("user-123", apiCallsFeature)
             ).rejects.toThrow("Cache error");
         });
 
         it("should work with different feature types", async () => {
-            await tracker.getUsage("user-123", "api-calls");
-            await tracker.getUsage("user-123", "storage");
-            await tracker.getUsage("user-123", "bandwidth");
+            await tracker.getUsage("user-123", apiCallsFeature);
+            await tracker.getUsage("user-123", storageFeature);
+            await tracker.getUsage("user-123", bandwidthFeature);
 
             expect(mockCache.getUsage).toHaveBeenCalledTimes(3);
         });
     });
 
-    describe("broadcastUpdate", () => {
-        it("should emit to correct room format", () => {
-            const update: UsageUpdate = {
+    describe("broadcastUpdate via pubsub", () => {
+        it("should broadcast to correct room when pmessage is received", async () => {
+            await tracker.connect();
+
+            // Get the pmessage handler that was registered on the sub client
+            const onCalls = mockSubClient.on.mock.calls;
+            const pmessageCall = onCalls.find((call: any[]) => call[0] === "pmessage");
+            expect(pmessageCall).toBeDefined();
+
+            const pmessageHandler = pmessageCall[1];
+
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            // Trigger internal broadcast by emitting to tracker
-            tracker.emit("usage:update", update);
+            await pmessageHandler("usage:updates:*", "usage:updates:api-calls:user-123", JSON.stringify(update));
 
             // Room should be: usage:api-calls:user-123
             expect(mockIo.to).toHaveBeenCalledWith("usage:api-calls:user-123");
-            const roomMock = mockIo.to.mock.results[0].value;
-            expect(roomMock.emit).toHaveBeenCalledWith("usage:updated", update);
         });
 
-        it("should broadcast with correct event name", () => {
-            const update: UsageUpdate = {
+        it("should emit usage:update event when pmessage is received", async () => {
+            await tracker.connect();
+
+            const onCalls = mockSubClient.on.mock.calls;
+            const pmessageCall = onCalls.find((call: any[]) => call[0] === "pmessage");
+            const pmessageHandler = pmessageCall[1];
+
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            tracker.emit("usage:update", update);
-            // Should emit "usage:updated" event
-            const roomMock = mockIo.to.mock.results[0].value;
-            expect(roomMock.emit).toHaveBeenCalledWith("usage:updated", expect.any(Object));
-        });
+            const emitPromise = new Promise<cached_UsageEvent>((resolve) => {
+                tracker.on("usage:update", resolve);
+            });
 
-        it("should handle multiple features for same reference", () => {
-            const update1: UsageUpdate = {
-                referenceId: "user-123",
-                feature: "api-calls",
-                amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
-            };
+            await pmessageHandler("usage:updates:*", "usage:updates:api-calls:user-123", JSON.stringify(update));
 
-            const update2: UsageUpdate = {
-                referenceId: "user-123",
-                feature: "storage",
-                amount: 50,
-                afterValue: 550,
-                resetAt: new Date(),
-                timestamp: Date.now()
-            };
-
-            tracker.emit("usage:update", update1);
-            tracker.emit("usage:update", update2);
+            const emitted = await emitPromise;
+            expect(emitted.referenceId).toBe("user-123");
+            expect(emitted.feature).toBe("api-calls");
+            expect(emitted.amount).toBe(10);
         });
     });
 
     describe("event handling", () => {
         it("should emit usage:update event when update received", (done) => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
             tracker.on("usage:update", (receivedUpdate) => {
@@ -273,13 +275,10 @@ describe("UsageTracker", () => {
         });
 
         it("should support multiple listeners", (done) => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
             let count = 0;
@@ -299,36 +298,33 @@ describe("UsageTracker", () => {
             tracker.on("usage:update", listener);
             tracker.removeListener("usage:update", listener);
 
-            tracker.emit("usage:update", {} as UsageUpdate);
+            tracker.emit("usage:update", {} as cached_UsageEvent);
             expect(listener).not.toHaveBeenCalled();
         });
     });
 
     describe("disconnect", () => {
         it("should disconnect both Redis clients", async () => {
-            await expect(tracker.disconnect()).resolves.not.toThrow();
+            await tracker.disconnect();
         });
 
         it("should handle multiple disconnect calls", async () => {
             await tracker.disconnect();
-            await expect(tracker.disconnect()).resolves.not.toThrow();
+            await tracker.disconnect();
         });
 
         it("should disconnect even if connection failed", async () => {
             const failedTracker = new UsageTracker("invalid", mockIo, mockCache);
-            await expect(failedTracker.disconnect()).resolves.not.toThrow();
+            await failedTracker.disconnect();
         });
     });
 
     describe("channel naming", () => {
         it("should create consistent channel names", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
             await tracker.publishUpdate(update);
@@ -348,22 +344,16 @@ describe("UsageTracker", () => {
         });
 
         it("should create different channels for different features", async () => {
-            const update1: UsageUpdate = {
+            const update1: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            const update2: UsageUpdate = {
+            const update2: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "storage",
                 amount: 100,
-                afterValue: 600,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
             await tracker.publishUpdate(update1);
@@ -372,22 +362,16 @@ describe("UsageTracker", () => {
         });
 
         it("should create different channels for different references", async () => {
-            const update1: UsageUpdate = {
+            const update1: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            const update2: UsageUpdate = {
+            const update2: cached_UsageEvent = {
                 referenceId: "user-456",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
             await tracker.publishUpdate(update1);
@@ -397,57 +381,45 @@ describe("UsageTracker", () => {
     });
 
     describe("edge cases", () => {
-        it("should handle very large afterValue", async () => {
-            const update: UsageUpdate = {
+        it("should handle very large amount", async () => {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 999999,
-                afterValue: 999999999,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
-        it("should handle future resetAt dates", async () => {
-            const futureDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
-            const update: UsageUpdate = {
+        it("should handle event field", async () => {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: futureDate,
-                timestamp: Date.now()
+                event: "consumption"
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
-        it("should handle past timestamps", async () => {
-            const update: UsageUpdate = {
+        it("should handle past timestamps in event", async () => {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "api-calls",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now() - 10000
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
 
         it("should handle empty feature names", async () => {
-            const update: UsageUpdate = {
+            const update: cached_UsageEvent = {
                 referenceId: "user-123",
                 feature: "",
                 amount: 10,
-                afterValue: 110,
-                resetAt: new Date(),
-                timestamp: Date.now()
             };
 
-            await expect(tracker.publishUpdate(update)).resolves.not.toThrow();
+            await tracker.publishUpdate(update);
         });
     });
 });

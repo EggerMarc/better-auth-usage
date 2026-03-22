@@ -205,8 +205,13 @@ describe("getUsageAdapter", () => {
             };
 
             mockAdapter.transaction = mock(async (callback: Function) => {
+                let callCount = 0;
                 const txAdapter = {
-                    findOne: mock(async () => null),
+                    findOne: mock(async () => {
+                        callCount++;
+                        // First call: check if exists (null), second call: return persisted
+                        return callCount === 1 ? null : testCustomer;
+                    }),
                     create: mock(async (params: any) => params.data)
                 };
                 return await callback(txAdapter);
@@ -230,8 +235,13 @@ describe("getUsageAdapter", () => {
             };
 
             mockAdapter.transaction = mock(async (callback: Function) => {
+                let callCount = 0;
                 const txAdapter = {
-                    findOne: mock(async () => existingCustomer),
+                    findOne: mock(async () => {
+                        callCount++;
+                        // First call: find existing, second call: return updated
+                        return callCount === 1 ? existingCustomer : updatedCustomer;
+                    }),
                     update: mock(async () => updatedCustomer)
                 };
                 return await callback(txAdapter);

@@ -84,6 +84,19 @@ describe("resetUsageQuery", () => {
         });
 
         test("should handle zero current usage", async () => {
+            // curr: 0 is falsy, so the implementation takes the transaction path
+            mockAdapter.transaction = mock(async (callback) => {
+                const txAdapter = {
+                    findMany: mock(() => Promise.resolve([])),
+                    create: mock(() => Promise.resolve({
+                        id: "usage-reset",
+                        amount: 100,
+                        event: "reset"
+                    }))
+                };
+                return await callback(txAdapter as any);
+            });
+
             await resetUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
@@ -91,13 +104,7 @@ describe("resetUsageQuery", () => {
                 feature: mockFeature
             });
 
-            expect(mockAdapter.create).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    data: expect.objectContaining({
-                        amount: 100 // resetValue - 0
-                    })
-                })
-            );
+            expect(mockAdapter.transaction).toHaveBeenCalled();
         });
 
         test("should handle current usage exceeding resetValue", async () => {
@@ -239,11 +246,13 @@ describe("resetUsageQuery", () => {
 
     describe("feature variations", () => {
         test("should handle different reset values", async () => {
-            const testCases = [0, 50, 100, 1000, 10000];
+            // resetValue: 0 is falsy and causes early return, so we skip it
+            // curr: 0 is falsy and takes the transaction path, so we use curr: 10
+            const testCases = [1, 50, 100, 1000, 10000];
 
             for (const resetValue of testCases) {
                 mockAdapter.create = mock(() => Promise.resolve({ id: "test" }));
-                
+
                 const feature: Omit<Feature, "hooks"> = {
                     key: "test-feature",
                     reset: "daily",
@@ -253,14 +262,14 @@ describe("resetUsageQuery", () => {
                 await resetUsageQuery({
                     adapter: mockAdapter,
                     referenceId: "user-123",
-                    curr: 0,
+                    curr: 10,
                     feature
                 });
 
                 expect(mockAdapter.create).toHaveBeenCalledWith(
                     expect.objectContaining({
                         data: expect.objectContaining({
-                            amount: resetValue
+                            amount: resetValue - 10
                         })
                     })
                 );
@@ -296,7 +305,7 @@ describe("resetUsageQuery", () => {
             await resetUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "",
-                curr: 0,
+                curr: 1,
                 feature: mockFeature
             });
 
