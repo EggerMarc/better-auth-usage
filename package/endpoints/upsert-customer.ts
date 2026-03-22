@@ -1,5 +1,9 @@
-import { createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { getUsageAdapter } from "package/adapter";
+import { getUsageOptions } from "@/resolvers/options";
+import { resolveUpsertCustomer } from "@/resolvers/upsert-customer";
+import type { UsageOptions, UsageOptionsWithCache } from "@/types";
+import { redactId, tryCatch } from "@/utils";
+import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
+import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
 
 /**
@@ -10,7 +14,7 @@ import { customerSchema } from "package/schema";
  *
  * @returns The configured endpoint handler which accepts the customer payload and returns the upserted customer object
  */
-export function getUpsertCustomerEndpoint() {
+export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint("/usage/upsert-customer", {
         method: "POST",
         body: customerSchema,
@@ -38,13 +42,36 @@ export function getUpsertCustomerEndpoint() {
                         200: {
                             description: "Successful Upsert",
                         },
+                        500: {
+                            description: "Internal server error",
+                        }
                     },
                 },
             },
         }
     }, async (ctx) => {
-        const adapter = getUsageAdapter(ctx.context);
-        const customer = await adapter.upsertCustomer(ctx.body);
+
+        const { options, adapter } = await getUsageOptions({
+            ctx: ctx.context, options: endpointOptions
+        });
+
+        //const adapter = getUsageAdapter(ctx.context);
+        const { data: customer, error } = await tryCatch(
+            resolveUpsertCustomer({
+                adapter, options, customer: {
+                    referenceId: ctx.body.referenceId,
+                    referenceType: ctx.body.referenceType,
+                    name: ctx.body.name,
+                    email: ctx.body.email,
+                    overrideKey: ctx.body.overrideKey
+                }
+            })
+        );
+        if (error || !customer) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to upsert customer ${redactId(ctx.body.referenceId)}, ${error ? error.message : 'customer not upserted'}`
+            })
+        }
         return customer
     })
 }

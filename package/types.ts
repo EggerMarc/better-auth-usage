@@ -1,5 +1,8 @@
-import { customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
+import type { UsageCache } from "./adapters/cache.ts";
+import type { UsageTracker } from "./realtime/usage-tracker.ts";
+import { cached_limitsSchema, cached_usageEventSchema, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
 import { z } from "zod";
+import type { UsageAdapter } from "./adapters/index.ts";
 
 /**
  * Usage entry as inferred from the Zod schema.
@@ -120,9 +123,11 @@ export type Feature = {
      * Optional authorization function that decides if a given
      * customer is allowed to consume this feature.
      */
-    authorizeReference?: <BT>(params: {
-        body: BT;
-        customer: Customer;
+    authorizeReference?: (params: {
+        feature: string;
+        referenceId: string;
+        referenceType: string;
+        incomingId: string;
     }) => Promise<boolean> | boolean;
 };
 
@@ -193,5 +198,37 @@ export type ConsumptionLimitType =
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
+    cacheOptions?: {
+        enableRealtime?: boolean,
+        redisUrl: string;
+        port?: number;
+        cors?: {
+            origin: string | string[];
+            credentials?: boolean;
+        };
+    },
 }
 
+
+/**
+ * Internal type used by endpoints (includes injected cache/tracker)
+ */
+export interface UsageOptionsWithCache extends UsageOptions {
+    cache?: UsageCache;
+    tracker?: UsageTracker;
+}
+
+/*
+ *
+ */
+export interface EndpointParams {
+    options: UsageOptionsWithCache,
+    adapter: UsageAdapter
+}
+
+/**
+ * Caching Types
+ */
+export type cached_Usage = z.infer<typeof cached_usageSchema>;
+export type cached_UsageEvent = z.infer<typeof cached_usageEventSchema>;
+export type cached_Limits = z.infer<typeof cached_limitsSchema>;

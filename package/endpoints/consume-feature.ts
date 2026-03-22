@@ -1,30 +1,29 @@
+import { getUsageAdapter } from "@/adapters";
+import { getCustomerMiddleware } from "@/middlewares/customer";
+import { getUsageMiddleware } from "@/middlewares/usage";
+import { resolveInsertUsage } from "@/resolvers/insert-usage";
+import { getUsageOptions } from "@/resolvers/options";
+import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
-import { getUsageAdapter } from "package/adapter";
-import { usageMiddleware } from "package/middlewares/usage";
 import { resolveFeature } from "package/resolvers/features";
-import type { UsageOptions } from "package/types";
+import type { EndpointParams, UsageOptions } from "package/types";
 import { z } from "zod"
 
 /**
- * Create an authenticated POST endpoint at /usage/consume that records meter usage for a feature.
+ * Create an authenticated POST endpoint at /usage/consume that records metered usage for a feature.
  *
- * The endpoint validates the request body, resolves the target feature (including any override),
- * looks up the customer by referenceId, runs optional feature hooks (before/after), and inserts a usage record.
- *
- * @param features - Feature definitions available for consumption
- * @param overrides - Optional override definitions that adjust feature behavior or limits
- * @returns The configured authenticated endpoint that handles consumption requests and returns the inserted usage record
+ * @param options - Runtime options used by the endpoint, including feature definitions, override configurations, adapter selection, and caching behavior
+ * @returns The configured authenticated endpoint that inserts a usage record and returns the inserted usage data
  */
-export function getConsumeEndpoint({
-    features, overrides
-}: UsageOptions) {
+export function getConsumeEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
         "/usage/consume",
         {
             method: "POST",
             middleware: [
                 sessionMiddleware,
-                usageMiddleware({ features, overrides }),
+                //getUsageMiddleware({ ...options }),
+                //getCustomerMiddleware({ options, adapter })
             ],
             body: z.object({
                 featureKey: z.string(),
@@ -66,62 +65,32 @@ export function getConsumeEndpoint({
             },
         },
         async (ctx) => {
-            const adapter = getUsageAdapter(ctx.context);
-            const customer = await adapter.getCustomer({
-                referenceId: ctx.body.referenceId
+            const { options, adapter } = await getUsageOptions({
+                ctx: ctx.context, options: endpointOptions
             });
-
-            if (!customer) {
-                throw new APIError("NOT_FOUND", { message: `Customer ${ctx.body.referenceId} not found` });
-            }
-
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
-                features,
-                overrides
+                features: options.features,
+                overrides: options.overrides
             });
 
-            const lastUsage = await adapter.findLatestUsage({
-                referenceId: customer.referenceId,
-                featureKey: feature.key,
-            });
-
-            const beforeAmount = lastUsage?.afterAmount ?? 0;
-            const afterAmount = beforeAmount + ctx.body.amount;
-            if (feature.hooks?.before) {
-                await feature.hooks.before({
-                    customer,
-                    usage: {
-                        amount: ctx.body.amount,
-                        beforeAmount,
-                        afterAmount,
-                    },
+            const { data, error } = await tryCatch(
+                resolveInsertUsage({
+                    referenceId: ctx.body.referenceId,
+                    amount: ctx.body.amount,
+                    event: ctx.body.event,
                     feature,
-                });
+                    adapter,
+                    options
+                })
+            );
+            if (error || !data) {
+                throw new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `Failed to consume usage on feature ${feature.key}\n${error ? error.message : 'data not found'}`
+                })
             }
-
-            const res = await adapter.insertUsage({
-                referenceType: customer.referenceType,
-                referenceId: customer.referenceId,
-                event: ctx.body.event,
-                feature: feature,
-                amount: ctx.body.amount,
-            });
-
-            if (feature.hooks?.after) {
-                await feature.hooks.after({
-                    customer,
-                    usage: {
-                        amount: ctx.body.amount,
-                        beforeAmount,
-                        afterAmount,
-                    },
-                    feature,
-                });
-            }
-
-            return res;
+            return data;
         }
     )
 }

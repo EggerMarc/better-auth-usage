@@ -1,5 +1,8 @@
-import type { BetterAuthPlugin } from "better-auth";
-import type { UsageOptions } from "./types.ts";
+import { APIError, type BetterAuthPlugin } from "better-auth";
+import type { UsageOptions, UsageOptionsWithCache } from "./types";
+import { UsageCache } from "./adapters/cache";
+import { UsageTracker } from "./realtime/usage-tracker";
+import { UsageWebSocketServer } from "./realtime/websocket-server";
 import {
     getSyncEndpoint,
     getUpsertCustomerEndpoint,
@@ -8,24 +11,31 @@ import {
     getFeatureEndpoint,
     getConsumeEndpoint
 } from "./endpoints/";
-
+import { type UsageAdapter } from "./adapters";
+import type { AuthContext } from "better-auth";
+import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
 /**
- * Creates a BetterAuth plugin that provides usage metering, customer schema, and endpoints for feature consumption, checks, listing, upserting customers, and syncing resets.
+ * Creates a usage plugin configured with the provided options.
  *
- * @param options - Configuration and overrides for the usage plugin and its endpoint factories
- * @returns A BetterAuthPlugin exposing `usage` and `customer` schemas and endpoints: `getFeature`, `consumeFeature`, `listFeatures`, `checkUsage`, `upsertCustomer`, and `syncUsage`
+ * The plugin may initialize an optional Redis-backed cache and an optional realtime WebSocket server when `init()` is called, depending on `options.cacheOptions`.
+ *
+ * @param options - Plugin configuration; include `cacheOptions` to enable the Redis cache and optional realtime features (CORS, port, and enableRealtime).
+ * @returns A BetterAuth plugin object containing `id`, `init()`, `schema`, and `endpoints` for usage tracking and customer management.
  */
 export function usage<O extends UsageOptions = UsageOptions>(options: O) {
     return {
-        id: "@eggermarc/usage",
+        id: "usage",
+
         schema: {
             usage: {
                 fields: {
-                    referenceId: { type: "string", required: true, input: true },
-                    referenceType: { type: "string", required: true, input: true },
+                    referenceId: {
+                        type: "string",
+                        required: true,
+                        input: true
+                    },
                     feature: { type: "string", required: true, input: true },
                     amount: { type: "number", required: true, input: true },
-                    afterAmount: { type: "number", required: true, input: true },
                     event: { type: "string", required: true },
                     lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },
@@ -33,8 +43,17 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
             },
             customer: {
                 fields: {
-                    referenceId: { type: "string", required: true, input: true, unique: true },
-                    referenceType: { type: "string", required: true, input: true },
+                    referenceId: {
+                        type: "string",
+                        required: true,
+                        input: true,
+                        unique: true
+                    },
+                    referenceType: {
+                        type: "string",
+                        required: true,
+                        input: true
+                    },
                     email: { type: "string", required: false, input: true },
                     name: { type: "string", required: false, input: true }
                 },
@@ -42,33 +61,14 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         },
 
         endpoints: {
-            /**
-             * Get feature metadata (merged with overrides if provided).
-             */
             getFeature: getFeatureEndpoint(options),
-            /**
-             * Consume (meter) a feature for a given referenceId.
-             * - runs before hook
-             * - inserts usage row (adapter)
-             * - runs after hook
-             */
             consumeFeature: getConsumeEndpoint(options),
             listFeatures: getFeaturesEndpoint(options),
-            /**
-             * Check usage limit for a feature for a specific reference.
-             * Returns a small enum ("in-limit"|"above-limit"|"below-limit") based on checkLimit util.
-             */
             checkUsage: getCheckEndpoint(options),
-            upsertCustomer: getUpsertCustomerEndpoint(),
-            /**
-             * Sync usage according to feature.reset rules.
-             * This will insert a reset event row with zeroed usage if the feature requires it.
-             *
-             * Note: you might prefer running this as a background job for many customers,
-             * rather than via an endpoint.
-             */
+            checkCustomer: getCheckCustomerEndpoint(options),
+            upsertCustomer: getUpsertCustomerEndpoint(options),
             syncUsage: getSyncEndpoint(options)
-        }
-    } satisfies BetterAuthPlugin;
-}
 
+        },
+    } as BetterAuthPlugin;
+}
