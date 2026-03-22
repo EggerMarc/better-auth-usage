@@ -4,6 +4,8 @@ import { createAuthClient } from "better-auth/client";
 import { usage } from "../package/index";
 import type { UsageOptions } from "../package/types";
 
+export { shutdownUsage } from "../package/resolvers/options";
+
 /**
  * Default feature config used across tests.
  */

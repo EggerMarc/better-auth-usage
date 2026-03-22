@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { createTestInstance, signInWithTestUser, createCustomer } from "./test-helper";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { createTestInstance, signInWithTestUser, createCustomer, shutdownUsage } from "./test-helper";
 
 describe("consume and check pipeline", () => {
     let instance: Awaited<ReturnType<typeof createTestInstance>>;
@@ -265,5 +265,157 @@ describe("consume and check pipeline", () => {
 
         expect(checkRes.data.maxLimit).toBe(100);
         expect(checkRes.data.minLimit).toBe(0);
+    });
+});
+
+describe("consume/check boundary conditions", () => {
+    let instance: Awaited<ReturnType<typeof createTestInstance>>;
+    let headers: Headers;
+
+    beforeAll(async () => {
+        await shutdownUsage();
+        instance = await createTestInstance();
+        ({ headers } = await signInWithTestUser(instance));
+    });
+    afterAll(async () => { await shutdownUsage(); });
+
+    test("consume above maxLimit records usage, check returns above-max-limit", async () => {
+        const refId = "user-over-max";
+        await createCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+
+        await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls", amount: 101, event: "use" },
+            headers,
+        });
+
+        const checkRes = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+
+        expect(checkRes.data.currentAmount).toBe(101);
+        expect(checkRes.data.status).toBe("above-max-limit");
+    });
+
+    test("usage below minLimit returns below-min-limit", async () => {
+        const refId = "user-under-min";
+        await createCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+
+        // credits has minLimit: -500, consume -600 to go below
+        await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits", amount: -600, event: "refund" },
+            headers,
+        });
+
+        const checkRes = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+
+        expect(checkRes.data.currentAmount).toBe(-600);
+        expect(checkRes.data.status).toBe("below-min-limit");
+    });
+
+    test("zero amount consume succeeds without changing usage", async () => {
+        const refId = "user-zero";
+        await createCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+
+        await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls", amount: 5, event: "use" },
+            headers,
+        });
+
+        const res = await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls", amount: 0, event: "use" },
+            headers,
+        });
+        expect(res.error).toBeNull();
+
+        const checkRes = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+        expect(checkRes.data.currentAmount).toBe(5);
+    });
+
+    test("large amount consume records correctly", async () => {
+        const refId = "user-large";
+        await createCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+
+        const res = await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits", amount: 999999, event: "use" },
+            headers,
+        });
+        expect(res.error).toBeNull();
+
+        const checkRes = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+        expect(checkRes.data.currentAmount).toBe(999999);
+        expect(checkRes.data.status).toBe("above-max-limit");
+    });
+
+    test("check with nonexistent feature returns error", async () => {
+        const res = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: "any-ref", featureKey: "nonexistent" },
+            headers,
+        });
+        expect(res.error).toBeDefined();
+    });
+
+    test("consume without prior customer creation returns error", async () => {
+        // Seed usage first (check auto-creates usage but not customer)
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: "no-customer-ref", featureKey: "api-calls" },
+            headers,
+        });
+
+        const res = await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: {
+                referenceId: "no-customer-ref",
+                featureKey: "api-calls",
+                amount: 1,
+                event: "use",
+            },
+            headers,
+        });
+        expect(res.error).toBeDefined();
     });
 });

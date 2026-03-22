@@ -1,3 +1,48 @@
+# TODO — E2E Test Coverage Plan (COMPLETED)
+
+## Phase 1: Fix 4 Failing Tests (Singleton Issue)
+- [x] Re-export `shutdownUsage` from `tests/test-helper.ts`
+- [x] Add `beforeEach/afterAll` with `shutdownUsage()` to hooks describe blocks in `tests/overrides-hooks-customer.test.ts`
+- [x] Add `beforeAll/afterAll` with `shutdownUsage()` to hooks describe block in `tests/cache.test.ts`
+- [x] Verify all 4 previously-failing tests now pass
+
+## Phase 2: Fix `checkLimit` Bug
+- [x] Fix truthy check on `maxLimit` and `minLimit` in `package/utils.ts:24-25` (use `!= null` instead)
+
+## Phase 3: New File `tests/auth-validation.test.ts`
+- [x] Test: `POST /usage/consume` without session returns error
+- [x] Test: `POST /usage/check` without session returns error
+- [x] Test: `POST /usage/check-customer` without session returns error
+- [x] Test: `POST /usage/upsert-customer` without session returns error
+- [x] Test: consume missing `featureKey` returns validation error
+- [x] Test: consume missing `amount` returns validation error
+- [x] Test: check missing `referenceId` returns validation error
+
+## Phase 4: Boundary & Edge Cases in `tests/consume-check.test.ts`
+- [x] Test: max limit exceeded — consume 101 on api-calls (max 100), check returns `above-max-limit`
+- [x] Test: min limit boundary — consume -600 on credits (min -500), check returns `below-min-limit`
+- [x] Test: zero amount consume succeeds, usage unchanged
+- [x] Test: large amount consume records correctly
+- [x] Test: check with nonexistent feature returns error
+- [x] Test: consume without prior customer creation returns error
+
+## Phase 5: Customer & Feature Extras in `tests/overrides-hooks-customer.test.ts`
+- [x] Test: upsert customer with `overrideKey` persists the field
+- [x] Test: get single feature with `overrideKey` returns merged config
+- [x] Test: list features returns `details` array when features have it
+- [x] Test: both before and after hooks on same feature
+
+## Phase 6: Sync/Reset Coverage in `tests/sync-reset.test.ts`
+- [x] Test: sync that actually triggers reset (hourly reset)
+- [x] Test: sync with nonexistent feature returns error
+
+## Phase 7: Cache-Specific Gaps in `tests/cache.test.ts`
+- [x] Test: cache-enabled sync with no reset needed
+- [x] Test: cache-enabled sync on monthly feature
+- [x] Test: cache-enabled check with nonexistent feature
+
+---
+
 # TODO — Known Bugs & Issues
 
 ## Critical

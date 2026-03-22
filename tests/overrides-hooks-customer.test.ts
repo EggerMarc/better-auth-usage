@@ -1,5 +1,5 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { createTestInstance, signInWithTestUser, createCustomer } from "./test-helper";
+import { describe, test, expect, beforeAll, beforeEach, afterAll } from "bun:test";
+import { createTestInstance, signInWithTestUser, createCustomer, shutdownUsage } from "./test-helper";
 import type { UsageOptions } from "../package/types";
 import type { BetterAuthPlugin } from "better-auth";
 
@@ -102,6 +102,9 @@ describe("feature overrides", () => {
 });
 
 describe("hooks", () => {
+    beforeEach(async () => { await shutdownUsage(); });
+    afterAll(async () => { await shutdownUsage(); });
+
     test("before hook can block consumption by throwing", async () => {
         let beforeCalled = false;
 
@@ -285,5 +288,124 @@ describe("customer management", () => {
         });
 
         expect(res.error).toBeDefined();
+    });
+
+    test("upsert customer with overrideKey persists the field", async () => {
+        const res = await instance.client.$fetch("/usage/upsert-customer", {
+            method: "POST",
+            body: {
+                referenceId: "cust-override-key",
+                referenceType: "user",
+                name: "Override User",
+                overrideKey: "pro-plan",
+            },
+            headers,
+        });
+        expect(res.error).toBeNull();
+        expect(res.data.referenceId).toBe("cust-override-key");
+    });
+});
+
+describe("feature details and overrideKey lookup", () => {
+    let instance: Awaited<ReturnType<typeof createTestInstance>>;
+    let headers: Headers;
+
+    beforeAll(async () => {
+        await shutdownUsage();
+        instance = await createTestInstance({
+            features: {
+                "api-calls": {
+                    key: "api-calls",
+                    maxLimit: 100,
+                    minLimit: 0,
+                    reset: "monthly",
+                    resetValue: 0,
+                    details: ["Rate limited", "Resets monthly"],
+                },
+                "credits": {
+                    key: "credits",
+                    maxLimit: 1000,
+                    minLimit: -500,
+                    reset: "never",
+                    resetValue: 0,
+                },
+            },
+            overrides: {
+                "pro-plan": {
+                    features: {
+                        "api-calls": { maxLimit: 10000 },
+                    },
+                },
+            },
+        });
+        ({ headers } = await signInWithTestUser(instance));
+    });
+    afterAll(async () => { await shutdownUsage(); });
+
+    test("list features returns details array when present", async () => {
+        const res = await instance.client.$fetch("/usage/features", {
+            method: "GET",
+            headers,
+        });
+
+        expect(res.data).toBeInstanceOf(Array);
+        const apiCalls = res.data.find((f: any) => f.featureKey === "api-calls");
+        expect(apiCalls).toBeDefined();
+        expect(apiCalls.details).toEqual(["Rate limited", "Resets monthly"]);
+    });
+
+    test("get single feature with overrideKey returns merged config", async () => {
+        const res = await instance.auth.api.getFeature({
+            params: { featureKey: "api-calls" },
+            body: { overrideKey: "pro-plan" },
+        });
+
+        expect(res.feature.maxLimit).toBe(10000);
+        expect(res.feature.key).toBe("api-calls");
+    });
+});
+
+describe("both before and after hooks on same feature", () => {
+    beforeEach(async () => { await shutdownUsage(); });
+    afterAll(async () => { await shutdownUsage(); });
+
+    test("before and after hooks both fire in order", async () => {
+        const callOrder: string[] = [];
+
+        const instance = await createTestInstance({
+            features: {
+                "dual-hook": {
+                    key: "dual-hook",
+                    maxLimit: 100,
+                    reset: "never",
+                    resetValue: 0,
+                    hooks: {
+                        before: ({ usage }) => {
+                            callOrder.push("before");
+                        },
+                        after: ({ usage }) => {
+                            callOrder.push("after");
+                        },
+                    },
+                },
+            },
+            overrides: {},
+        });
+        const { headers } = await signInWithTestUser(instance);
+        await createCustomer(instance, headers, "dual-hook-user");
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: "dual-hook-user", featureKey: "dual-hook" },
+            headers,
+        });
+
+        const res = await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: "dual-hook-user", featureKey: "dual-hook", amount: 10, event: "use" },
+            headers,
+        });
+        expect(res.error).toBeNull();
+        expect(callOrder).toEqual(["before", "after"]);
     });
 });

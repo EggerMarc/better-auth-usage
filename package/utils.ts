@@ -21,8 +21,8 @@ export function checkLimit({
     minLimit,
     value
 }: CheckLimitProps): ConsumptionLimitType {
-    if (maxLimit && value > maxLimit) return "above-max-limit"
-    if (minLimit && value < minLimit) return "below-min-limit"
+    if (maxLimit != null && value > maxLimit) return "above-max-limit"
+    if (minLimit != null && value < minLimit) return "below-min-limit"
     return "in-limit"
 }
 
