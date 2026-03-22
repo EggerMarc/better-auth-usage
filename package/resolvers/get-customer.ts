@@ -21,7 +21,9 @@ interface ResolveGetCustomerParams {
  */
 export async function resolveGetCustomer({ referenceId, options, adapter }: ResolveGetCustomerParams): Promise<Customer> {
     if (options.cache) {
-        const { data: customer, error } = await tryCatch(options.cache.getCustomer(referenceId))
+        const { data: customer, error } = await tryCatch(
+            options.cache.getCustomer(referenceId)
+        )
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
                 message: `Failed getting customer ${referenceId} from cache`
@@ -32,7 +34,9 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
         }
     }
 
-    const { data: customer, error } = await tryCatch(adapter.getCustomer({ referenceId }));
+    const { data: customer, error } = await tryCatch(
+        adapter.getCustomer({ referenceId })
+    );
 
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -47,6 +51,11 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
     }
 
     if (options.cache) {
+        console.log(`Cache was empty, but we got this from db: ${JSON.stringify(customer)}`)
+    }
+
+    if (options.cache) {
+        console.log("synching to cache");
         options.cache.setCustomer(customer).catch((error) => {
             console.log(error)
         })

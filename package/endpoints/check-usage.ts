@@ -1,12 +1,13 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { z } from "zod";
 import { resolveFeature } from "package/resolvers/features";
-import type { EndpointParams } from "package/types";
+import type { EndpointParams, UsageOptions } from "package/types";
 import { getUsageAdapter } from "package/adapters";
 import { checkLimit, tryCatch } from "package/utils";
 import { getUsageMiddleware } from "package/middlewares/usage";
 import { resolveGetUsage } from "@/resolvers/get-usage";
 import { getCustomerMiddleware } from "@/middlewares/customer";
+import { getUsageOptions } from "@/resolvers/options";
 
 /**
  * Create an authenticated POST endpoint at /usage/check that validates the request body and verifies a customer's latest usage against a feature's configured limits.
@@ -14,15 +15,20 @@ import { getCustomerMiddleware } from "@/middlewares/customer";
  * @param options - Usage options (features, optional overrides, and cache settings) used to resolve features and control lookup behavior.
  * @returns The configured authenticated endpoint whose response is a status string describing the usage check result.
  */
-export function getCheckEndpoint({ options, adapter }: EndpointParams) {
+export function getCheckEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
         "/usage/check",
         {
             method: "POST", // changed to POST so we can rely on body validation consistently
-            middleware: [sessionMiddleware, getUsageMiddleware({
+            middleware: [
+                sessionMiddleware,
+                /*getUsageMiddleware({
                 features: options.features,
                 overrides: options.overrides
-            }), getCustomerMiddleware({ options, adapter })],
+            }), 
+        getCustomerMiddleware({ options, adapter })
+*/
+            ],
             body: z.object({
                 referenceId: z.string(),
                 featureKey: z.string(),
@@ -58,7 +64,11 @@ export function getCheckEndpoint({ options, adapter }: EndpointParams) {
             },
         },
         async (ctx) => {
-            const adapter = getUsageAdapter(ctx.context);
+
+            const { options, adapter } = await getUsageOptions({
+                ctx: ctx.context, options: endpointOptions
+            });
+
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,
@@ -77,17 +87,24 @@ export function getCheckEndpoint({ options, adapter }: EndpointParams) {
                 })
             )
 
+            console.log(`[better-auth-usage] got the following usage: ${JSON.stringify(usage)}`)
+
             if (error) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
                     message: `Internal error getting usage for feature ${feature.key}, ${error.message}`
                 })
             }
 
-            return checkLimit({
-                minLimit: feature.minLimit,
+            return {
+                status: checkLimit({
+                    minLimit: feature.minLimit,
+                    maxLimit: feature.maxLimit,
+                    value: usage.amount + (ctx.body.amount ?? 0),
+                }),
                 maxLimit: feature.maxLimit,
-                value: usage.amount + (ctx.body.amount ?? 0),
-            });
+                minLimit: feature.minLimit,
+                currentAmount: usage.amount
+            };
         }
     )
 }

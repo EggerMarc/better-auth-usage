@@ -1,10 +1,11 @@
 import { getCustomerMiddleware } from "@/middlewares/customer";
+import { getUsageOptions } from "@/resolvers/options";
 import { tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { resolveFeature } from "package/resolvers/features";
 import { resolveSyncUsage } from "package/resolvers/sync-usage";
-import type { EndpointParams } from "package/types";
+import type { EndpointParams, UsageOptions } from "package/types";
 import { z } from "zod"
 
 /**
@@ -13,7 +14,7 @@ import { z } from "zod"
  * @param options - Configuration containing available features, overrides, and cache used to resolve the feature and perform the sync
  * @returns The authenticated endpoint that returns the synchronized usage record for the provided `referenceId` and `featureKey`
  */
-export function getSyncEndpoint({ options, adapter }: EndpointParams) {
+export function getSyncEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
         "/usage/sync",
         {
@@ -23,7 +24,9 @@ export function getSyncEndpoint({ options, adapter }: EndpointParams) {
                 featureKey: z.string(),
                 overrideKey: z.string().optional(),
             }),
-            middleware: [getCustomerMiddleware({ options, adapter })],
+            middleware: [
+                //getCustomerMiddleware({ options, adapter })
+            ],
             metadata: {
                 openapi: {
                     description: "Syncs customer usage based on reset rules (inserts a reset row if due).",
@@ -50,7 +53,9 @@ export function getSyncEndpoint({ options, adapter }: EndpointParams) {
             },
         },
         async (ctx) => {
-            const adapter = getUsageAdapter(ctx.context);
+            const { options, adapter } = await getUsageOptions({
+                ctx: ctx.context, options: endpointOptions
+            });
             const feature = resolveFeature({
                 featureKey: ctx.body.featureKey,
                 overrideKey: ctx.body.overrideKey,

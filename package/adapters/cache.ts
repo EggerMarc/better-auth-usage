@@ -44,8 +44,10 @@ export class UsageCache extends EventEmitter {
         amount,
         event,
     }: UsageEvent) {
+        console.log(`[bau][cache] Cache inserting: ${amount}`)
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
-
+        const now = new Date().toISOString();
+        console.log(`Now is ${now}`)
         const { data, error } = await tryCatch(
             this
                 .cache
@@ -55,7 +57,7 @@ export class UsageCache extends EventEmitter {
                     usageKey,
                     limitKey,
                     amount,
-                    Date.now().toString()
+                    now
                 )
         )
 
@@ -66,9 +68,13 @@ export class UsageCache extends EventEmitter {
         }
 
         try {
-            const [newAmount, resetAt] = data as [number, number];
+            const [newAmount, resetAt] = data as [number, number | undefined];
+
             return usageEventSchema.parse({
-                amount, afterValue: newAmount, resetAt: new Date(resetAt), event
+                referenceId,
+                feature,
+                amount,
+                event,
             }) as UsageEvent
         } catch (err) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -78,27 +84,49 @@ export class UsageCache extends EventEmitter {
 
     }
 
-    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">): Promise<Usage> {
-        const { usageKey } = this.resolveKeys(referenceId, feature.key)
-        const { data, error } = await tryCatch(this.cache.get(usageKey));
+    async getUsage(
+        referenceId: string,
+        feature: Omit<Feature, "hooks">
+    ): Promise<Usage | null> {
+        const { usageKey, limitKey } = this.resolveKeys(referenceId, feature.key)
 
-        if (error) {
-            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${error.message}` })
+        const { data: rawCounter, error: counterError } = await tryCatch(
+            this.cache.get(usageKey)
+        );
+
+        if (counterError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Internal error getting ${usageKey}, ${counterError.message}` })
         }
 
-        if (!data) {
-            throw new APIError("NOT_FOUND", { message: `[ERROR][USAGE] Failed to get cached usage, ${usageKey}` })
+        if (rawCounter === null) {
+            return null
         }
 
-        try {
-            const parsed = JSON.parse(data);
-            const validated = usageSchema.parse(parsed);
-            return validated as Usage;
-        } catch (err) {
+        const current = Number(rawCounter);
+        if (Number.isNaN(current)) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `[ERROR][USAGE] Corrupted cache data for ${usageKey}`
+                message: `[ERROR][USAGE] Corrupted cache counter for ${usageKey}`
             });
         }
+
+        const { data: limitData, error: limitError } = await tryCatch(
+            this.cache.hgetall(limitKey)
+        );
+
+        if (limitError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `[ERROR][USAGE] Internal error getting limits ${limitKey}, ${limitError.message}`
+            });
+        }
+
+        return {
+            referenceId,
+            feature: feature.key,
+            current,
+            lastResetAt: limitData?.lastResetAt ? new Date(limitData.lastResetAt) : new Date(),
+            maxLimit: limitData?.maxLimit ? Number(limitData.maxLimit) : undefined,
+            minLimit: limitData?.minLimit ? Number(limitData.minLimit) : undefined,
+        } as Usage
     }
 
     async clearUsage(referenceId: string, feature: string): Promise<void> {
@@ -128,14 +156,39 @@ export class UsageCache extends EventEmitter {
         await this.cache.quit()
     }
 
-    async getCustomer(referenceId: string): Promise<Customer> {
-        const { data, error } = await tryCatch(this.cache.get(`customer:${referenceId}`))
+    async getCustomer(referenceId: string): Promise<Customer | null> {
+        console.log("[LOG][CACHE] Getting user from db: ", referenceId)
+
+        const { data, error } = await tryCatch(
+            this.cache.get(`customer:${referenceId}`)
+        )
 
         if (error) {
+            console.log(`\n\n\nFailed for some reason ${error.message}\n\n\n`)
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to get customer from cache for ${referenceId}` })
         }
+        if (!data) {
+            return null
+        }
+        console.log(`\n\n\ Got back some data: ${JSON.stringify(data)}\n\n\n`)
 
-        return customerSchema.parse(data)
+        const {
+            data: customer,
+            error: parsingError
+        } = customerSchema
+            .safeParse(JSON.parse(data))
+
+        if (parsingError) {
+            console.log(`PANIC ${parsingError.message}`)
+
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Got corrupt customer from cache: ${parsingError.message}`
+            })
+        }
+
+        console.log(customer)
+
+        return customer
     }
 
     async setCustomer(customer: Customer) {
@@ -144,8 +197,15 @@ export class UsageCache extends EventEmitter {
 
     async setLimit(referenceId: string, featureKey: string, limits: cached_Limits) {
         const { limitKey } = this.resolveKeys(referenceId, featureKey);
-        const { error } = await tryCatch(this.cache.set(limitKey, JSON.stringify(limits)));
+        const { error } = await tryCatch(
+            this.cache.hset(limitKey, {
+                ...limits,
+                // Need to be ISO string 
+                resetAt: limits.resetAt?.toISOString()
+            })
+        );
         if (error) {
+            console.log(`What's the problem now????? ${error.message}`)
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to insert limits for ${limitKey}, ${error.message}` })
         }
         return limits
