@@ -1,6 +1,6 @@
 import { Server as SocketServer } from "socket.io";
 import { UsageTracker } from "./usage-tracker";
-import type { Feature, UsageOptions } from "@/types";
+import type { UsageOptions } from "@/types";
 import { redactId, tryCatch } from "@/utils";
 
 interface SubscribeRequest {
@@ -75,10 +75,17 @@ export class UsageWebSocketServer {
 
             socket.on("get:usage", async (data: {
                 referenceId: string,
-                feature: Omit<Feature, "hooks">
+                feature: string
             }) => {
+                const feature = this.options.features[data.feature];
+                if (!feature) {
+                    socket.emit("usage:error", {
+                        error: `Feature ${data.feature} not found`
+                    });
+                    return;
+                }
                 const { data: usage, error } = await tryCatch(
-                    this.tracker.getUsage(data.referenceId, data.feature)
+                    this.tracker.getUsage(data.referenceId, feature)
                 )
                 if (error) {
                     socket.emit("usage:error", {

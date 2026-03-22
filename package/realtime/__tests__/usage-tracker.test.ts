@@ -25,9 +25,13 @@ describe("UsageTracker", () => {
             quit: mock(async () => { })
         };
 
-        // Mock Redis constructor
+        // Mock Redis constructor - return pub client first, sub client second
+        let callCount = 0;
         mock.module("ioredis", () => ({
-            default: mock(() => mockPubClient) // alternate returning pub/sub clients as needed
+            default: mock(() => {
+                callCount++;
+                return callCount === 1 ? mockPubClient : mockSubClient;
+            })
         }));
         mockIo = {
             to: mock((room: string) => ({

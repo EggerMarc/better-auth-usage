@@ -1,7 +1,7 @@
 import type { UsageAdapter } from "@/adapters";
 import { resolveGetCustomer } from "@/resolvers/get-customer";
-import { redactId, tryCatch } from "@/utils";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { tryCatch } from "@/utils";
+import { createAuthMiddleware } from "better-auth/api";
 import type { UsageOptionsWithCache } from "package/types";
 
 interface CustomerMiddlewareParams {
@@ -10,11 +10,12 @@ interface CustomerMiddlewareParams {
 }
 
 /**
- * Creates an authentication middleware that authorizes a reference against a resolved feature.
+ * Creates an authentication middleware that retrieves and validates a customer by referenceId.
  *
- * @param options - Configuration for the middleware
- * @param adapter - Server adapter to access DB by resolver 
- * @throws APIError with type `"UNAUTHORIZED"` if the resolved feature's `authorizeReference` returns `false`
+ * @param options - Usage options, optionally including a cache layer for customer lookup
+ * @param adapter - Adapter used to retrieve the customer from the primary data store
+ * @throws APIError with code `"NOT_FOUND"` if the customer does not exist
+ * @throws APIError with code `"INTERNAL_SERVER_ERROR"` if the lookup fails
  */
 export function getCustomerMiddleware({ options, adapter }: CustomerMiddlewareParams) {
     return createAuthMiddleware(async (ctx) => {
@@ -26,12 +27,6 @@ export function getCustomerMiddleware({ options, adapter }: CustomerMiddlewarePa
             throw error
         }
 
-        if (!customer) {
-            console.log(`[better-auth-usage] Failed customer middleware with error. Customer not found (type 2)`)
-            throw new APIError("NOT_FOUND", {
-                message: `Customer with id ${redactId(ctx.body.referenceId)} not found`
-            })
-        }
     })
 }
 

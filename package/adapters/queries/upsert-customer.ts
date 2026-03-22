@@ -25,7 +25,11 @@ export const upsertCustomerQuery = async ({ adapter, customer }: UpsertCustomerQ
                 data: customer,
             });
         }
-        return customer
+        const persisted = await tx.findOne<Customer>({
+            model: "customer",
+            where: [{ field: "referenceId", value: customer.referenceId }],
+        });
+        return persisted
     });
     return upsertedCustomer;
 }

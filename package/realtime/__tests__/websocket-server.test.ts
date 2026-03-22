@@ -33,9 +33,9 @@ describe("UsageWebSocketServer", () => {
         };
 
         mockTracker = {
-            getUsage: mock(async (referenceId: string, feature: string) => ({
+            getUsage: mock(async (referenceId: string, feature: { key: string }) => ({
                 referenceId,
-                feature,
+                feature: feature.key,
                 current: 100,
                 lastResetAt: new Date(),
                 updatedAt: new Date()
@@ -280,7 +280,7 @@ describe("UsageWebSocketServer", () => {
 
             await mockSocket._["get:usage"](getData);
 
-            expect(mockTracker.getUsage).toHaveBeenCalledWith("user-123", "api-calls");
+            expect(mockTracker.getUsage).toHaveBeenCalledWith("user-123", mockOptions.features["api-calls"]);
             expect(mockSocket.emit).toHaveBeenCalledWith("usage:current", expect.any(Object));
         });
 
