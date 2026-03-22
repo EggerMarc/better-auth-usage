@@ -31,9 +31,8 @@ export class UsageCache extends EventEmitter {
         cacheSchema.parse({ url });
         this.cache = new Redis(url)
         this.cache.on('error', (err) => {
-            throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `Failed to initialize cache with error: ${err}`
-            })
+            console.error(`[UsageCache] Redis connection error: ${err.message}`);
+            this.emit('error', err);
         });
     }
 
