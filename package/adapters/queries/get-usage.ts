@@ -29,17 +29,6 @@ export async function getUsageQuery({
         })
     )
 
-    const many = await adapter.count({
-        model: "usage",
-        where: [
-            { field: "referenceId", value: referenceId },
-            { field: "feature", value: feature.key }
-        ]
-    })
-
-    console.log(`[bau], count of usage: ${many}`)
-    const logCurrent = usage!.reduce((value, { amount }) => amount + value, 0)
-    console.log(`[bau] got this many ${logCurrent}, on ${usage!.length} items`)
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
             message: `Failed to get usage from db, thrown the following error\n${error.message}`
@@ -58,9 +47,14 @@ export async function getUsageQuery({
             event: "sync"
         }
 
-        adapter.create<Usage>({ model: "usage", data: initialUsage }).catch(() => {
-            console.log(`[ERROR][USAGE] Failed to add initial usage for customer ${redactId(referenceId)} on feature ${feature.key}`)
-        })
+        const { error: createError } = await tryCatch(
+            adapter.create<Usage>({ model: "usage", data: initialUsage })
+        );
+        if (createError) {
+            throw new APIError("INTERNAL_SERVER_ERROR", {
+                message: `Failed to add initial usage for customer ${redactId(referenceId)} on feature ${feature.key}: ${createError.message}`
+            });
+        }
 
         return initialUsage
     }
