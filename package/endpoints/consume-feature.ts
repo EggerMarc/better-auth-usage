@@ -87,7 +87,7 @@ export function getConsumeEndpoint(endpointOptions: UsageOptions) {
             );
             if (error || !data) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to sync usage on feature ${feature.key}\n${error ? error.message : 'data not found'}`
+                    message: `Failed to consume usage on feature ${feature.key}\n${error ? error.message : 'data not found'}`
                 })
             }
             return data;
