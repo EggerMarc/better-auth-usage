@@ -1,5 +1,10 @@
 node_modules
 dist
+.next
+
+*.lock
+package-lock.json
+bun.lockb
 
 **.DS_Store
 
