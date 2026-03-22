@@ -15,7 +15,7 @@ import EventEmitter from "events";
 import Redis from "ioredis";
 import { z } from "zod";
 import incrementScript from "./lua/increment.lua"
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 import { APIError } from "better-auth";
 
 const cacheSchema = z.object({
@@ -157,7 +157,7 @@ export class UsageCache extends EventEmitter {
     }
 
     async getCustomer(referenceId: string): Promise<Customer | null> {
-        console.log("[LOG][CACHE] Getting user from db: ", referenceId)
+        console.log("[LOG][CACHE] Getting user from db: ", redactId(referenceId))
 
         const { data, error } = await tryCatch(
             this.cache.get(`customer:${referenceId}`)
@@ -165,7 +165,7 @@ export class UsageCache extends EventEmitter {
 
         if (error) {
             console.log(`\n\n\nFailed for some reason ${error.message}\n\n\n`)
-            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to get customer from cache for ${referenceId}` })
+            throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to get customer from cache for ${redactId(referenceId)}` })
         }
         if (!data) {
             return null

@@ -1,6 +1,6 @@
 import type { UsageAdapter } from "@/adapters";
 import { resolveGetCustomer } from "@/resolvers/get-customer";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import type { UsageOptionsWithCache } from "package/types";
 
@@ -29,7 +29,7 @@ export function getCustomerMiddleware({ options, adapter }: CustomerMiddlewarePa
         if (!customer) {
             console.log(`[better-auth-usage] Failed customer middleware with error. Customer not found (type 2)`)
             throw new APIError("NOT_FOUND", {
-                message: `Customer with id ${ctx.body.referenceId} not found`
+                message: `Customer with id ${redactId(ctx.body.referenceId)} not found`
             })
         }
     })

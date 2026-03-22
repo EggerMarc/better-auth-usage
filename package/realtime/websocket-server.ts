@@ -1,7 +1,7 @@
 import { Server as SocketServer } from "socket.io";
 import { UsageTracker } from "./usage-tracker";
 import type { Feature, UsageOptions } from "@/types";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 
 interface SubscribeRequest {
     subscriptions: Array<{
@@ -49,7 +49,7 @@ export class UsageWebSocketServer {
 
                         if (!authorized) {
                             socket.emit("error", {
-                                message: `Not authorized for ${sub.feature}:${sub.referenceId}`
+                                message: `Not authorized for ${sub.feature}:${redactId(sub.referenceId)}`
                             });
                             continue;
                         }

@@ -1,6 +1,6 @@
 import type { Feature, Usage } from "@/types";
 import { APIError, type Adapter, type TransactionAdapter } from "better-auth";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 /**
  * Build a Usage object for a reference and feature where the returned record is the most recent usage entry with its `amount` replaced by the total across all matching usage records.
  *
@@ -59,7 +59,7 @@ export async function getUsageQuery({
         }
 
         adapter.create<Usage>({ model: "usage", data: initialUsage }).catch(() => {
-            console.log(`[ERROR][USAGE] Failed to add initial usage for customer ${referenceId} on feature ${feature.key}`)
+            console.log(`[ERROR][USAGE] Failed to add initial usage for customer ${redactId(referenceId)} on feature ${feature.key}`)
         })
 
         return initialUsage
