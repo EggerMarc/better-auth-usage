@@ -33,9 +33,9 @@ describe("UsageWebSocketServer", () => {
         };
 
         mockTracker = {
-            getUsage: mock(async (referenceId: string, feature: string) => ({
+            getUsage: mock(async (referenceId: string, feature: { key: string }) => ({
                 referenceId,
-                feature,
+                feature: feature.key,
                 current: 100,
                 lastResetAt: new Date(),
                 updatedAt: new Date()
@@ -87,7 +87,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user-123");
             expect(mockSocket.emit).toHaveBeenCalledWith("subscribed", {
@@ -114,7 +114,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user-123");
             expect(mockSocket.join).toHaveBeenCalledWith("usage:storage:user-123");
@@ -134,7 +134,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.emit).toHaveBeenCalledWith("error", {
                 message: "Feature nonexistent not found"
@@ -156,7 +156,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockOptions.features["storage"].authorizeReference).toHaveBeenCalled();
         });
@@ -178,10 +178,11 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
+            // redactId produces a SHA-256 hash, so just check the prefix
             expect(mockSocket.emit).toHaveBeenCalledWith("error", {
-                message: "Not authorized for storage:user-123"
+                message: expect.stringContaining("Not authorized for storage:")
             });
             expect(mockSocket.join).not.toHaveBeenCalled();
         });
@@ -200,7 +201,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user-123");
         });
@@ -221,7 +222,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            mockSocket._["unsubscribe:usage"](unsubscribeData);
+            mockSocket["_unsubscribe:usage"](unsubscribeData);
 
             expect(mockSocket.leave).toHaveBeenCalledWith("usage:api-calls:user-123");
         });
@@ -245,7 +246,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            mockSocket._["unsubscribe:usage"](unsubscribeData);
+            mockSocket["_unsubscribe:usage"](unsubscribeData);
 
             expect(mockSocket.leave).toHaveBeenCalledTimes(2);
         });
@@ -264,7 +265,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            expect(() => mockSocket._["unsubscribe:usage"](unsubscribeData)).not.toThrow();
+            expect(() => mockSocket["_unsubscribe:usage"](unsubscribeData)).not.toThrow();
         });
     });
 
@@ -278,9 +279,9 @@ describe("UsageWebSocketServer", () => {
                 feature: "api-calls"
             };
 
-            await mockSocket._["get:usage"](getData);
+            await mockSocket["_get:usage"](getData);
 
-            expect(mockTracker.getUsage).toHaveBeenCalledWith("user-123", "api-calls");
+            expect(mockTracker.getUsage).toHaveBeenCalledWith("user-123", mockOptions.features["api-calls"]);
             expect(mockSocket.emit).toHaveBeenCalledWith("usage:current", expect.any(Object));
         });
 
@@ -297,7 +298,7 @@ describe("UsageWebSocketServer", () => {
                 feature: "api-calls"
             };
 
-            await mockSocket._["get:usage"](getData);
+            await mockSocket["_get:usage"](getData);
 
             expect(mockSocket.emit).toHaveBeenCalledWith("usage:error", {
                 error: "Failed to fetch usage"
@@ -308,8 +309,8 @@ describe("UsageWebSocketServer", () => {
             const handler = (mockIo as any)._connectionHandler;
             handler(mockSocket);
 
-            await mockSocket._["get:usage"]({ referenceId: "user-123", feature: "api-calls" });
-            await mockSocket._["get:usage"]({ referenceId: "user-123", feature: "storage" });
+            await mockSocket["_get:usage"]({ referenceId: "user-123", feature: "api-calls" });
+            await mockSocket["_get:usage"]({ referenceId: "user-123", feature: "storage" });
 
             expect(mockTracker.getUsage).toHaveBeenCalledTimes(2);
         });
@@ -320,14 +321,14 @@ describe("UsageWebSocketServer", () => {
             const handler = (mockIo as any)._connectionHandler;
             handler(mockSocket);
 
-            expect(() => mockSocket._disconnect()).not.toThrow();
+            expect(() => mockSocket["_disconnect"]()).not.toThrow();
         });
 
         it("should handle disconnect without prior subscription", async () => {
             const handler = (mockIo as any)._connectionHandler;
             handler(mockSocket);
 
-            expect(() => mockSocket._disconnect()).not.toThrow();
+            expect(() => mockSocket["_disconnect"]()).not.toThrow();
         });
     });
 
@@ -346,7 +347,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledWith("usage:storage:org-456");
         });
@@ -365,7 +366,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user@test.com");
         });
@@ -380,7 +381,7 @@ describe("UsageWebSocketServer", () => {
                 subscriptions: []
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.emit).toHaveBeenCalledWith("subscribed", {
                 subscriptions: []
@@ -410,7 +411,7 @@ describe("UsageWebSocketServer", () => {
                 ]
             };
 
-            await mockSocket._["subscribe:usage"](subscribeData);
+            await mockSocket["_subscribe:usage"](subscribeData);
 
             expect(mockSocket.join).toHaveBeenCalledTimes(1);
             expect(mockSocket.join).toHaveBeenCalledWith("usage:api-calls:user-123");
@@ -434,8 +435,8 @@ describe("UsageWebSocketServer", () => {
         };
 
         await Promise.all([
-            mockSocket._["subscribe:usage"](subscribeData1),
-            mockSocket._["subscribe:usage"](subscribeData2)
+            mockSocket["_subscribe:usage"](subscribeData1),
+            mockSocket["_subscribe:usage"](subscribeData2)
         ]);
 
         expect(mockSocket.join).toHaveBeenCalledTimes(2);

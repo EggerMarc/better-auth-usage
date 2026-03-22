@@ -66,10 +66,13 @@ export function getSyncEndpoint(endpointOptions: UsageOptions) {
             const { data: usage, error } = await tryCatch(
                 resolveSyncUsage({ adapter, feature, referenceId: ctx.body.referenceId, options })
             );
-            if (error || !usage) {
+            if (error) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to sync usage on feature ${feature.key}, ${error ? error.message : 'usage not found'}`
+                    message: `Failed to sync usage on feature ${feature.key}, ${error.message}`
                 })
+            }
+            if (!usage) {
+                return { message: "No reset required", feature: feature.key }
             }
             return usage
         }

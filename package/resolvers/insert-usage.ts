@@ -53,8 +53,8 @@ export const resolveInsertUsage = async ({
             feature,
             event,
             lastResetAt: currentUsage.lastResetAt,
-        }).catch(() => {
-            console.log(`[ERROR][]`)
+        }).catch((err) => {
+            console.error(`[ERROR][DB] Failed to insert usage`, { referenceId, feature: feature.key, amount, event, err })
         })
 
         let { data: cacheResult, error } = await tryCatch(
@@ -79,7 +79,7 @@ export const resolveInsertUsage = async ({
             referenceId,
             amount,
             feature,
-            event: "usage",
+            event,
             lastResetAt: currentUsage.lastResetAt,
         }))
 

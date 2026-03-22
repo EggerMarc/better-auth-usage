@@ -11,6 +11,7 @@ import { bearer } from "better-auth/plugins/bearer";
 import { createAuthClient } from "better-auth/client";
 import { usage } from "../package/index";
 import type { UsageOptions } from "../package/types";
+import { shutdownUsage } from "../package/resolvers/options";
 
 /**
  * Creates a test instance with cacheOptions enabled.
@@ -342,6 +343,9 @@ describe("cache-enabled: customer management", () => {
 });
 
 describe("cache-enabled: hooks with cache", () => {
+    beforeAll(async () => { await shutdownUsage(); });
+    afterAll(async () => { await shutdownUsage(); });
+
     test("before hook blocks consumption even with cache enabled", async () => {
         let hookCalled = false;
 
@@ -391,5 +395,94 @@ describe("cache-enabled: hooks with cache", () => {
             headers,
         });
         expect(res2.error).toBeDefined();
+    });
+});
+
+describe("cache-enabled: sync/reset", () => {
+    let instance: CachedInstance;
+    let headers: Headers;
+
+    beforeAll(async () => {
+        await shutdownUsage();
+        instance = await createCachedTestInstance();
+        ({ headers } = await signIn(instance));
+    });
+    afterAll(async () => { await shutdownUsage(); });
+
+    test("sync with cache enabled and no reset needed returns successfully", async () => {
+        const refId = "cached-sync-no-reset";
+        await upsertCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+
+        await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits", amount: 25, event: "use" },
+            headers,
+        });
+
+        const syncRes = await instance.client.$fetch("/usage/sync", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+        expect(syncRes.error).toBeNull();
+
+        // Usage should remain unchanged (credits has reset: "never")
+        const checkRes = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "credits" },
+            headers,
+        });
+        expect(checkRes.data.currentAmount).toBe(25);
+    });
+
+    test("sync with cache enabled on monthly feature does not reset prematurely", async () => {
+        const refId = "cached-sync-monthly";
+        await upsertCustomer(instance, headers, refId);
+
+        await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+
+        await instance.client.$fetch("/usage/consume", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls", amount: 30, event: "use" },
+            headers,
+        });
+
+        const syncRes = await instance.client.$fetch("/usage/sync", {
+            method: "POST",
+            body: { referenceId: refId, featureKey: "api-calls" },
+            headers,
+        });
+        expect(syncRes.error).toBeNull();
+    });
+});
+
+describe("cache-enabled: error paths", () => {
+    let instance: CachedInstance;
+    let headers: Headers;
+
+    beforeAll(async () => {
+        await shutdownUsage();
+        instance = await createCachedTestInstance();
+        ({ headers } = await signIn(instance));
+    });
+    afterAll(async () => { await shutdownUsage(); });
+
+    test("check with nonexistent feature returns error", async () => {
+        const res = await instance.client.$fetch("/usage/check", {
+            method: "POST",
+            body: { referenceId: "any-ref", featureKey: "nonexistent" },
+            headers,
+        });
+        expect(res.error).toBeDefined();
     });
 });

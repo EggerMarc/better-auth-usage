@@ -6,16 +6,14 @@ import { APIError } from "better-auth";
 // Mock Redis
 const mockRedis = {
     eval: mock(() => Promise.resolve([100, Date.now()])),
-    get: mock(() => Promise.resolve(JSON.stringify({
-        referenceId: "user-123",
-        lastResetAt: new Date(),
-        updatedAt: new Date(),
-        feature: "api-calls",
-        current: 50,
-        maxLimit: 100
-    }))),
+    get: mock(() => Promise.resolve("50")),
+    hgetall: mock(() => Promise.resolve({
+        lastResetAt: new Date().toISOString(),
+        maxLimit: "100",
+    })),
     del: mock(() => Promise.resolve(1)),
-    quit: mock(() => Promise.resolve("OK"))
+    quit: mock(() => Promise.resolve("OK")),
+    on: mock(() => {}),
 };
 
 // Mock ioredis
@@ -35,7 +33,9 @@ describe("UsageCache", () => {
         cache = new UsageCache({ url: testUrl });
         mockRedis.eval.mockClear();
         mockRedis.get.mockClear();
+        mockRedis.hgetall.mockClear();
         mockRedis.del.mockClear();
+        mockRedis.quit.mockClear();
     });
 
     afterEach(async () => {
@@ -99,55 +99,48 @@ describe("UsageCache", () => {
     describe("getUsage", () => {
         test("should retrieve cached usage successfully", async () => {
             const referenceId = "user-123";
-            const feature = "api-calls";
+            const feature = { key: "api-calls" };
 
-            const mockData = {
-                referenceId,
-                lastResetAt: new Date(),
-                updatedAt: new Date(),
-                feature,
-                current: 50,
-                maxLimit: 100
-            };
-
-            mockRedis.get.mockResolvedValueOnce(JSON.stringify(mockData));
+            mockRedis.get.mockResolvedValueOnce("50");
+            mockRedis.hgetall.mockResolvedValueOnce({
+                maxLimit: "100",
+            });
 
             const result = await cache.getUsage(referenceId, feature);
 
-            expect(result.referenceId).toBe(referenceId);
-            expect(result.feature).toBe(feature);
-            expect(result.current).toBe(50);
+            expect(result).not.toBeNull();
+            expect(result!.referenceId).toBe(referenceId);
+            expect(result!.feature).toBe("api-calls");
+            expect(result!.current).toBe(50);
         });
 
-        test("should throw NOT_FOUND when usage doesn't exist", async () => {
+        test("should return null when usage doesn't exist", async () => {
             mockRedis.get.mockResolvedValueOnce(null);
 
-            await expect(cache.getUsage("user-999", "api-calls")).rejects.toThrow(APIError);
+            const result = await cache.getUsage("user-999", { key: "api-calls" });
+
+            expect(result).toBeNull();
         });
 
         test("should throw INTERNAL_SERVER_ERROR on Redis error", async () => {
             mockRedis.get.mockRejectedValueOnce(new Error("Redis connection failed"));
 
-            await expect(cache.getUsage("user-123", "api-calls")).rejects.toThrow(APIError);
+            await expect(cache.getUsage("user-123", { key: "api-calls" })).rejects.toThrow(APIError);
         });
 
         test("should parse JSON correctly with all optional fields", async () => {
-            const mockData = {
-                referenceId: "user-123",
-                lastResetAt: new Date(),
-                updatedAt: new Date(),
-                feature: "api-calls",
-                current: 75,
-                maxLimit: 100,
-                minLimit: 10
-            };
+            mockRedis.get.mockResolvedValueOnce("75");
+            mockRedis.hgetall.mockResolvedValueOnce({
+                maxLimit: "100",
+                minLimit: "10",
+                lastResetAt: new Date().toISOString(),
+            });
 
-            mockRedis.get.mockResolvedValueOnce(JSON.stringify(mockData));
+            const result = await cache.getUsage("user-123", { key: "api-calls" });
 
-            const result = await cache.getUsage("user-123", "api-calls");
-
-            expect(result.minLimit).toBe(10);
-            expect(result.maxLimit).toBe(100);
+            expect(result).not.toBeNull();
+            expect(result!.minLimit).toBe(10);
+            expect(result!.maxLimit).toBe(100);
         });
     });
 
@@ -155,7 +148,7 @@ describe("UsageCache", () => {
         test("should clear usage successfully", async () => {
             mockRedis.del.mockResolvedValueOnce(1);
 
-            await expect(cache.clearUsage("user-123", "api-calls")).resolves.not.toThrow();
+            await cache.clearUsage("user-123", "api-calls");
             expect(mockRedis.del).toHaveBeenCalledTimes(1);
         });
 
@@ -168,7 +161,7 @@ describe("UsageCache", () => {
         test("should handle non-existent keys gracefully", async () => {
             mockRedis.del.mockResolvedValueOnce(0);
 
-            await expect(cache.clearUsage("user-nonexistent", "api-calls")).resolves.not.toThrow();
+            await cache.clearUsage("user-nonexistent", "api-calls");
         });
     });
 

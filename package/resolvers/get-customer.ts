@@ -1,6 +1,6 @@
 import type { UsageAdapter } from "@/adapters";
 import type { Customer, UsageOptionsWithCache } from "@/types";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 import { APIError } from "better-auth";
 
 interface ResolveGetCustomerParams {
@@ -26,7 +26,7 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
         )
         if (error) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `Failed getting customer ${referenceId} from cache`
+                message: `Failed getting customer ${redactId(referenceId)} from cache`
             })
         }
         if (customer) {
@@ -40,13 +40,13 @@ export async function resolveGetCustomer({ referenceId, options, adapter }: Reso
 
     if (error) {
         throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: `Failed getting customer ${referenceId} from DB`
+            message: `Failed getting customer ${redactId(referenceId)} from DB`
         })
     }
 
     if (!customer) {
         throw new APIError("NOT_FOUND", {
-            message: `Customer ${referenceId} not found in db`
+            message: `Customer ${redactId(referenceId)} not found in db`
         })
     }
 

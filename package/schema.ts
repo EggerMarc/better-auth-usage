@@ -35,7 +35,7 @@ export const usageSchema = z.object({
 
 export const cached_usageSchema = z.object({
     referenceId: z.string(),
-    lastResetAt: z.date(),
+    lastResetAt: z.date().nullable(),
     feature: z.string(),
     current: z.number(),
     maxLimit: z.number().optional(), // -> These two we might remove

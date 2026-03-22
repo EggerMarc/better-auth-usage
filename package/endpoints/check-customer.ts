@@ -5,14 +5,14 @@ import { getUsageAdapter } from "package/adapters";
 import { getUsageMiddleware } from "package/middlewares/usage";
 import { getCustomerMiddleware } from "@/middlewares/customer";
 import { resolveGetCustomer } from "@/resolvers/get-customer";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 import { getUsageOptions } from "@/resolvers/options";
 
 /**
- * Create an authenticated POST endpoint at /usage/check that validates the request body and verifies a customer's latest usage against a feature's configured limits.
+ * Create an authenticated POST endpoint at /usage/check-customer that looks up a customer by referenceId.
  *
  * @param options - Usage options (features, optional overrides, and cache settings) used to resolve features and control lookup behavior.
- * @returns The configured authenticated endpoint whose response is a status string describing the usage check result.
+ * @returns The configured authenticated endpoint whose response is the matching customer object.
  */
 export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
@@ -25,7 +25,7 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
             }),
             metadata: {
                 openapi: {
-                    description: "Checks current usage against feature limits.",
+                    description: "Look up a customer by referenceId.",
                     requestBody: {
                         required: true,
                         content: {
@@ -42,7 +42,22 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
                     },
                     responses: {
                         200: {
-                            description: "Status string",
+                            description: "The customer object",
+                            content: {
+                                "application/json": {
+                                    schema: {
+                                        type: "object",
+                                        properties: {
+                                            referenceId: { type: "string" },
+                                            referenceType: { type: "string" },
+                                            email: { type: "string" },
+                                            name: { type: "string" },
+                                            overrideKey: { type: "string" },
+                                        },
+                                        required: ["referenceId", "referenceType"],
+                                    },
+                                },
+                            },
                         },
                     },
                 },
@@ -50,7 +65,7 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
         },
         async (ctx) => {
 
-            console.log("[LOG][ENDPOINT] Called check-customer for: ", ctx.body.referenceId)
+            console.log("[LOG][ENDPOINT] Called check-customer for: ", redactId(ctx.body.referenceId))
             const { options, adapter } = await getUsageOptions({
                 ctx: ctx.context,
                 options: endpointOptions
@@ -70,7 +85,7 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
 
             if (!customer) {
                 throw new APIError("NOT_FOUND", {
-                    message: `Customer with referenceId: ${ctx.body.referenceId} not found`
+                    message: `Customer with referenceId: ${redactId(ctx.body.referenceId)} not found`
                 })
             }
 

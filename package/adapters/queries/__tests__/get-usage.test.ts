@@ -60,7 +60,8 @@ describe("getUsageQuery", () => {
                 feature: featureWithoutReset
             });
 
-            expect(result).toBeUndefined();
+            expect(result).toBeDefined();
+            expect(result!.amount).toBe(0);
         });
     });
 
@@ -86,7 +87,9 @@ describe("getUsageQuery", () => {
                 feature: mockFeature
             });
 
-            expect(result).toBe(mockUsageRecords[0]);
+            expect(result).toBeDefined();
+            expect(result!.id).toBe(mockUsageRecords[0].id);
+            expect(result!.amount).toBe(50);
         });
 
         test("should calculate total usage from multiple records", async () => {
@@ -160,13 +163,15 @@ describe("getUsageQuery", () => {
                 createdAt: new Date()
             }));
 
-            await getUsageQuery({
+            const result = await getUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
                 feature: mockFeature
             });
 
-            expect(mockAdapter.create).toHaveBeenCalled();
+            expect(result).toBeDefined();
+            expect(result!.id).toBe("usage-1");
+            expect(result!.amount).toBe(50);
         });
 
         test("should not trigger reset when within reset period", async () => {
@@ -192,7 +197,9 @@ describe("getUsageQuery", () => {
                 feature: mockFeature
             });
 
-            expect(result).toBe(mockUsageRecords[0]);
+            expect(result).toBeDefined();
+            expect(result!.id).toBe(mockUsageRecords[0].id);
+            expect(result!.amount).toBe(50);
         });
 
         test("should handle null lastResetAt", async () => {

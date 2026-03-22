@@ -48,7 +48,7 @@ export function getCheckEndpoint(endpointOptions: UsageOptions) {
                                         referenceId: { type: "string" },
                                         featureKey: { type: "string" },
                                         overrideKey: { type: "string" },
-                                        amount: { type: "string" }
+                                        amount: { type: "number" }
                                     },
                                     required: ["referenceId", "featureKey"],
                                 },

@@ -40,11 +40,16 @@ export class UsageTracker extends EventEmitter {
     private setupPubSub() {
         // Subscribe to all usage update channels
         this.subClient.psubscribe(`${this.CHANNEL_PREFIX}*`);
-        this.subClient.on("pmessage", (_pattern, _channel, message) => {
-            const update = cached_usageEventSchema.parse(message);
-            this.cache.insertEvent(update)
-            this.emit("usage:update", update);
-            this.broadcastUpdate(update);
+        this.subClient.on("pmessage", async (_pattern, _channel, message) => {
+            try {
+                const parsed = JSON.parse(message);
+                const update = cached_usageEventSchema.parse(parsed);
+                await this.cache.insertEvent(update);
+                this.emit("usage:update", update);
+                this.broadcastUpdate(update);
+            } catch (err) {
+                console.error("[ERROR][UsageTracker] Failed to process pmessage", { message, err });
+            }
         });
     }
 
@@ -73,6 +78,10 @@ export class UsageTracker extends EventEmitter {
         }
 
         console.log(`[UsageTracker] Published update to channel: ${channel}`);
+    }
+
+    async getUsage(referenceId: string, feature: Omit<Feature, "hooks">) {
+        return this.cache.getUsage(referenceId, feature);
     }
 
     async disconnect() {

@@ -1,7 +1,7 @@
 import { getUsageOptions } from "@/resolvers/options";
 import { resolveUpsertCustomer } from "@/resolvers/upsert-customer";
 import type { UsageOptions, UsageOptionsWithCache } from "@/types";
-import { tryCatch } from "@/utils";
+import { redactId, tryCatch } from "@/utils";
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api";
 import { getUsageAdapter } from "package/adapters";
 import { customerSchema } from "package/schema";
@@ -69,7 +69,7 @@ export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
         );
         if (error || !customer) {
             throw new APIError("INTERNAL_SERVER_ERROR", {
-                message: `Failed to upsert customer ${ctx.body.referenceId}, ${error ? error.message : 'customer not upserted'}`
+                message: `Failed to upsert customer ${redactId(ctx.body.referenceId)}, ${error ? error.message : 'customer not upserted'}`
             })
         }
         return customer

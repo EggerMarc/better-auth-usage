@@ -1,4 +1,14 @@
+import { createHash } from "crypto";
 import type { cached_Usage, ConsumptionLimitType, ResetType, Usage } from "./types.ts";
+
+/**
+ * Return a short, deterministic hash of an identifier for safe logging.
+ * Uses SHA-256 truncated to 8 hex chars — enough to correlate log entries
+ * without exposing the original value.
+ */
+export function redactId(id: string): string {
+    return createHash("sha256").update(id).digest("hex").slice(0, 8);
+}
 
 interface CheckLimitProps {
     maxLimit?: number,
@@ -11,8 +21,8 @@ export function checkLimit({
     minLimit,
     value
 }: CheckLimitProps): ConsumptionLimitType {
-    if (maxLimit && value > maxLimit) return "above-max-limit"
-    if (minLimit && value < minLimit) return "below-min-limit"
+    if (maxLimit != null && value > maxLimit) return "above-max-limit"
+    if (minLimit != null && value < minLimit) return "below-min-limit"
     return "in-limit"
 }
 
@@ -153,7 +163,7 @@ export function normalizeData<
             referenceId: d.referenceId,
             feature: d.feature,
             amount: d.current,
-            event: undefined,
+            event: "cache",
             createdAt: d.updatedAt,
             lastResetAt: d.lastResetAt
         } as Usage

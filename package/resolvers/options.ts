@@ -6,33 +6,31 @@ import type { EndpointParams, UsageOptions, UsageOptionsWithCache } from "@/type
 import { APIError, type AuthContext } from "better-auth";
 import { Server as SocketServer } from "socket.io";
 
-export async function getUsageOptions({
-    ctx, options
-}: {
-    ctx: AuthContext,
-    options: UsageOptions
-}) {
+class UsageInfrastructure {
+    cache?: UsageCache;
+    tracker?: UsageTracker;
+    wsServer?: UsageWebSocketServer;
+    io?: SocketServer;
+    runtimeOptions?: UsageOptionsWithCache;
+    initPromise?: Promise<void>;
 
-    let cache: UsageCache | undefined;
-    let tracker: UsageTracker | undefined;
-    let wsServer: UsageWebSocketServer | undefined;
-    let io: SocketServer | undefined;
-    let serverAdapter: UsageAdapter | undefined;
-    const runtimeOptions: UsageOptionsWithCache = { ...options };
+    async initialize(options: UsageOptions) {
+        if (this.runtimeOptions) return;
 
-    serverAdapter = getUsageAdapter(ctx)
+        const runtimeOptions: UsageOptionsWithCache = { ...options };
 
-    if (!options.cacheOptions) {
-        console.log("[better-auth-usage] Running without cache (DB-only mode)");
-    }
+        if (!options.cacheOptions) {
+            console.log("[better-auth-usage] Running without cache (DB-only mode)");
+            this.runtimeOptions = runtimeOptions;
+            return;
+        }
 
-    if (options.cacheOptions) {
         console.log("[better-auth-usage] Initializing cache...");
 
-        cache = new UsageCache({
+        this.cache = new UsageCache({
             url: options.cacheOptions.redisUrl,
         });
-        runtimeOptions.cache = cache;
+        runtimeOptions.cache = this.cache;
 
         if (options.cacheOptions.enableRealtime) {
             if (!options.cacheOptions.port) {
@@ -41,7 +39,7 @@ export async function getUsageOptions({
 
             console.log("[better-auth-usage] Realtime enabled, starting WebSocket server...");
 
-            io = new SocketServer({
+            this.io = new SocketServer({
                 cors: options.cacheOptions.cors || {
                     origin: "*",
                     credentials: true
@@ -49,16 +47,16 @@ export async function getUsageOptions({
             });
 
             const port = options.cacheOptions.port;
-            io.listen(port);
+            this.io.listen(port);
             console.log(`[better-auth-usage] WebSocket server listening on port ${port}`);
             try {
-                tracker = new UsageTracker(
+                this.tracker = new UsageTracker(
                     options.cacheOptions.redisUrl,
-                    io,
-                    cache
+                    this.io,
+                    this.cache
                 );
-                await tracker.connect();
-                runtimeOptions.tracker = tracker;
+                await this.tracker.connect();
+                runtimeOptions.tracker = this.tracker;
                 console.log("[better-auth-usage] Pub/sub tracker connected");
             } catch (err) {
                 throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -66,9 +64,9 @@ export async function getUsageOptions({
                 })
             }
 
-            wsServer = new UsageWebSocketServer(
-                io,
-                tracker,
+            this.wsServer = new UsageWebSocketServer(
+                this.io,
+                this.tracker,
                 runtimeOptions
             );
 
@@ -76,7 +74,40 @@ export async function getUsageOptions({
         } else {
             console.log("[better-auth-usage] Realtime disabled (cache-only mode)");
         }
+
+        this.runtimeOptions = runtimeOptions;
     }
 
-    return { adapter: getUsageAdapter(ctx), options: runtimeOptions }
+    async shutdown() {
+        if (this.tracker) await this.tracker.disconnect();
+        if (this.cache) await this.cache.disconnect();
+        if (this.io) this.io.close();
+        this.cache = undefined;
+        this.tracker = undefined;
+        this.wsServer = undefined;
+        this.io = undefined;
+        this.runtimeOptions = undefined;
+        this.initPromise = undefined;
+    }
+}
+
+const infrastructure = new UsageInfrastructure();
+
+export async function getUsageOptions({
+    ctx, options
+}: {
+    ctx: AuthContext,
+    options: UsageOptions
+}) {
+    // Ensure infrastructure is initialized exactly once, even under concurrent requests
+    if (!infrastructure.initPromise) {
+        infrastructure.initPromise = infrastructure.initialize(options);
+    }
+    await infrastructure.initPromise;
+
+    return { adapter: getUsageAdapter(ctx), options: infrastructure.runtimeOptions! }
+}
+
+export async function shutdownUsage() {
+    await infrastructure.shutdown();
 }
