@@ -11,9 +11,11 @@ Below are the action items to fix known limitations of this plugin. Namely, cust
 - [x] Redis caching with Lua-based atomic increments
 - [x] Real-time WebSocket updates (optional)
 - [x] Integration test suite (DB-only + cached)
+- [x] Comprehensive E2E and unit test coverage (284 tests)
 - [ ] Customer provider (Optional - considering leaving this to dev)
     - [ ] `useCustomer(referenceId)`
 - [ ] Per-customer feature limits (`featureLimits`)
+- [ ] Consumption idempotency keys
 
 
 ## Features
@@ -28,6 +30,10 @@ Below are the action items to fix known limitations of this plugin. Namely, cust
 ### Installation
 ```bash
 npm add @eggermarc/better-auth-usage
+# or
+bun add @eggermarc/better-auth-usage
+# or
+pnpm add @eggermarc/better-auth-usage
 ```
 
 ### Usage
