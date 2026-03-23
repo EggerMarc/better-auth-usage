@@ -60,36 +60,60 @@ export const drain = Effect.gen(function* () {
 
     const entries = parseEntries(raw)
 
-    // 1. Insert each event into usageEvent (history)
-    for (const entry of entries) {
-        yield* db.create({
-            model: "usageEvent",
-            data: {
-                referenceId: entry.refId,
-                feature: entry.feature,
-                amount: entry.amount,
-                event: entry.event,
-                lastResetAt: new Date(entry.lastResetAt),
-                createdAt: new Date(entry.ts),
-            },
-        }).pipe(
-            Effect.catchAll((err) =>
-                Effect.sync(() =>
-                    logger.warn("WAL: failed to insert usage event", { entry: entry.id, error: err })
+    // 1. Insert all events into usageEvent (history) — concurrent, order doesn't matter
+    yield* Effect.all(
+        entries.map((entry) =>
+            db.create({
+                model: "usageEvent",
+                data: {
+                    referenceId: entry.refId,
+                    feature: entry.feature,
+                    amount: entry.amount,
+                    event: entry.event,
+                    lastResetAt: new Date(entry.lastResetAt),
+                    createdAt: new Date(entry.ts),
+                },
+            }).pipe(
+                Effect.catchAll((err) =>
+                    Effect.sync(() =>
+                        logger.warn("WAL: failed to insert usage event", { entry: entry.id, error: err })
+                    )
                 )
             )
-        )
-    }
+        ),
+        { concurrency: "unbounded" }
+    )
 
     // 2. Coalesce by (refId, feature) — take the LAST entry's newTotal
     const coalesced = new Map<string, WalEntry>()
     for (const entry of entries) {
-        const key = `${entry.refId}:${entry.feature}`
-        coalesced.set(key, entry) // last one wins
+        coalesced.set(`${entry.refId}:${entry.feature}`, entry)
     }
 
-    // 3. Upsert usage for each coalesced entry
-    for (const entry of coalesced.values()) {
+    // 3. Upsert usage for each coalesced entry — concurrent, independent per ref+feature
+    yield* Effect.all(
+        Array.from(coalesced.values()).map((entry) =>
+            upsertUsageRow(db, entry)
+        ),
+        { concurrency: "unbounded" }
+    )
+
+    // 4. ACK all processed entries
+    const ids = entries.map((e) => e.id)
+    yield* redis.xack(STREAM, GROUP, ...ids)
+
+    // 5. Trim stream
+    yield* redis.xtrim(STREAM, TRIM_MAX)
+
+    logger.debug("WAL: drained", { count: entries.length, coalesced: coalesced.size })
+    return entries.length
+})
+
+/**
+ * Upsert a single usage row from a WAL entry.
+ */
+const upsertUsageRow = (db: DbService, entry: WalEntry) =>
+    Effect.gen(function* () {
         const now = new Date()
         const existing = yield* db.findOne<any>({
             model: "usage",
@@ -127,18 +151,7 @@ export const drain = Effect.gen(function* () {
                 },
             })
         }
-    }
-
-    // 4. ACK all processed entries
-    const ids = entries.map((e) => e.id)
-    yield* redis.xack(STREAM, GROUP, ...ids)
-
-    // 5. Trim stream
-    yield* redis.xtrim(STREAM, TRIM_MAX)
-
-    logger.debug("WAL: drained", { count: entries.length, coalesced: coalesced.size })
-    return entries.length
-})
+    })
 
 /**
  * Check stream length and warn if it exceeds threshold.

@@ -11,12 +11,11 @@ export function getFeaturesEndpoint({ features }: UsageOptions) {
             method: "GET",
             middleware: [sessionMiddleware],
         },
-        async () => {
-            return Object.values(features).map((f) => ({
+        async () =>
+            Object.values(features).map((f) => ({
                 featureKey: f.key,
                 details: f.details,
             }))
-        }
     )
 }
 

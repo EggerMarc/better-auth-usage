@@ -105,25 +105,71 @@ const handlePlanChange = ({
 
         const now = new Date()
 
-        for (const feature of Object.values(features)) {
-            const behavior = feature.onPlanChange ?? "carry-over"
+        // Process all features concurrently — they're independent
+        yield* Effect.all(
+            Object.values(features).map((feature) =>
+                handleFeaturePlanChange({
+                    referenceId, toOverride, feature, now, redis, db, logger,
+                })
+            ),
+            { concurrency: "unbounded" }
+        )
+    })
 
-            if (behavior === "reset") {
-                const resetValue = feature.resetValue ?? 0
+/**
+ * Handle plan change for a single feature.
+ */
+const handleFeaturePlanChange = ({
+    referenceId, toOverride, feature, now, redis, db, logger,
+}: {
+    referenceId: string
+    toOverride: string
+    feature: Feature
+    now: Date
+    redis: RedisService
+    db: DbService
+    logger: LoggerService
+}) =>
+    Effect.gen(function* () {
+        const behavior = feature.onPlanChange ?? "carry-over"
 
-                // Reset Redis counter
-                yield* redis.set(`usage:${feature.key}:${referenceId}`, resetValue).pipe(
+        // Log plan-change event (both behaviors)
+        yield* db.create({
+            model: "usageEvent",
+            data: {
+                referenceId,
+                feature: feature.key,
+                amount: 0,
+                event: "plan-change",
+                overrideKey: toOverride,
+                lastResetAt: now,
+                createdAt: now,
+            },
+        }).pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() =>
+                    logger.warn("Failed to log plan-change event", {
+                        referenceId, feature: feature.key, error: err,
+                    })
+                )
+            )
+        )
+
+        if (behavior === "reset") {
+            const resetValue = feature.resetValue ?? 0
+
+            // Reset Redis counter + update DB — concurrent
+            yield* Effect.all([
+                redis.set(`usage:${feature.key}:${referenceId}`, resetValue).pipe(
                     Effect.catchAll((err) =>
                         Effect.sync(() =>
-                            logger.warn("Failed to reset Redis counter on plan change", {
+                            logger.warn("Failed to reset Redis counter", {
                                 referenceId, feature: feature.key, error: err,
                             })
                         )
                     )
-                )
-
-                // Update DB usage row
-                yield* db.update({
+                ),
+                db.update({
                     model: "usage",
                     where: [
                         { field: "referenceId", value: referenceId },
@@ -138,61 +184,16 @@ const handlePlanChange = ({
                 }).pipe(
                     Effect.catchAll((err) =>
                         Effect.sync(() =>
-                            logger.warn("Failed to reset DB usage on plan change", {
+                            logger.warn("Failed to reset DB usage", {
                                 referenceId, feature: feature.key, error: err,
                             })
                         )
                     )
-                )
+                ),
+            ], { concurrency: 2 })
 
-                // Log plan-change event to usage_events
-                yield* db.create({
-                    model: "usageEvent",
-                    data: {
-                        referenceId,
-                        feature: feature.key,
-                        amount: 0,
-                        event: "plan-change",
-                        overrideKey: toOverride,
-                        lastResetAt: now,
-                        createdAt: now,
-                    },
-                }).pipe(
-                    Effect.catchAll((err) =>
-                        Effect.sync(() =>
-                            logger.warn("Failed to log plan-change event", {
-                                referenceId, feature: feature.key, error: err,
-                            })
-                        )
-                    )
-                )
-
-                logger.info("Feature reset on plan change", {
-                    referenceId, feature: feature.key, resetTo: resetValue,
-                })
-            } else {
-                // carry-over: just update Redis metadata with new limits
-                // (limits come from the new override, resolved at next check/consume)
-                yield* db.create({
-                    model: "usageEvent",
-                    data: {
-                        referenceId,
-                        feature: feature.key,
-                        amount: 0,
-                        event: "plan-change",
-                        overrideKey: toOverride,
-                        lastResetAt: now,
-                        createdAt: now,
-                    },
-                }).pipe(
-                    Effect.catchAll((err) =>
-                        Effect.sync(() =>
-                            logger.warn("Failed to log plan-change event", {
-                                referenceId, feature: feature.key, error: err,
-                            })
-                        )
-                    )
-                )
-            }
+            logger.info("Feature reset on plan change", {
+                referenceId, feature: feature.key, resetTo: resetValue,
+            })
         }
     })

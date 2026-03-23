@@ -1,4 +1,5 @@
 import { Effect, Layer, Fiber } from "effect"
+import { APIError } from "better-auth/api"
 import { RedisService, makeRedisServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "@/services"
 import { recover, startSubscribeWorker, startPollWorker } from "@/wal"
 import type { UsageOptions } from "@/types"
@@ -89,16 +90,15 @@ async function ensureWalStarted(options: UsageOptions) {
 
 /**
  * Run an Effect pipeline with all required services.
+ * Maps typed Effect errors to BetterAuth APIErrors at the boundary.
  *
- * This is the bridge between BetterAuth's async endpoint handlers
- * and the Effect pipelines. Called at each endpoint.
+ * Endpoints no longer need try-catch — error mapping is centralized here.
  */
 export async function runPipeline<A, E>(
     authCtx: AuthContext,
     options: UsageOptions,
     effect: Effect.Effect<A, E, RedisService | DbService | LoggerService>
 ): Promise<A> {
-    // Capture the adapter from the first request for the WAL worker
     if (!capturedAdapter) {
         capturedAdapter = authCtx
     }
@@ -107,11 +107,34 @@ export async function runPipeline<A, E>(
     const dbLayer = Layer.succeed(DbService, makeDbService(authCtx))
     const fullLayer = Layer.merge(shared, dbLayer)
 
-    // Start WAL worker on first request (lazy init)
     await ensureWalStarted(options)
 
     return Effect.runPromise(
-        effect.pipe(Effect.provide(fullLayer))
+        effect.pipe(
+            Effect.catchAll((err: any) => {
+                const tag = err?._tag
+
+                if (tag === "FeatureNotFound") {
+                    return Effect.die(new APIError("NOT_FOUND", {
+                        message: `Feature ${err.featureKey} not found`
+                    }))
+                }
+                if (tag === "CustomerNotFound") {
+                    return Effect.die(new APIError("NOT_FOUND", {
+                        message: `Customer not found`
+                    }))
+                }
+                if (tag === "LimitExceeded") {
+                    return Effect.die(new APIError("FORBIDDEN", {
+                        message: `Limit exceeded for ${err.featureKey}`
+                    }))
+                }
+                return Effect.die(new APIError("INTERNAL_SERVER_ERROR", {
+                    message: `${err?.message ?? err?._tag ?? "Unknown error"}`
+                }))
+            }),
+            Effect.provide(fullLayer),
+        )
     )
 }
 

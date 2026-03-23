@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api"
+import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { z } from "zod"
 import type { UsageOptions } from "@/types"
 import { resolveFeature } from "@/pipelines/features"
@@ -20,39 +20,23 @@ export function getCanUseEndpoint(endpointOptions: UsageOptions) {
                 amount: z.number().optional(),
             }),
         },
-        async (ctx) => {
-            try {
-                return await runPipeline(
-                    ctx.context,
-                    endpointOptions,
-                    Effect.gen(function* () {
-                        const overrideKey = yield* resolveOverrideKey({
-                            overrideKey: ctx.body.overrideKey,
-                            referenceId: ctx.body.referenceId,
-                        })
-
-                        const feature = yield* resolveFeature({
-                            featureKey: ctx.body.featureKey,
-                            overrideKey,
-                            features: endpointOptions.features,
-                            overrides: endpointOptions.overrides,
-                        })
-
-                        return yield* canUse({
-                            referenceId: ctx.body.referenceId,
-                            feature,
-                            amount: ctx.body.amount,
-                        })
-                    })
-                )
-            } catch (err: any) {
-                if (err._tag === "FeatureNotFound") {
-                    throw new APIError("NOT_FOUND", { message: `Feature ${err.featureKey} not found` })
-                }
-                throw new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `Failed to check entitlement: ${err.message ?? err._tag ?? "unknown"}`
+        async (ctx) =>
+            runPipeline(ctx.context, endpointOptions, Effect.gen(function* () {
+                const overrideKey = yield* resolveOverrideKey({
+                    overrideKey: ctx.body.overrideKey,
+                    referenceId: ctx.body.referenceId,
                 })
-            }
-        }
+                const feature = yield* resolveFeature({
+                    featureKey: ctx.body.featureKey,
+                    overrideKey,
+                    features: endpointOptions.features,
+                    overrides: endpointOptions.overrides,
+                })
+                return yield* canUse({
+                    referenceId: ctx.body.referenceId,
+                    feature,
+                    amount: ctx.body.amount,
+                })
+            }))
     )
 }

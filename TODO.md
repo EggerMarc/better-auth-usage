@@ -73,10 +73,21 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 - [x] New endpoints in pathMethods: `/usage/can-use`, `/usage/use-feature`
 - [x] `socket.io-client` added as dependency
 
-## Phase 7: Polish + Tests
-- [ ] Structured logging via LoggerService (replace remaining console.log calls)
-- [ ] Delete remaining legacy code (`tryCatch`, old adapters/index.ts, cache.ts tryCatch usage)
-- [ ] Rewrite realtime (usage-tracker, websocket-server) to use Effect services
+## Phase 7: Polish — IN PROGRESS
+
+### Done
+- [x] Centralized error mapping in `runPipeline` — all endpoints stripped of try-catch
+- [x] Endpoint code reduced from ~50 to ~30 lines each
+- [x] WAL worker: event inserts + upserts run concurrently (`Effect.all`, unbounded)
+- [x] Plan change: all features processed concurrently (`Effect.all`, unbounded)
+- [x] Plan change reset: Redis + DB run concurrently (`Effect.all`, concurrency: 2)
+- [x] Extracted `handleFeaturePlanChange` and `upsertUsageRow` helpers
+
+### Remaining
+- [ ] Structured logging via LoggerService (replace remaining `console.log` calls in legacy code)
+- [ ] Delete remaining legacy code (`tryCatch`, old `adapters/index.ts`, `cache.ts` tryCatch usage)
+- [ ] Rewrite realtime (`usage-tracker.ts`, `websocket-server.ts`) to use Effect services
+- [ ] Config validation at init
 - [ ] Rewrite tests with Effect test layers
 - [ ] Integration tests: WAL drain, reset boundary, realtime, plan transitions
 - [ ] Performance test: sub-10ms write latency
