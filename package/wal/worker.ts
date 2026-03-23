@@ -179,14 +179,15 @@ export const startSubscribeWorker = Effect.gen(function* () {
 
     yield* redis.psubscribe("usage:events:*", () => {
         // On each event, trigger a drain cycle
-        // We run the drain as a fire-and-forget effect since we're in a callback
-        Effect.runPromise(
-            drain.pipe(
-                Effect.catchAll((err) =>
-                    Effect.sync(() => logger.error("WAL: drain failed", { error: err }))
+        Effect.runSync(
+            Effect.fork(
+                drain.pipe(
+                    Effect.catchAll((err) =>
+                        Effect.sync(() => logger.error("WAL: drain failed", { error: err }))
+                    )
                 )
             )
-        ).catch(() => {}) // last resort — should never reach here
+        )
     })
 })
 

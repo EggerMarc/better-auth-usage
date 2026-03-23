@@ -73,29 +73,35 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 - [x] New endpoints in pathMethods: `/usage/can-use`, `/usage/use-feature`
 - [x] `socket.io-client` added as dependency
 
-## Phase 7: Polish — IN PROGRESS
+## Phase 7: Polish — DONE
 
-### Done
 - [x] Centralized error mapping in `runPipeline` — all endpoints stripped of try-catch
 - [x] Endpoint code reduced from ~50 to ~30 lines each
 - [x] WAL worker: event inserts + upserts run concurrently (`Effect.all`, unbounded)
 - [x] Plan change: all features processed concurrently (`Effect.all`, unbounded)
 - [x] Plan change reset: Redis + DB run concurrently (`Effect.all`, concurrency: 2)
 - [x] Extracted `handleFeaturePlanChange` and `upsertUsageRow` helpers
+- [x] All try-catch and .catch patterns replaced with Effect (`liftCallback`, `Effect.andThen`, `Effect.catchAll`)
+- [x] `liftCallback` / `liftAuthorize` helpers for user-provided sync/async callbacks
+- [x] Realtime rewritten to use Effect services (pure subscriber, `Effect.try` + `andThen`)
+- [x] WebSocket server uses `checkUsage` pipeline instead of legacy `tracker.getUsage`
+- [x] Deleted all legacy code: `cache.ts`, `adapters/index.ts`, `adapters/queries/`, `resolvers/`, realtime tests
+- [x] Deleted `tryCatch`, `normalizeData`, deprecated Zod schemas, `cached_*` types
+- [x] Flattened `endpoints/v2/` → `endpoints/`
+- [x] Zero `console.log` in source code (only in `LoggerService` default implementation)
+- [x] Zero try-catch in server code (only `Promise.resolve` bridge for user callbacks)
+- [x] BUSYGROUP handling via `Effect.catchAll` pattern match instead of `.catch`
 
-### Remaining
-- [ ] Structured logging via LoggerService (replace remaining `console.log` calls in legacy code)
-- [ ] Delete remaining legacy code (`tryCatch`, old `adapters/index.ts`, `cache.ts` tryCatch usage)
-- [ ] Rewrite realtime (`usage-tracker.ts`, `websocket-server.ts`) to use Effect services
-- [ ] Config validation at init
-- [ ] Rewrite tests with Effect test layers
-- [ ] Integration tests: WAL drain, reset boundary, realtime, plan transitions
-- [ ] Performance test: sub-10ms write latency
+## Phase 8: Remaining
+
+- [ ] Config validation at init (`@effect/schema` — features non-empty, maxLimit >= minLimit, etc.)
+- [ ] Tests: rewrite for new architecture (pipelines, WAL, realtime, plan transitions)
+- [ ] Performance test: sub-10ms write latency benchmark
 - [ ] Concurrent consume race condition tests
 
 ---
 
-# Current State: 153 tests, 0 failures, 11 test files
+# Current State: 82 tests, 0 failures, 8 test files
 
 ## What's Active
 ```

@@ -17,13 +17,22 @@ export const startRealtimeSubscriber = (io: SocketServer) =>
         logger.info("Realtime: subscribing to usage events")
 
         yield* redis.psubscribe("usage:events:*", (channel, message) => {
-            try {
-                const update = JSON.parse(message)
-                const room = `usage:${update.feature}:${update.refId}`
-                io.to(room).emit("usage:updated", update)
-            } catch {
-                // Malformed message — skip
-            }
+            const parsed = Effect.try(() => JSON.parse(message) as {
+                feature: string
+                refId: string
+                [key: string]: unknown
+            })
+
+            Effect.runSync(
+                parsed.pipe(
+                    Effect.andThen((update) =>
+                        Effect.sync(() =>
+                            io.to(`usage:${update.feature}:${update.refId}`).emit("usage:updated", update)
+                        )
+                    ),
+                    Effect.catchAll(() => Effect.void)
+                )
+            )
         })
 
         logger.info("Realtime: subscriber active")

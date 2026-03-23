@@ -6,6 +6,13 @@ import { getCustomerOptional } from "./get-customer"
 import { checkLimit } from "@/utils"
 import incrementScript from "@/adapters/lua/increment.lua"
 
+/**
+ * Lift a user-provided callback (sync or async) into an Effect.
+ * No try-catch — Promise.resolve handles both sync and async uniformly.
+ */
+const liftCallback = <A>(fn: () => A | Promise<A>): Effect.Effect<A, unknown> =>
+    Effect.tryPromise(() => Promise.resolve(fn()))
+
 interface ConsumeParams {
     referenceId: string
     amount: number
@@ -53,12 +60,12 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
 
         // 2. Before hook
         if (feature.hooks?.before) {
-            yield* Effect.tryPromise(() =>
-                Promise.resolve(feature.hooks!.before!({
+            yield* liftCallback(() =>
+                feature.hooks!.before!({
                     usage: { beforeAmount, afterAmount, amount },
                     customer,
                     feature,
-                }))
+                })
             )
         }
 
@@ -123,12 +130,12 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
 
         // 4. After hook
         if (feature.hooks?.after) {
-            yield* Effect.tryPromise(() =>
-                Promise.resolve(feature.hooks!.after!({
+            yield* liftCallback(() =>
+                feature.hooks!.after!({
                     usage: { beforeAmount, afterAmount: newTotal, amount },
                     customer,
                     feature,
-                }))
+                })
             ).pipe(
                 Effect.catchAll((err) =>
                     Effect.sync(() =>

@@ -125,11 +125,13 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
                     wrapRedis("xgroupCreate", () =>
                         (client as any).xgroup("CREATE", stream, group, startId, "MKSTREAM")
                             .then(() => undefined)
-                            .catch((err: any) => {
-                                // BUSYGROUP = group already exists, that's fine
-                                if (err.message?.includes("BUSYGROUP")) return undefined
-                                throw err
-                            })
+                    ).pipe(
+                        // BUSYGROUP = group already exists — idempotent, not an error
+                        Effect.catchAll((err) =>
+                            err.cause && String(err.cause).includes("BUSYGROUP")
+                                ? Effect.void
+                                : Effect.fail(err)
+                        )
                     ),
 
                 xreadgroup: (group, consumer, stream, id, count) =>

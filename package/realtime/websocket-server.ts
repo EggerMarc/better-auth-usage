@@ -2,8 +2,7 @@ import { Effect } from "effect"
 import { Server as SocketServer } from "socket.io"
 import type { UsageOptions } from "@/types"
 import { checkUsage } from "@/pipelines/check"
-import { resolveFeature } from "@/pipelines/features"
-import { RedisService, DbService, LoggerService } from "@/services"
+import { LoggerService } from "@/services"
 import { redactId } from "@/utils"
 
 interface SubscribeRequest {
@@ -15,8 +14,13 @@ interface SubscribeRequest {
 }
 
 /**
+ * Lift authorizeReference (sync or async) into an Effect.
+ */
+const liftAuthorize = (fn: (...args: any[]) => boolean | Promise<boolean>, ...args: any[]) =>
+    Effect.tryPromise(() => Promise.resolve(fn(...args)))
+
+/**
  * Set up Socket.IO connection handlers.
- * Handles subscribe, unsubscribe, get:usage, and disconnect events.
  */
 export const setupWebSocketHandlers = (
     io: SocketServer,
@@ -35,14 +39,17 @@ export const setupWebSocketHandlers = (
                     }
 
                     if (feature.authorizeReference) {
-                        const authorized = await Promise.resolve(
-                            feature.authorizeReference({
+                        const authorized = await Effect.runPromise(
+                            liftAuthorize(feature.authorizeReference, {
                                 referenceId: sub.referenceId,
                                 referenceType: sub.referenceType,
                                 feature: feature.key,
                                 incomingId: "",
-                            })
+                            }).pipe(
+                                Effect.catchAll(() => Effect.succeed(false))
+                            )
                         )
+
                         if (!authorized) {
                             socket.emit("error", {
                                 message: `Not authorized for ${sub.feature}:${redactId(sub.referenceId)}`
@@ -70,17 +77,21 @@ export const setupWebSocketHandlers = (
                     return
                 }
 
-                try {
-                    const result = await Effect.runPromise(
-                        checkUsage({
-                            referenceId: data.referenceId,
-                            feature,
-                        })
+                await Effect.runPromise(
+                    checkUsage({
+                        referenceId: data.referenceId,
+                        feature,
+                    }).pipe(
+                        Effect.andThen((result) =>
+                            Effect.sync(() => socket.emit("usage:current", result))
+                        ),
+                        Effect.catchAll(() =>
+                            Effect.sync(() =>
+                                socket.emit("usage:error", { error: "Failed to fetch usage" })
+                            )
+                        )
                     )
-                    socket.emit("usage:current", result)
-                } catch {
-                    socket.emit("usage:error", { error: "Failed to fetch usage" })
-                }
+                )
             })
 
             socket.on("disconnect", () => {
