@@ -129,6 +129,11 @@ export async function runPipeline<A, E>(
                         message: `Limit exceeded for ${err.featureKey}`
                     }))
                 }
+                if (tag === "ValidationError") {
+                    return Effect.die(new APIError("BAD_REQUEST", {
+                        message: err.message
+                    }))
+                }
                 return Effect.die(new APIError("INTERNAL_SERVER_ERROR", {
                     message: `${err?.message ?? err?._tag ?? "Unknown error"}`
                 }))

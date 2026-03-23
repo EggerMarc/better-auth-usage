@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { RedisService, DbService, LoggerService } from "@/services"
+import { ValidationError } from "@/errors"
 import type { Feature, Customer, Usage } from "@/types"
 import { getUsage } from "./get-usage"
 import { getCustomerOptional } from "./get-customer"
@@ -8,10 +9,17 @@ import incrementScript from "@/adapters/lua/increment.lua"
 
 /**
  * Lift a user-provided callback (sync or async) into an Effect.
- * No try-catch — Promise.resolve handles both sync and async uniformly.
  */
 const liftCallback = <A>(fn: () => A | Promise<A>): Effect.Effect<A, unknown> =>
     Effect.tryPromise(() => Promise.resolve(fn()))
+
+/**
+ * Validate amount — reject Infinity, NaN, unsafe integers.
+ */
+const validateAmount = (amount: number) =>
+    !Number.isFinite(amount)
+        ? Effect.fail(new ValidationError({ message: `Invalid amount: ${amount}. Must be a finite number.` }))
+        : Effect.succeed(amount)
 
 interface ConsumeParams {
     referenceId: string
@@ -45,6 +53,8 @@ interface ConsumeResult {
  */
 export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }: ConsumeParams) =>
     Effect.gen(function* () {
+        yield* validateAmount(amount)
+
         const redis = yield* RedisService
         const db = yield* DbService
         const logger = yield* LoggerService

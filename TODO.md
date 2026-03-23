@@ -23,9 +23,9 @@ Full technical plan: `.claude/plans/optimized-moseying-brooks.md`
 - [x] `types.ts` — `z.infer<>` replaced with `Schema.Schema.Type<>`
 - [x] Schema tests rewritten with `Schema.decodeUnknownEither`
 - [x] Lua `cjson`/`XADD` guarded for mock Redis compatibility
-- [ ] Config validation at init (can use `@effect/schema` for this now)
+- [x] Config validation at init — `package/config.ts` (moved to Phase 8)
 
-Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zod for body validation. Legacy Zod schemas kept (deprecated) for `cache.ts` and `usage-tracker.ts`.
+Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zod for body validation.
 
 ## Phase 3: Dual-Table DB + Lua Rewrite — DONE
 
@@ -92,61 +92,48 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 - [x] Zero try-catch in server code (only `Promise.resolve` bridge for user callbacks)
 - [x] BUSYGROUP handling via `Effect.catchAll` pattern match instead of `.catch`
 
-## Phase 8: Remaining
+## Phase 8: Config Validation + Performance — DONE
 
-- [ ] Config validation at init (`@effect/schema` — features non-empty, maxLimit >= minLimit, etc.)
-- [ ] Tests: rewrite for new architecture (pipelines, WAL, realtime, plan transitions)
-- [ ] Performance test: sub-10ms write latency benchmark
-- [ ] Concurrent consume race condition tests
+- [x] `package/config.ts` — validates at init: features non-empty, key matches, maxLimit >= minLimit, finite numbers, override references valid features, cache/wal config coherent
+- [x] `validateAmount` in consume pipeline — rejects `Infinity`, `NaN`, non-finite numbers via `ValidationError`
+- [x] `ValidationError` mapped to `BAD_REQUEST` in `runPipeline`
+- [x] Performance benchmark tests: consume avg 2.3ms, check avg 1.4ms, can-use avg 0.9ms (DB-only)
+
+## Phase 9: Tests — DONE
+
+- [x] `tests/entitlements.test.ts` — 6 tests: can-use (allowed, denied, preview) + use-feature (consume, reject, default amount)
+- [x] `tests/validation.test.ts` — 6 tests: config validation (empty features, maxLimit < minLimit, unknown override ref) + amount validation (Infinity, NaN)
+- [x] `tests/plan-transitions.test.ts` — 4 tests: carry-over on upgrade, reset on plan change, event logging, auto-resolve overrideKey
+- [x] `tests/performance-comparison.test.ts` — 5 tests: sequential throughput (1,075 ops/sec), burst (50 parallel), check after 200 writes, mixed workload, multi-feature
+- [x] `tests/performance.test.ts` — 4 tests: consume/check/can-use latency, burst correctness
+- [x] Fixed: `overrideKey` field added to `customer` BetterAuth schema (was missing)
+
+## Remaining
+
+- [ ] Integration tests with real Redis (Streams, pub/sub) — requires Docker/testcontainers
+- [ ] Concurrent consume race condition tests (parallel writes to same ref+feature)
 
 ---
 
-# Current State: 82 tests, 0 failures, 8 test files
+# Current State: 107 tests, 0 failures, 13 test files
 
-## What's Active
+## File Structure
 ```
 package/
-├── index.ts                     Plugin factory (const generic, satisfies BetterAuthPlugin)
-├── types.ts                     Types + InferFeatureKeys/InferOverrideKeys
-├── schema.ts                    Zod schemas (to be replaced by @effect/schema)
-├── utils.ts                     checkLimit, shouldReset, computePreviousResetTime, redactId
-├── errors.ts                    7 typed Effect errors
-├── runtime.ts                   runPipeline() bridge + resetRuntime()
-├── client.ts                    BetterAuth client plugin
-├── services/                    RedisService, DbService, LoggerService
-├── pipelines/                   All business logic as Effect pipelines
-├── endpoints/v2/                All endpoints (9 total, 2 new)
-├── adapters/
-│   ├── index.ts                 Legacy adapter (used by cache.ts only)
-│   ├── cache.ts                 UsageCache (legacy, uses tryCatch)
-│   ├── lua/increment.lua        Fixed Lua script (epoch_ms)
-│   └── queries/                 Legacy query files (used by adapter only)
-└── realtime/                    UsageTracker + WebSocketServer (legacy, to be rewritten)
+├── index.ts              Plugin factory (const generic, satisfies)
+├── types.ts              Clean types, InferFeatureKeys/InferOverrideKeys
+├── schema.ts             Pure @effect/schema
+├── errors.ts             7 typed Effect errors
+├── runtime.ts            runPipeline + WAL init + centralized error mapping
+├── utils.ts              checkLimit, shouldReset, redactId
+├── client.ts             BetterAuth client + reactive tracker (createUsageTracker)
+├── services/             RedisService, DbService, LoggerService
+├── pipelines/            All business logic (Effect)
+├── endpoints/            9 endpoints (thin wrappers, zero try-catch)
+├── wal/                  WAL worker + recovery
+├── adapters/lua/         increment.lua, set-meta.lua
+└── realtime/             Pure subscriber + websocket handlers (Effect)
 ```
-
-## What Was Deleted
-- `resolvers/` — 7 files + 3 test files (replaced by pipelines/)
-- `endpoints/*.ts` — 8 old endpoint files (replaced by endpoints/v2/)
-- `middlewares/` — 2 commented-out files
-- `adapters/lua/set-limit.lua` — empty file
-- `adapters/queries/__tests__/` — 3 old query test files
-- `adapters/__tests__/index.test.ts` — old adapter test
-- `normalizeData()` — removed from utils
-- 131 unit tests that tested deleted code
-
----
-
-# Completed Fixes
-
-## Foundational Bug Fixes (7/7)
-- [x] `shouldReset()` always returns true → `computePreviousResetTime()`
-- [x] `normalizeData()` reads nonexistent `updatedAt` → deleted entirely
-- [x] Operator precedence `?? 0 - x` → `(?? 0) - x`
-- [x] Falsy checks `resetValue: 0`, `curr: 0` → `== null` / `!= null`
-- [x] Lua `tonumber()` on ISO string → epoch_ms
-- [x] Lua `newAmount` before reset → compute after reset
-- [x] Double-write in pub/sub → removed `cache.insertEvent()` from pmessage handler
-- [x] `checkLimit` truthy check → `!= null`
 
 ---
 
@@ -154,12 +141,7 @@ package/
 
 | Bug | Status |
 |-----|--------|
-| ~~Fire-and-forget DB write when cache enabled~~ | **Fixed** — WAL worker handles DB writes |
-| ~~DB queries fetch all rows then sum in JS~~ | **Fixed** — `findOne` on `usage` table |
-| Silent `.catch()` in legacy cache/realtime | Phase 7 (rewrite to Effect) |
-| No input validation on `amount` | Phase 1 leftover (@effect/schema) |
-| No config validation at init | Phase 1 leftover (@effect/schema) |
-| No Redis key sanitization | Phase 7 |
-| Reset timezone sensitivity (local Date methods) | Phase 7 (UTC epoch_ms in Lua, but utils still uses local Date) |
+| ~~No input validation on `amount`~~ | **Fixed** — `validateAmount` rejects Infinity/NaN |
+| ~~No config validation at init~~ | **Fixed** — `validateConfig` at plugin init |
+| Reset timezone sensitivity (local Date methods in utils) | `shouldReset` uses local `Date`; Lua uses epoch_ms |
 | No idempotency keys | Future |
-| Debug logs with `\n\n\n` in legacy cache code | Phase 7 |

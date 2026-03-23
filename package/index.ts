@@ -14,14 +14,17 @@ import {
     getFeaturesEndpoint,
     getFeatureEndpoint,
 } from "./endpoints";
+import { validateConfig } from "./config";
 
 /**
  * Creates a usage plugin configured with the provided options.
  *
  * @param options - Plugin configuration; include `cacheOptions` to enable Redis cache and optional realtime features.
  * @returns A BetterAuth plugin with usage tracking, entitlement checks, and customer management endpoints.
+ * @throws Error if config is invalid (empty features, maxLimit < minLimit, etc.)
  */
 export function usage<const O extends UsageOptions>(options: O) {
+    validateConfig(options);
     return {
         id: "usage",
 
@@ -64,7 +67,8 @@ export function usage<const O extends UsageOptions>(options: O) {
                         input: true
                     },
                     email: { type: "string", required: false, input: true },
-                    name: { type: "string", required: false, input: true }
+                    name: { type: "string", required: false, input: true },
+                    overrideKey: { type: "string", required: false, input: true },
                 },
             }
         },
