@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { RedisService, DbService, LoggerService } from "@/services"
-import { CustomerNotFound, RedisError, DbError } from "@/errors"
+import { CustomerNotFound } from "@/errors"
 import type { Customer } from "@/types"
 
 /**
@@ -13,18 +13,16 @@ import type { Customer } from "@/types"
  * Returns: Effect<Customer, CustomerNotFound | RedisError | DbError, RedisService | DbService | LoggerService>
  */
 export const getCustomer = (referenceId: string) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
         const redis = yield* RedisService
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        // 1. Try Redis
         const cached = yield* tryGetFromCache(redis, referenceId)
         if (cached) {
             return cached
         }
 
-        // 2. Fallback to DB
         const customer = yield* db.findOne<Customer>({
             model: "customer",
             where: [{ field: "referenceId", value: referenceId }],
@@ -34,7 +32,6 @@ export const getCustomer = (referenceId: string) =>
             return yield* new CustomerNotFound({ referenceId })
         }
 
-        // 3. Hydrate cache (background, errors logged)
         yield* redis.hset(`customer:${referenceId}`, customerToHash(customer)).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
@@ -60,10 +57,9 @@ export const getCustomerOptional = (referenceId: string) =>
  * Try to read customer from Redis hash.
  */
 const tryGetFromCache = (redis: RedisService, referenceId: string) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
         const data = yield* redis.hgetall(`customer:${referenceId}`)
 
-        // hgetall returns {} for non-existent keys
         if (!data.referenceId) {
             return null
         }
