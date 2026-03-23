@@ -110,8 +110,19 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 
 ## Remaining
 
-- [ ] Integration tests with real Redis (Streams, pub/sub) — requires Docker/testcontainers
-- [ ] Concurrent consume race condition tests (parallel writes to same ref+feature)
+None — all phases complete.
+
+---
+
+# Test Commands
+
+```bash
+bun run test          # 107 tests — e2e + unit (no Docker needed)
+bun run test:redis    # 11 tests — Redis integration (requires: docker run -d -p 6399:6379 redis:7-alpine)
+bun run test:perf     # 9 tests — performance benchmarks with [PERF] output
+```
+
+Note: `bun run test:redis` requires a running Redis on port 6399. These tests verify Lua script execution, WAL stream (XADD/XREADGROUP/XACK), pub/sub publishing, and concurrent writes (100 parallel increments). They are excluded from the default `bun run test` to avoid ioredis-mock conflicts.
 
 ---
 

@@ -13,9 +13,11 @@
     "scripts": {
         "build": "tsup",
         "dev": "tsup --watch",
-        "test": "bun test",
+        "test": "bun test tests/ package/",
         "test:watch": "bun test --watch",
-        "test:coverage": "bun test --coverage"
+        "test:coverage": "bun test --coverage",
+        "test:redis": "bun test tests-infra/redis.test.ts",
+        "test:perf": "bun test tests/performance.test.ts tests/performance-comparison.test.ts"
     },
     "type": "module",
     "types": "./dist/index.d.ts",
