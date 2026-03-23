@@ -137,6 +137,21 @@ export type Feature = {
 export type Features = Record<string, Feature>;
 
 /**
+ * Extract feature keys as a union type from a UsageOptions config.
+ *
+ * usage({ features: { "api-calls": {...}, "credits": {...} } })
+ *   → InferFeatureKeys = "api-calls" | "credits"
+ */
+export type InferFeatureKeys<O extends UsageOptions> = keyof O["features"] & string;
+
+/**
+ * Extract override keys as a union type from a UsageOptions config.
+ */
+export type InferOverrideKeys<O extends UsageOptions> = O["overrides"] extends Record<string, any>
+    ? keyof O["overrides"] & string
+    : never;
+
+/**
  * Dictionary of customers keyed by their `referenceId`.
  */
 export type Customers = Record<string, Customer>;

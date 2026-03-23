@@ -1,28 +1,27 @@
-import { APIError, type BetterAuthPlugin } from "better-auth";
-import type { UsageOptions, UsageOptionsWithCache } from "./types";
-import { UsageCache } from "./adapters/cache";
-import { UsageTracker } from "./realtime/usage-tracker";
-import { UsageWebSocketServer } from "./realtime/websocket-server";
+import { type BetterAuthPlugin } from "better-auth";
+import type { UsageOptions } from "./types";
+
+export type { UsageOptions, InferFeatureKeys, InferOverrideKeys } from "./types";
+export type { Feature, Customer, Usage } from "./types";
 import {
+    getConsumeEndpoint,
+    getCheckEndpoint,
+    getCanUseEndpoint,
+    getUseFeatureEndpoint,
     getSyncEndpoint,
     getUpsertCustomerEndpoint,
-    getCheckEndpoint,
+    getCheckCustomerEndpoint,
     getFeaturesEndpoint,
     getFeatureEndpoint,
-    getConsumeEndpoint
-} from "./endpoints/";
-import { type UsageAdapter } from "./adapters";
-import type { AuthContext } from "better-auth";
-import { getCheckCustomerEndpoint } from "./endpoints/check-customer";
+} from "./endpoints/v2";
+
 /**
  * Creates a usage plugin configured with the provided options.
  *
- * The plugin may initialize an optional Redis-backed cache and an optional realtime WebSocket server when `init()` is called, depending on `options.cacheOptions`.
- *
- * @param options - Plugin configuration; include `cacheOptions` to enable the Redis cache and optional realtime features (CORS, port, and enableRealtime).
- * @returns A BetterAuth plugin object containing `id`, `init()`, `schema`, and `endpoints` for usage tracking and customer management.
+ * @param options - Plugin configuration; include `cacheOptions` to enable Redis cache and optional realtime features.
+ * @returns A BetterAuth plugin with usage tracking, entitlement checks, and customer management endpoints.
  */
-export function usage<O extends UsageOptions = UsageOptions>(options: O) {
+export function usage<const O extends UsageOptions>(options: O) {
     return {
         id: "usage",
 
@@ -61,14 +60,18 @@ export function usage<O extends UsageOptions = UsageOptions>(options: O) {
         },
 
         endpoints: {
+            // Existing endpoints (v2 — Effect-powered)
             getFeature: getFeatureEndpoint(options),
             consumeFeature: getConsumeEndpoint(options),
             listFeatures: getFeaturesEndpoint(options),
             checkUsage: getCheckEndpoint(options),
             checkCustomer: getCheckCustomerEndpoint(options),
             upsertCustomer: getUpsertCustomerEndpoint(options),
-            syncUsage: getSyncEndpoint(options)
+            syncUsage: getSyncEndpoint(options),
 
+            // New entitlement endpoints
+            canUse: getCanUseEndpoint(options),
+            useFeature: getUseFeatureEndpoint(options),
         },
-    } as BetterAuthPlugin;
+    } satisfies BetterAuthPlugin;
 }

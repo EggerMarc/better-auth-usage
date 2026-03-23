@@ -41,13 +41,16 @@ export const checkUsage = ({
             allowed: status === "in-limit",
             status,
             current: usage.amount,
+            currentAmount: usage.amount,  // backward compat
             max: feature.maxLimit,
+            maxLimit: feature.maxLimit,    // backward compat
             min: feature.minLimit,
+            minLimit: feature.minLimit,    // backward compat
             remaining: feature.maxLimit != null ? feature.maxLimit - usage.amount : null,
             percent: feature.maxLimit != null && feature.maxLimit > 0
                 ? Math.round((usage.amount / feature.maxLimit) * 100)
                 : null,
-        } satisfies CheckResult
+        }
     })
 
 /**

@@ -1,5 +1,23 @@
 import { createHash } from "crypto";
-import type { cached_Usage, ConsumptionLimitType, ResetType, Usage } from "./types.ts";
+import type { ConsumptionLimitType, ResetType } from "./types.ts";
+
+// ── Legacy helpers (used by cache.ts, realtime, old query files) ──
+
+type Success<T> = { data: T; error: null };
+type Failure<E> = { data: null; error: E };
+type Result<T, E = Error> = Success<T> | Failure<E>;
+
+/** @deprecated Use Effect error channel instead. Kept for legacy adapter/cache code. */
+export async function tryCatch<T, E = Error>(
+    promise: Promise<T>,
+): Promise<Result<T, E>> {
+    try {
+        const data = await promise;
+        return { data, error: null };
+    } catch (error) {
+        return { data: null, error: error as E };
+    }
+}
 
 /**
  * Return a short, deterministic hash of an identifier for safe logging.
@@ -156,62 +174,3 @@ function computePreviousResetTime(ref: Date, reset: ResetType): Date {
 }
 
 
-type Success<T> = {
-    data: T;
-    error: null;
-};
-
-type Failure<E> = {
-    data: null;
-    error: E;
-};
-
-type Result<T, E = Error> = Success<T> | Failure<E>;
-
-/**
- * Normalizes an operation's outcome into a Result object indicating success or failure.
- *
- * @returns A `Result` where on success `data` is the resolved value and `error` is `null`, and on failure `data` is `null` and `error` contains the thrown error.
- */
-export async function tryCatch<T, E = Error>(
-    promise: Promise<T>,
-): Promise<Result<T, E>> {
-    try {
-        const data = await promise;
-        return { data, error: null };
-    } catch (error) {
-        return { data: null, error: error as E };
-    }
-}
-
-/**
- * Convert data from a storage-specific shape into the canonical `Usage` shape.
- *
- * When `source` is `"cache"`, the function maps a `cached_Usage` record into a `Usage` object.
- * When `source` is `"db"`, the function returns the supplied `Usage` value unchanged.
- *
- * @param data - Input record: a `cached_Usage` when `source` is `"cache"`, or a `Usage` when `source` is `"db"`.
- * @param source - The origin of `data`, either `"cache"` or `"db"`.
- * @returns A `Usage` object normalized to the canonical shape.
- */
-export function normalizeData<
-    TSource extends "cache" | "db"
->(
-    data: TSource extends "cache" ? cached_Usage : Usage,
-    source: TSource
-): Usage {
-    if (source === "cache") {
-        const d = (data as cached_Usage)
-
-        return {
-            referenceId: d.referenceId,
-            feature: d.feature,
-            amount: d.current,
-            event: "cache",
-            createdAt: d.lastResetAt,
-            lastResetAt: d.lastResetAt
-        } as Usage
-    }
-
-    return data as Usage
-}

@@ -4,7 +4,13 @@ import { createAuthClient } from "better-auth/client";
 import { usage } from "../package/index";
 import type { UsageOptions } from "../package/types";
 
-export { shutdownUsage } from "../package/resolvers/options";
+import { shutdownUsage as _shutdownUsage } from "../package/resolvers/options";
+import { resetRuntime } from "../package/runtime";
+
+export async function shutdownUsage() {
+    await _shutdownUsage();
+    resetRuntime();
+}
 
 /**
  * Default feature config used across tests.

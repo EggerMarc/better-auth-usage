@@ -3,6 +3,7 @@ import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api
 import { z } from "zod"
 import type { UsageOptions } from "@/types"
 import { resolveFeature } from "@/pipelines/features"
+import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { consumeUsage } from "@/pipelines/consume"
 import { runPipeline } from "@/runtime"
 
@@ -26,9 +27,14 @@ export function getConsumeEndpoint(endpointOptions: UsageOptions) {
                     ctx.context,
                     endpointOptions,
                     Effect.gen(function* () {
+                        const overrideKey = yield* resolveOverrideKey({
+                            overrideKey: ctx.body.overrideKey,
+                            referenceId: ctx.body.referenceId,
+                        })
+
                         const feature = yield* resolveFeature({
                             featureKey: ctx.body.featureKey,
-                            overrideKey: ctx.body.overrideKey,
+                            overrideKey,
                             features: endpointOptions.features,
                             overrides: endpointOptions.overrides,
                         })

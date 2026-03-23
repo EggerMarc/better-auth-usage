@@ -2,34 +2,34 @@
 
 Full technical plan: `.claude/plans/optimized-moseying-brooks.md`
 
-## Phase 1: Type Foundation + Effect Setup
-- [ ] Add `effect` and `@effect/schema` dependencies, remove `zod`
-- [ ] `const` generic on `usage()` factory — capture feature keys as union type
-- [ ] `@effect/schema` schemas: `UsageSnapshot`, `UsageHistory`, `Customer`, `WalEntry`, `Feature`
-- [ ] Effect services: `RedisService`, `DbService`, `LoggerService` (as Layers)
-- [ ] Typed errors: `FeatureNotFound`, `CustomerNotFound`, `RedisError`, `DbError`, `LimitExceeded`, `ValidationError`
-- [ ] `Effect.runPromise()` boundary at each endpoint
-- [ ] Config validation at init via `@effect/schema`
+## Phase 1-2: Effect Foundation + Core Pipelines — DONE
 
-## Phase 2: Core Pipelines (replaces resolvers/)
-- [ ] `pipelines/consume.ts` — consume + useFeature (atomic check+consume)
-- [ ] `pipelines/check.ts` — check + canUse (check-only entitlement)
-- [ ] `pipelines/sync.ts` — sync/reset
-- [ ] `pipelines/customer.ts` — get/upsert customer + plan transition handling
-- [ ] `pipelines/features.ts` — resolveFeature (type-safe, auto-resolve `overrideKey` from customer)
-- [ ] Remove `tryCatch()` — replaced by Effect error channel
-- [ ] Remove `normalizeData()` — single canonical shape
-- [ ] Optional customer in consume (proceed without overrides if not found)
+- [x] Add `effect` and `@effect/schema` dependencies
+- [x] `const` generic on `usage()` factory — `satisfies BetterAuthPlugin` (DTS 4.5KB → 35KB)
+- [x] `InferFeatureKeys<O>` and `InferOverrideKeys<O>` type utilities exported
+- [x] Effect services: `RedisService`, `DbService`, `LoggerService` (as Layers)
+- [x] Typed errors: `FeatureNotFound`, `CustomerNotFound`, `RedisError`, `DbError`, `LimitExceeded`, `ValidationError`, `PlanChangeError`
+- [x] `runtime.ts` — `runPipeline()` bridge (BetterAuth → Effect)
+- [x] All 7 pipelines: `features`, `get-usage`, `get-customer`, `consume`, `check`, `customer`, `sync`
+- [x] All endpoints rewired through Effect (`endpoints/v2/`)
+- [x] New endpoints: `/usage/can-use` + `/usage/use-feature`
+- [x] Auto-resolve `overrideKey` from customer via `resolveOverrideKey` pipeline
+- [x] Optional customer in consume flow (`getCustomerOptional`)
+- [x] Auth (sessionMiddleware) on all endpoints
+- [x] Hooks via `Promise.resolve()` lift — clean, no try-catch
+- [x] Old code cleanup: deleted resolvers/, old endpoints, middlewares/, set-limit.lua, normalizeData
+- [x] `tryCatch` marked `@deprecated`, kept only for legacy cache/realtime code
+- [ ] `@effect/schema` schemas replacing Zod
+- [ ] Config validation at init
 
 ## Phase 3: Dual-Table DB + Lua Rewrite
 - [ ] `usage` table — one row per (referenceId, feature), fast reads
 - [ ] `usage_history` table — append-only event log with `planId` for analytics/billing
-- [ ] `get-usage.ts` → `findOne` on `usage` table (no more findMany + reduce)
-- [ ] `upsert-usage.ts` — upsert for `usage` table
-- [ ] `insert-history.ts` — append to `usage_history`
-- [ ] Rewrite `increment.lua` — atomic: reset → increment → XADD → PUBLISH (epoch_ms)
-- [ ] `set-meta.lua` — replaces `set-limit.lua` (epoch_ms)
-- [ ] Delete `reset-usage.ts`, `get-latest-usage.ts`
+- [ ] `get-usage` pipeline → `findOne` on `usage` table (currently still uses findMany + reduce)
+- [ ] New queries: `upsert-usage.ts`, `insert-history.ts`
+- [ ] Lua `increment.lua` → add XADD for WAL stream + PUBLISH for realtime
+- [ ] `set-meta.lua` — set metadata hash with epoch_ms
+- [ ] Delete remaining old query files (`get-usage.ts`, `insert-usage.ts`)
 - [ ] Migration guide for existing users
 
 ## Phase 4: WAL Worker
@@ -55,76 +55,76 @@ Full technical plan: `.claude/plans/optimized-moseying-brooks.md`
 - [ ] `dispose()` lifecycle cleanup
 
 ## Phase 7: Polish + Tests
-- [ ] Auth on all endpoints (currently 3/7 have no session middleware)
-- [ ] Structured logging via LoggerService (replace 34 console.log calls)
-- [ ] Delete dead code (middlewares/, set-limit.lua, commented featureLimits)
+- [ ] Structured logging via LoggerService (replace remaining console.log calls)
+- [ ] Delete remaining legacy code (`tryCatch`, old adapters/index.ts, cache.ts tryCatch usage)
+- [ ] Rewrite realtime (usage-tracker, websocket-server) to use Effect services
 - [ ] Rewrite tests with Effect test layers
 - [ ] Integration tests: WAL drain, reset boundary, realtime, plan transitions
 - [ ] Performance test: sub-10ms write latency
 - [ ] Concurrent consume race condition tests
 
-## New Endpoints (Phase 2)
+---
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/usage/can-use` | POST | Check-only entitlement → `{ allowed, current, max, remaining, status }` |
-| `/usage/use-feature` | POST | Atomic check + consume → same response, increments if allowed |
+# Current State: 153 tests, 0 failures, 11 test files
+
+## What's Active
+```
+package/
+├── index.ts                     Plugin factory (const generic, satisfies BetterAuthPlugin)
+├── types.ts                     Types + InferFeatureKeys/InferOverrideKeys
+├── schema.ts                    Zod schemas (to be replaced by @effect/schema)
+├── utils.ts                     checkLimit, shouldReset, computePreviousResetTime, redactId
+├── errors.ts                    7 typed Effect errors
+├── runtime.ts                   runPipeline() bridge + resetRuntime()
+├── client.ts                    BetterAuth client plugin
+├── services/                    RedisService, DbService, LoggerService
+├── pipelines/                   All business logic as Effect pipelines
+├── endpoints/v2/                All endpoints (9 total, 2 new)
+├── adapters/
+│   ├── index.ts                 Legacy adapter (used by cache.ts only)
+│   ├── cache.ts                 UsageCache (legacy, uses tryCatch)
+│   ├── lua/increment.lua        Fixed Lua script (epoch_ms)
+│   └── queries/                 Legacy query files (used by adapter only)
+└── realtime/                    UsageTracker + WebSocketServer (legacy, to be rewritten)
+```
+
+## What Was Deleted
+- `resolvers/` — 7 files + 3 test files (replaced by pipelines/)
+- `endpoints/*.ts` — 8 old endpoint files (replaced by endpoints/v2/)
+- `middlewares/` — 2 commented-out files
+- `adapters/lua/set-limit.lua` — empty file
+- `adapters/queries/__tests__/` — 3 old query test files
+- `adapters/__tests__/index.test.ts` — old adapter test
+- `normalizeData()` — removed from utils
+- 131 unit tests that tested deleted code
 
 ---
 
-# Completed Work (v0.1.18)
+# Completed Fixes
 
-## Foundational Bug Fixes (7/7 DONE)
-- [x] `shouldReset()` always returns true → added `computePreviousResetTime()`, correct boundary check
-- [x] `normalizeData()` reads nonexistent `updatedAt` → use `lastResetAt`
-- [x] Operator precedence `?? 0 - x` in `sync-usage.ts` → `(?? 0) - x`
-- [x] Falsy checks `resetValue: 0`, `curr: 0` in `reset-usage.ts` → `== null` / `!= null`
-- [x] Lua `tonumber()` on ISO string → pass epoch_ms (`Date.now()`)
-- [x] Lua `newAmount` before reset → compute after reset branch
+## Foundational Bug Fixes (7/7)
+- [x] `shouldReset()` always returns true → `computePreviousResetTime()`
+- [x] `normalizeData()` reads nonexistent `updatedAt` → deleted entirely
+- [x] Operator precedence `?? 0 - x` → `(?? 0) - x`
+- [x] Falsy checks `resetValue: 0`, `curr: 0` → `== null` / `!= null`
+- [x] Lua `tonumber()` on ISO string → epoch_ms
+- [x] Lua `newAmount` before reset → compute after reset
 - [x] Double-write in pub/sub → removed `cache.insertEvent()` from pmessage handler
-
-## Additional Fixes
-- [x] `checkLimit` truthy check on `maxLimit`/`minLimit` → `!= null`
-- [x] Hardcoded event name on DB-only path → uses `event` parameter
-- [x] No initial usage creation path → auto-creates initial record
-
-## Test Coverage (284 tests, 0 failures)
-
-<details>
-<summary>Expand test details</summary>
-
-### E2E Tests (69 tests across 6 files)
-- Auth enforcement (4), validation errors (3)
-- Consume/check pipeline (13), boundary conditions (6)
-- Cache-enabled pipeline (11)
-- Overrides, hooks, customer management (14)
-- Sync/reset logic (5)
-
-### Unit Tests (215 tests across 13 files)
-- Schema validation, utility functions, adapter operations
-- Cache operations, query functions, resolver logic
-- Realtime tracker, websocket server
-</details>
+- [x] `checkLimit` truthy check → `!= null`
 
 ---
 
-# Remaining Known Bugs (fixed during rewrite)
+# Remaining Known Bugs
 
 | Bug | Phase |
 |-----|-------|
-| Fire-and-forget DB write when cache enabled | Phase 4 (WAL) |
-| Schema shape mismatch: `Usage` spread into `insertEvent` | Phase 2 (single schema) |
-| Silent `.catch(() => {})` everywhere (10 instances) | Phase 2 (Effect errors) |
-| `resetValue` not used in non-Lua paths | Phase 3 (Lua handles all) |
-| No input validation on `amount` (Infinity, NaN) | Phase 1 (@effect/schema) |
-| No config validation at init | Phase 1 (@effect/schema) |
-| No auth on 3/7 endpoints | Phase 7 |
+| Fire-and-forget DB write when cache enabled | Phase 4 (WAL replaces it) |
+| DB queries fetch all rows then sum in JS | Phase 3 (findOne on usage table) |
+| Schema shape mismatch in cache.insertEvent | Phase 3 (single schema) |
+| Silent `.catch()` in legacy cache/realtime | Phase 7 (rewrite to Effect) |
+| No input validation on `amount` | Phase 1 (@effect/schema, still TODO) |
+| No config validation at init | Phase 1 (@effect/schema, still TODO) |
 | No Redis key sanitization | Phase 3 |
 | Reset timezone sensitivity (local Date methods) | Phase 3 (UTC epoch_ms) |
-| `shouldReset` can loop excessively | Phase 2 (O(1) computePreviousResetTime) |
-| DB queries fetch all rows then sum in JS | Phase 3 (findOne on usage table) |
-| No connection lifecycle / graceful shutdown | Phase 4 (Effect fibers) |
 | No idempotency keys | Future |
-| Debug logs with `\n\n\n` in production | Phase 7 |
-| Inconsistent logging prefixes | Phase 7 (LoggerService) |
-| Dead code (middlewares, set-limit.lua, commented code) | Phase 7 |
+| Debug logs with `\n\n\n` in legacy cache code | Phase 7 |

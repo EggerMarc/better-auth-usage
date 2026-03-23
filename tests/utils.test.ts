@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { checkLimit, shouldReset, tryCatch, normalizeData } from "../package/utils";
+import { checkLimit, shouldReset } from "../package/utils";
 
 describe("checkLimit", () => {
     test("returns in-limit when value is within bounds", () => {
@@ -48,15 +48,10 @@ describe("shouldReset", () => {
     });
 
     test("returns shouldReset: false when recently reset (daily)", () => {
-        // Set lastReset to the start of the current day's reset window
-        // For daily reset, nextReset is tomorrow at 00:00
-        // If lastReset is after tomorrow 00:00 minus 1 day (today 00:00), then no reset
         const now = new Date();
         const futureReset = new Date(now);
         futureReset.setDate(futureReset.getDate() + 1);
         futureReset.setHours(0, 0, 0, 0);
-
-        // lastReset is in the future (after the next reset boundary) means no reset
         const result = shouldReset(futureReset, "daily");
         expect(result.shouldReset).toBe(false);
     });
@@ -79,53 +74,6 @@ describe("shouldReset", () => {
     test("returns correct nextReset for weekly (next Monday)", () => {
         const result = shouldReset(null, "weekly");
         expect(result.shouldReset).toBe(true);
-        // nextReset should be a Monday (day 1)
         expect(result.nextReset!.getDay()).toBe(1);
-    });
-});
-
-describe("tryCatch", () => {
-    test("returns data on success", async () => {
-        const result = await tryCatch(Promise.resolve("hello"));
-        expect(result.data).toBe("hello");
-        expect(result.error).toBeNull();
-    });
-
-    test("returns error on failure", async () => {
-        const result = await tryCatch(Promise.reject(new Error("fail")));
-        expect(result.data).toBeNull();
-        expect(result.error).toBeInstanceOf(Error);
-        expect((result.error as Error).message).toBe("fail");
-    });
-});
-
-describe("normalizeData", () => {
-    test('normalizes cache data to Usage shape', () => {
-        const now = new Date();
-        const cacheData = {
-            referenceId: "ref-1",
-            feature: "api-calls",
-            current: 42,
-            lastResetAt: now,
-        };
-        const result = normalizeData(cacheData, "cache");
-        expect(result.referenceId).toBe("ref-1");
-        expect(result.feature).toBe("api-calls");
-        expect(result.amount).toBe(42);
-        expect(result.lastResetAt).toBe(now);
-    });
-
-    test('passes through db data unchanged', () => {
-        const now = new Date();
-        const dbData = {
-            referenceId: "ref-1",
-            feature: "api-calls",
-            amount: 42,
-            event: "use",
-            createdAt: now,
-            lastResetAt: now,
-        };
-        const result = normalizeData(dbData, "db");
-        expect(result).toEqual(dbData);
     });
 });

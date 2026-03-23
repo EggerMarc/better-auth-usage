@@ -52,14 +52,13 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
 
         // 2. Before hook
         if (feature.hooks?.before) {
-            yield* Effect.tryPromise({
-                try: () => feature.hooks!.before!({
+            yield* Effect.tryPromise(() =>
+                Promise.resolve(feature.hooks!.before!({
                     usage: { beforeAmount, afterAmount, amount },
                     customer,
                     feature,
-                }),
-                catch: (cause) => cause,  // propagate hook errors as-is
-            })
+                }))
+            )
         }
 
         // 3. Write — Redis (Lua) if available, DB fallback
@@ -137,14 +136,13 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
 
         // 4. After hook
         if (feature.hooks?.after) {
-            yield* Effect.tryPromise({
-                try: () => feature.hooks!.after!({
+            yield* Effect.tryPromise(() =>
+                Promise.resolve(feature.hooks!.after!({
                     usage: { beforeAmount, afterAmount: newTotal, amount },
                     customer,
                     feature,
-                }),
-                catch: (cause) => cause,
-            }).pipe(
+                }))
+            ).pipe(
                 Effect.catchAll((err) =>
                     Effect.sync(() =>
                         logger.warn("After hook failed", { feature: feature.key, error: err })
