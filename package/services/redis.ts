@@ -30,6 +30,24 @@ export interface RedisService {
     /** PUBLISH to a pub/sub channel */
     publish(channel: string, message: string): Effect.Effect<void, RedisError>
 
+    /** PSUBSCRIBE — pattern subscribe, returns a callback to handle messages */
+    psubscribe(pattern: string, onMessage: (channel: string, message: string) => void): Effect.Effect<void, RedisError>
+
+    /** XGROUP CREATE — create a consumer group (idempotent) */
+    xgroupCreate(stream: string, group: string, startId: string): Effect.Effect<void, RedisError>
+
+    /** XREADGROUP — read entries from a consumer group */
+    xreadgroup(group: string, consumer: string, stream: string, id: string, count: number): Effect.Effect<Array<[string, string[]]> | null, RedisError>
+
+    /** XACK — acknowledge processed entries */
+    xack(stream: string, group: string, ...ids: string[]): Effect.Effect<void, RedisError>
+
+    /** XLEN — get stream length */
+    xlen(stream: string): Effect.Effect<number, RedisError>
+
+    /** XTRIM — trim stream to max length */
+    xtrim(stream: string, maxLen: number): Effect.Effect<void, RedisError>
+
     /** QUIT — disconnect */
     quit(): Effect.Effect<void, RedisError>
 }
@@ -94,6 +112,51 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
 
                 publish: (channel, message) =>
                     wrapRedis("publish", () => client.publish(channel, message).then(() => undefined)),
+
+                psubscribe: (pattern, onMessage) =>
+                    wrapRedis("psubscribe", async () => {
+                        // Create a dedicated subscriber client (ioredis requires separate client for sub)
+                        const sub = client.duplicate()
+                        await sub.psubscribe(pattern)
+                        sub.on("pmessage", (_pattern, channel, message) => onMessage(channel, message))
+                    }),
+
+                xgroupCreate: (stream, group, startId) =>
+                    wrapRedis("xgroupCreate", () =>
+                        (client as any).xgroup("CREATE", stream, group, startId, "MKSTREAM")
+                            .then(() => undefined)
+                            .catch((err: any) => {
+                                // BUSYGROUP = group already exists, that's fine
+                                if (err.message?.includes("BUSYGROUP")) return undefined
+                                throw err
+                            })
+                    ),
+
+                xreadgroup: (group, consumer, stream, id, count) =>
+                    wrapRedis("xreadgroup", async () => {
+                        const result = await (client as any).xreadgroup(
+                            "GROUP", group, consumer,
+                            "COUNT", count,
+                            "STREAMS", stream, id
+                        )
+                        if (!result) return null
+                        // ioredis returns [[streamName, [[entryId, [field, value, ...]], ...]]]
+                        const entries = result[0]?.[1] ?? []
+                        return entries as Array<[string, string[]]>
+                    }),
+
+                xack: (stream, group, ...ids) =>
+                    wrapRedis("xack", () =>
+                        (client as any).xack(stream, group, ...ids).then(() => undefined)
+                    ),
+
+                xlen: (stream) =>
+                    wrapRedis("xlen", () => (client as any).xlen(stream)),
+
+                xtrim: (stream, maxLen) =>
+                    wrapRedis("xtrim", () =>
+                        (client as any).xtrim(stream, "MAXLEN", "~", maxLen).then(() => undefined)
+                    ),
 
                 quit: () =>
                     wrapRedis("quit", () => client.quit().then(() => undefined)),

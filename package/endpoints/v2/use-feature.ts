@@ -5,7 +5,7 @@ import type { UsageOptions } from "@/types"
 import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { useFeature } from "@/pipelines/consume"
-import { runPipeline } from "@/runtime"
+import { runPipeline, isWalActive } from "@/runtime"
 
 export function getUseFeatureEndpoint(endpointOptions: UsageOptions) {
     return createAuthEndpoint(
@@ -44,6 +44,7 @@ export function getUseFeatureEndpoint(endpointOptions: UsageOptions) {
                             amount: ctx.body.amount,
                             event: ctx.body.event,
                             feature,
+                            walEnabled: isWalActive(endpointOptions),
                         })
                     })
                 )

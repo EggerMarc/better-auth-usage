@@ -25,6 +25,7 @@
         "events": "^3.3.0",
         "ioredis": "^5.8.2",
         "socket.io": "^4.8.1",
+        "socket.io-client": "^4.8.3",
         "zod": "^4.1.12"
     },
     "devDependencies": {

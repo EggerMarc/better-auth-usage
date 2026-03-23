@@ -27,11 +27,14 @@ export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
                     ctx.context,
                     endpointOptions,
                     upsertCustomer({
-                        referenceId: ctx.body.referenceId,
-                        referenceType: ctx.body.referenceType,
-                        email: ctx.body.email,
-                        name: ctx.body.name,
-                        overrideKey: ctx.body.overrideKey,
+                        customer: {
+                            referenceId: ctx.body.referenceId,
+                            referenceType: ctx.body.referenceType,
+                            email: ctx.body.email,
+                            name: ctx.body.name,
+                            overrideKey: ctx.body.overrideKey,
+                        },
+                        features: endpointOptions.features,
                     })
                 )
             } catch (err: any) {

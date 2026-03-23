@@ -90,11 +90,8 @@ const tryGetFromCache = (
     })
 
 /**
- * Read usage from DB via the adapter.
- * Uses findOne on the usage table (single row per ref+feature).
- *
- * For now, falls back to the existing getUsageQuery behavior
- * until we migrate to the dual-table schema.
+ * Read usage from DB — single row per (referenceId, feature).
+ * Auto-creates initial row if none exists.
  */
 const getFromDb = (
     db: DbService,
@@ -102,34 +99,31 @@ const getFromDb = (
     feature: Omit<Feature, "hooks">
 ) =>
     Effect.gen(function* () {
-        const result = yield* db.findMany<Usage>({
+        const result = yield* db.findOne<Usage>({
             model: "usage",
             where: [
                 { field: "referenceId", value: referenceId },
                 { field: "feature", value: feature.key },
             ],
-            sortBy: { field: "createdAt", direction: "desc" },
         })
 
-        if (result.length === 0) {
-            // Auto-create initial usage record
-            const now = new Date()
-            const initial: Usage = {
-                referenceId,
-                amount: feature.resetValue ?? 0,
-                feature: feature.key,
-                createdAt: now,
-                lastResetAt: now,
-                event: "sync",
-            }
-            yield* db.create({ model: "usage", data: initial as any })
-            return initial
+        if (result) {
+            return result
         }
 
-        // Sum all records (current schema — will become findOne after Phase 3)
-        const last = result[0]
-        const total = result.reduce((sum, r) => sum + r.amount, 0)
-        return { ...last, amount: total } as Usage
+        // Auto-create initial usage row
+        const now = new Date()
+        const initial: Usage = {
+            referenceId,
+            amount: feature.resetValue ?? 0,
+            feature: feature.key,
+            createdAt: now,
+            lastResetAt: now,
+            updatedAt: now,
+            event: "sync",
+        }
+        yield* db.create({ model: "usage", data: initial as any })
+        return initial
     })
 
 /**

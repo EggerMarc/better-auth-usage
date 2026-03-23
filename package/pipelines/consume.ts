@@ -11,6 +11,7 @@ interface ConsumeParams {
     amount: number
     event: string
     feature: Feature
+    walEnabled?: boolean
 }
 
 interface ConsumeResult {
@@ -35,7 +36,7 @@ interface ConsumeResult {
  *
  * Returns: Effect<ConsumeResult, RedisError | DbError, RedisService | DbService | LoggerService>
  */
-export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumeParams) =>
+export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }: ConsumeParams) =>
     Effect.gen(function* () {
         const redis = yield* RedisService
         const db = yield* DbService
@@ -64,15 +65,20 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
         // 3. Write — Redis (Lua) if available, DB fallback
         const usageKey = `usage:${feature.key}:${referenceId}`
         const metaKey = `meta:${feature.key}:${referenceId}`
+        const walKey = "wal:usage"
 
-        // Try Redis Lua first
+        // Try Redis Lua first (atomic: increment + WAL append + publish)
         const luaResult = yield* redis.eval(
             incrementScript,
-            2,
+            3,              // 3 KEYS
             usageKey,
             metaKey,
-            amount,
-            Date.now(),
+            walKey,
+            amount,         // ARGV[1]
+            Date.now(),     // ARGV[2]
+            referenceId,    // ARGV[3]
+            feature.key,    // ARGV[4]
+            event,          // ARGV[5]
         ).pipe(
             Effect.catchTag("RedisError", (err) => {
                 // Redis unavailable — fall back to DB
@@ -88,50 +94,31 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
         let newTotal: number
 
         if (luaResult) {
-            // Redis succeeded
+            // Redis succeeded — newTotal comes from Lua
             const [total] = luaResult as [number, number, number]
             newTotal = total
-
-            // Write to DB in background (will be replaced by WAL in Phase 4)
-            yield* Effect.tryPromise({
-                try: () => db.create({
-                    model: "usage",
-                    data: {
-                        referenceId,
-                        amount,
-                        feature: feature.key,
-                        event,
-                        lastResetAt: currentUsage.lastResetAt,
-                        createdAt: new Date(),
-                    },
-                }),
-                catch: () => undefined,
-            }).pipe(
-                Effect.catchAll((err) =>
-                    Effect.sync(() =>
-                        logger.error("Background DB write failed", {
-                            referenceId,
-                            feature: feature.key,
-                            error: err,
-                        })
-                    )
-                ),
-                Effect.fork,
-            )
         } else {
-            // DB-only path
-            yield* db.create({
-                model: "usage",
-                data: {
-                    referenceId,
-                    amount,
-                    feature: feature.key,
-                    event,
-                    lastResetAt: currentUsage.lastResetAt,
-                    createdAt: new Date(),
-                },
-            })
+            // DB-only path — calculate newTotal locally
             newTotal = afterAmount
+        }
+
+        // Write to DB — skip if WAL worker handles it (Redis + WAL enabled)
+        if (luaResult && walEnabled) {
+            // WAL worker will drain stream → DB. No direct write needed.
+        } else {
+            // DB-only mode OR WAL disabled — write directly
+            const now = new Date()
+            yield* writeToDb(db, logger, {
+                referenceId,
+                feature: feature.key,
+                amount,
+                newTotal,
+                event,
+                overrideKey: customer?.overrideKey,
+                lastResetAt: currentUsage.lastResetAt,
+                now,
+                hasRedis: luaResult !== null && !walEnabled,
+            })
         }
 
         // 4. After hook
@@ -167,6 +154,99 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
             status,
         } satisfies ConsumeResult
     })
+
+/**
+ * Write to DB: upsert usage row (current total) + append usage_events row (delta).
+ * When Redis is available, runs in background fiber. When DB-only, runs blocking.
+ */
+const writeToDb = (
+    db: DbService,
+    logger: LoggerService,
+    params: {
+        referenceId: string
+        feature: string
+        amount: number
+        newTotal: number
+        event: string
+        overrideKey?: string
+        lastResetAt: Date
+        now: Date
+        hasRedis: boolean
+    }
+) => {
+    const pipeline = Effect.gen(function* () {
+        // 1. Upsert usage — one row per (referenceId, feature)
+        const existing = yield* db.findOne<any>({
+            model: "usage",
+            where: [
+                { field: "referenceId", value: params.referenceId },
+                { field: "feature", value: params.feature },
+            ],
+        })
+
+        if (existing) {
+            yield* db.update({
+                model: "usage",
+                where: [
+                    { field: "referenceId", value: params.referenceId },
+                    { field: "feature", value: params.feature },
+                ],
+                update: {
+                    amount: params.newTotal,
+                    event: params.event,
+                    lastResetAt: params.lastResetAt,
+                    updatedAt: params.now,
+                },
+            })
+        } else {
+            yield* db.create({
+                model: "usage",
+                data: {
+                    referenceId: params.referenceId,
+                    feature: params.feature,
+                    amount: params.newTotal,
+                    event: params.event,
+                    lastResetAt: params.lastResetAt,
+                    createdAt: params.now,
+                    updatedAt: params.now,
+                },
+            })
+        }
+
+        // 2. Append to usage_events (history)
+        yield* db.create({
+            model: "usageEvent",
+            data: {
+                referenceId: params.referenceId,
+                feature: params.feature,
+                amount: params.amount,
+                event: params.event,
+                overrideKey: params.overrideKey,
+                lastResetAt: params.lastResetAt,
+                createdAt: params.now,
+            },
+        })
+    })
+
+    if (params.hasRedis) {
+        // Redis is authoritative — DB write runs in background
+        return pipeline.pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() =>
+                    logger.error("Background DB write failed", {
+                        referenceId: params.referenceId,
+                        feature: params.feature,
+                        error: err,
+                    })
+                )
+            ),
+            Effect.fork,
+        )
+    }
+
+    // DB-only — write is blocking
+    return pipeline
+}
 
 /**
  * Atomic check + consume: only increments if the result would be in-limit.

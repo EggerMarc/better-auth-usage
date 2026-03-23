@@ -43,17 +43,22 @@ export class UsageCache extends EventEmitter {
         event,
     }: UsageEvent) {
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
+        const walKey = "wal:usage"
         const nowMs = Date.now();
         const { data, error } = await tryCatch(
             this
                 .cache
                 .eval(
-                    incrementScript, // lua script
-                    2, // number of keys
+                    incrementScript,
+                    3,              // 3 KEYS: counter, meta, wal stream
                     usageKey,
                     limitKey,
-                    amount,
-                    nowMs
+                    walKey,
+                    amount,         // ARGV[1]
+                    nowMs,          // ARGV[2]
+                    referenceId,    // ARGV[3]
+                    feature,        // ARGV[4]
+                    event ?? "use", // ARGV[5]
                 )
         )
 

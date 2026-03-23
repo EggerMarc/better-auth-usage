@@ -19,40 +19,59 @@ Full technical plan: `.claude/plans/optimized-moseying-brooks.md`
 - [x] Hooks via `Promise.resolve()` lift — clean, no try-catch
 - [x] Old code cleanup: deleted resolvers/, old endpoints, middlewares/, set-limit.lua, normalizeData
 - [x] `tryCatch` marked `@deprecated`, kept only for legacy cache/realtime code
-- [ ] `@effect/schema` schemas replacing Zod
-- [ ] Config validation at init
+- [x] `@effect/schema` schemas replacing Zod (`UsageSchema`, `CustomerSchema`, `UsageEventSchema`, `CachedUsageSchema`, `CachedLimitsSchema`, `CachedUsageEventSchema`)
+- [x] `types.ts` — `z.infer<>` replaced with `Schema.Schema.Type<>`
+- [x] Schema tests rewritten with `Schema.decodeUnknownEither`
+- [x] Lua `cjson`/`XADD` guarded for mock Redis compatibility
+- [ ] Config validation at init (can use `@effect/schema` for this now)
 
-## Phase 3: Dual-Table DB + Lua Rewrite
-- [ ] `usage` table — one row per (referenceId, feature), fast reads
-- [ ] `usage_history` table — append-only event log with `planId` for analytics/billing
-- [ ] `get-usage` pipeline → `findOne` on `usage` table (currently still uses findMany + reduce)
-- [ ] New queries: `upsert-usage.ts`, `insert-history.ts`
-- [ ] Lua `increment.lua` → add XADD for WAL stream + PUBLISH for realtime
-- [ ] `set-meta.lua` — set metadata hash with epoch_ms
-- [ ] Delete remaining old query files (`get-usage.ts`, `insert-usage.ts`)
-- [ ] Migration guide for existing users
+Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zod for body validation. Legacy Zod schemas kept (deprecated) for `cache.ts` and `usage-tracker.ts`.
 
-## Phase 4: WAL Worker
-- [ ] `wal/worker.ts` — `Effect.repeat` + `Schedule.spaced(1s)`, XREADGROUP consumer group
-- [ ] `wal/recovery.ts` — startup XAUTOCLAIM of pending entries
-- [ ] Drain: INSERT each event into `usage_history`, coalesce + UPSERT `usage`, XACK
-- [ ] Backpressure: XLEN check, warn via LoggerService
-- [ ] Graceful shutdown: `Fiber.interrupt`, await final drain
+## Phase 3: Dual-Table DB + Lua Rewrite — DONE
 
-## Phase 5: Plan Transitions
-- [ ] Detect `overrideKey` change in `upsertCustomer`
-- [ ] Per-feature `onPlanChange: "carry-over" | "reset"` config (default: carry-over)
-- [ ] Record `planId` on WAL entries and `usage_history`
-- [ ] Broadcast new limits via realtime on plan change
+- [x] `usage` table — one row per (referenceId, feature), `updatedAt` field added
+- [x] `usageEvent` table — append-only event log with `overrideKey` for analytics/billing
+- [x] `get-usage` pipeline → `findOne` on `usage` table (O(1) reads)
+- [x] Consume pipeline → upsert `usage` (total) + insert `usageEvent` (delta)
+- [x] Lua `increment.lua` → XADD to `wal:usage` stream + PUBLISH to `usage:events:*`
+- [x] `set-meta.lua` — set metadata hash with epoch_ms
+- [x] `cache.ts` updated to pass 3 KEYS + 5 ARGV to Lua
 
-## Phase 6: Reactive Client
-- [ ] Vanilla JS/TS tracker in `@eggermarc/better-auth-usage/client`
-- [ ] Socket.IO subscription + polling fallback
-- [ ] Local state: `isAllowed()`, `getUsage()`, `getAll()` — sync, zero latency
-- [ ] Events: `on("update")`, `on("threshold")`, `on("blocked")`
-- [ ] Configurable thresholds (e.g. `[0.5, 0.8, 0.9, 1.0]`)
-- [ ] Type-safe feature keys from server config
-- [ ] `dispose()` lifecycle cleanup
+## Phase 4: WAL Worker — DONE
+
+- [x] Stream ops added to `RedisService` (`xreadgroup`, `xack`, `xgroupCreate`, `xlen`, `xtrim`, `psubscribe`)
+- [x] `wal/worker.ts` — drain logic, coalescing, subscribe + poll strategies
+- [x] `wal/recovery.ts` — startup XAUTOCLAIM of pending entries
+- [x] Two configurable strategies:
+  - `"subscribe"` (default) — zero idle cost, push-based via pub/sub
+  - `"poll"` — `Effect.repeat` + `Schedule.spaced`, ⚠️ ~4 cmds/sec idle
+- [x] WAL config in `UsageOptions`: `cacheOptions.wal.{ enabled, drainStrategy, pollInterval }`
+- [x] Runtime starts WAL worker on first request, captures adapter
+- [x] Consume pipeline skips direct DB writes when WAL is active
+- [x] Backpressure: XLEN check, warn via LoggerService
+- [x] Graceful shutdown: `Fiber.interrupt` in `resetRuntime()`
+
+## Phase 5: Plan Transitions — DONE
+
+- [x] `onPlanChange: "carry-over" | "reset"` added to `Feature` type (default: carry-over)
+- [x] `upsertCustomer` detects `overrideKey` change (old vs new)
+- [x] Per-feature handling: carry-over (keep counter, log event) or reset (reset counter + DB + Redis, log event)
+- [x] `plan-change` events logged to `usageEvent` table with `overrideKey`
+- [x] Endpoint passes `features` config to pipeline for feature iteration
+
+## Phase 6: Reactive Client — DONE
+
+- [x] `createUsageTracker(options)` factory + `UsageTrackerHandle` class
+- [x] `isAllowed(feature)`, `getUsage(feature)`, `getAll()` — sync, zero latency
+- [x] `on("update")`, `on("threshold")`, `on("blocked")` + `off()` for unsubscribe
+- [x] Configurable thresholds with crossed/reset tracking
+- [x] WebSocket via `socket.io-client` (auto-subscribe to rooms, refetch on events)
+- [x] Polling fallback (if websocket fails or `websocket: false`)
+- [x] `dispose()` — cleanup socket, timers, handlers
+- [x] Custom `fetchImpl` and `headers` options (SSR, testing, auth cookies)
+- [x] `satisfies BetterAuthClientPlugin` (preserves type info, DTS 143B → 4.39KB)
+- [x] New endpoints in pathMethods: `/usage/can-use`, `/usage/use-feature`
+- [x] `socket.io-client` added as dependency
 
 ## Phase 7: Polish + Tests
 - [ ] Structured logging via LoggerService (replace remaining console.log calls)
@@ -116,15 +135,14 @@ package/
 
 # Remaining Known Bugs
 
-| Bug | Phase |
-|-----|-------|
-| Fire-and-forget DB write when cache enabled | Phase 4 (WAL replaces it) |
-| DB queries fetch all rows then sum in JS | Phase 3 (findOne on usage table) |
-| Schema shape mismatch in cache.insertEvent | Phase 3 (single schema) |
+| Bug | Status |
+|-----|--------|
+| ~~Fire-and-forget DB write when cache enabled~~ | **Fixed** — WAL worker handles DB writes |
+| ~~DB queries fetch all rows then sum in JS~~ | **Fixed** — `findOne` on `usage` table |
 | Silent `.catch()` in legacy cache/realtime | Phase 7 (rewrite to Effect) |
-| No input validation on `amount` | Phase 1 (@effect/schema, still TODO) |
-| No config validation at init | Phase 1 (@effect/schema, still TODO) |
-| No Redis key sanitization | Phase 3 |
-| Reset timezone sensitivity (local Date methods) | Phase 3 (UTC epoch_ms) |
+| No input validation on `amount` | Phase 1 leftover (@effect/schema) |
+| No config validation at init | Phase 1 leftover (@effect/schema) |
+| No Redis key sanitization | Phase 7 |
+| Reset timezone sensitivity (local Date methods) | Phase 7 (UTC epoch_ms in Lua, but utils still uses local Date) |
 | No idempotency keys | Future |
 | Debug logs with `\n\n\n` in legacy cache code | Phase 7 |

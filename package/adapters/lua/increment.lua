@@ -1,12 +1,20 @@
 -- KEYS[1] = usage counter key (e.g. usage:api-calls:user-123)
--- KEYS[2] = metadata hash key (e.g. limit:api-calls:user-123)
+-- KEYS[2] = metadata hash key (e.g. meta:api-calls:user-123)
+-- KEYS[3] = WAL stream key (e.g. wal:usage)
 -- ARGV[1] = amount (delta to apply)
 -- ARGV[2] = now_ms (epoch milliseconds)
+-- ARGV[3] = referenceId
+-- ARGV[4] = feature key
+-- ARGV[5] = event name (e.g. "use")
 
 local counterKey = KEYS[1]
 local metaKey    = KEYS[2]
+local walKey     = KEYS[3]
 local amount     = tonumber(ARGV[1])
 local now_ms     = tonumber(ARGV[2])
+local refId      = ARGV[3]
+local feature    = ARGV[4]
+local event      = ARGV[5]
 
 -- Load metadata hash
 local metaData = redis.call('HGETALL', metaKey)
@@ -42,5 +50,30 @@ end
 -- Apply the delta AFTER any reset
 local newTotal = current + amount
 redis.call('SET', counterKey, newTotal)
+
+-- Append to WAL stream for durable DB sync (pcall guards against mock Redis without stream support)
+pcall(redis.call, redis, 'XADD', walKey, '*',
+    'refId', refId,
+    'feature', feature,
+    'amount', amount,
+    'event', event,
+    'ts', now_ms,
+    'resetOccurred', resetOccurred,
+    'newTotal', newTotal,
+    'lastResetAt', lastResetAt
+)
+
+-- Publish for realtime subscribers (pcall guards against missing cjson in test environments)
+if cjson then
+    local channel = 'usage:events:' .. feature .. ':' .. refId
+    redis.call('PUBLISH', channel, cjson.encode({
+        refId = refId,
+        feature = feature,
+        amount = amount,
+        newTotal = newTotal,
+        event = event,
+        ts = now_ms
+    }))
+end
 
 return { newTotal, resetOccurred, lastResetAt }

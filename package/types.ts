@@ -1,14 +1,14 @@
 import type { UsageCache } from "./adapters/cache.ts";
 import type { UsageTracker } from "./realtime/usage-tracker.ts";
-import { cached_limitsSchema, cached_usageEventSchema, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
-import { z } from "zod";
 import type { UsageAdapter } from "./adapters/index.ts";
+import { Schema } from "@effect/schema"
+import { UsageSchema, UsageEventSchema, CustomerSchema, CachedUsageSchema, CachedUsageEventSchema, CachedLimitsSchema } from "./schema.ts"
 
 /**
- * Usage entry as inferred from the Zod schema.
- * Represents a single recorded usage event.
+ * Usage snapshot — one row per (referenceId, feature).
  */
-export type Usage = z.infer<typeof usageSchema>;
+export type Usage = Schema.Schema.Type<typeof UsageSchema>;
+export type UsageEvent = Schema.Schema.Type<typeof UsageEventSchema>;
 
 /**
  * Generic key/value store for extending base types
@@ -22,7 +22,12 @@ type ExtraFields = {
  * Customer specific usage limits
  * E.g.: Purchased credits
  */
-export type CustomerLimits = z.infer<typeof customerLimitsSchema>;
+export type CustomerLimits = {
+    referenceId: string
+    featureKey: string
+    maxLimit?: number
+    minLimit?: number
+};
 
 /**
  * Core Customer type used across the plugin.
@@ -32,7 +37,7 @@ export type CustomerLimits = z.infer<typeof customerLimitsSchema>;
  * - `email` / `name`: Optional metadata for identification.
  *
  */
-export type Customer = z.infer<typeof customerSchema>
+export type Customer = Schema.Schema.Type<typeof CustomerSchema>
 
 /**
  * Represents the deltas of usage for a single operation.
@@ -118,6 +123,13 @@ export type Feature = {
             feature: Feature;
         }) => Promise<void> | void;
     };
+
+    /**
+     * Behavior when a customer's plan (overrideKey) changes.
+     * - "carry-over" (default): usage stays, only limits change
+     * - "reset": usage resets to resetValue on plan change
+     */
+    onPlanChange?: "carry-over" | "reset";
 
     /**
      * Optional authorization function that decides if a given
@@ -221,6 +233,14 @@ export interface UsageOptions {
             origin: string | string[];
             credentials?: boolean;
         };
+        wal?: {
+            /** Enable WAL for durable Redis→DB sync. Default: true */
+            enabled?: boolean;
+            /** "subscribe" (default, zero idle cost) or "poll" (sends ~4 cmds/sec when idle) */
+            drainStrategy?: "subscribe" | "poll";
+            /** Poll interval in ms. Only used when drainStrategy is "poll". Default: 1000 */
+            pollInterval?: number;
+        };
     },
     logger?: {
         debug?(message: string, context?: Record<string, unknown>): void;
@@ -250,6 +270,6 @@ export interface EndpointParams {
 /**
  * Caching Types
  */
-export type cached_Usage = z.infer<typeof cached_usageSchema>;
-export type cached_UsageEvent = z.infer<typeof cached_usageEventSchema>;
-export type cached_Limits = z.infer<typeof cached_limitsSchema>;
+export type cached_Usage = Schema.Schema.Type<typeof CachedUsageSchema>;
+export type cached_UsageEvent = Schema.Schema.Type<typeof CachedUsageEventSchema>;
+export type cached_Limits = Schema.Schema.Type<typeof CachedLimitsSchema>;
