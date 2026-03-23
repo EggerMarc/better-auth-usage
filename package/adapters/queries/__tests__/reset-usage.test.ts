@@ -84,19 +84,7 @@ describe("resetUsageQuery", () => {
         });
 
         test("should handle zero current usage", async () => {
-            // curr: 0 is falsy, so the implementation takes the transaction path
-            mockAdapter.transaction = mock(async (callback) => {
-                const txAdapter = {
-                    findMany: mock(() => Promise.resolve([])),
-                    create: mock(() => Promise.resolve({
-                        id: "usage-reset",
-                        amount: 100,
-                        event: "reset"
-                    }))
-                };
-                return await callback(txAdapter as any);
-            });
-
+            // curr: 0 is now handled by the direct create path (not transaction)
             await resetUsageQuery({
                 adapter: mockAdapter,
                 referenceId: "user-123",
@@ -104,7 +92,13 @@ describe("resetUsageQuery", () => {
                 feature: mockFeature
             });
 
-            expect(mockAdapter.transaction).toHaveBeenCalled();
+            expect(mockAdapter.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    data: expect.objectContaining({
+                        amount: 100 // resetValue (100) - curr (0)
+                    })
+                })
+            );
         });
 
         test("should handle current usage exceeding resetValue", async () => {

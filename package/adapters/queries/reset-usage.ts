@@ -24,11 +24,11 @@ export async function resetUsageQuery({
     curr,
     feature,
 }: ResetUsageQueryParams) {
-    if (!feature.resetValue) {
+    if (feature.resetValue == null) {
         return
     }
 
-    if (curr) {
+    if (curr != null) {
         const usage = await adapter.create<Usage>({
             model: "usage",
             data: {

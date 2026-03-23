@@ -51,14 +51,15 @@ describe("UsageCache", () => {
             };
 
             const nowMock = Date.now();
-            mockRedis.eval.mockResolvedValueOnce([60, nowMock]);
+            mockRedis.eval.mockResolvedValueOnce([60, 0, nowMock]);
 
             const result = await cache.insertEvent(event);
 
             expect(result).toEqual({
                 amount: 10,
                 afterValue: 60,
-                resetAt: new Date(nowMock)
+                resetOccurred: false,
+                lastResetAt: new Date(nowMock)
             });
             expect(mockRedis.eval).toHaveBeenCalledTimes(1);
         });
@@ -71,7 +72,7 @@ describe("UsageCache", () => {
             };
 
             const nowMock = Date.now();
-            mockRedis.eval.mockResolvedValueOnce([1000000, nowMock]);
+            mockRedis.eval.mockResolvedValueOnce([1000000, 0, nowMock]);
 
             const result = await cache.insertEvent(event);
 
@@ -87,7 +88,7 @@ describe("UsageCache", () => {
             };
 
             const nowMock = Date.now();
-            mockRedis.eval.mockResolvedValueOnce([50, nowMock]);
+            mockRedis.eval.mockResolvedValueOnce([50, 0, nowMock]);
 
             const result = await cache.insertEvent(event);
 

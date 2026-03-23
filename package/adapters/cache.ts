@@ -42,10 +42,8 @@ export class UsageCache extends EventEmitter {
         amount,
         event,
     }: UsageEvent) {
-        console.log(`[bau][cache] Cache inserting: ${amount}`)
         const { usageKey, limitKey } = this.resolveKeys(referenceId, feature)
-        const now = new Date().toISOString();
-        console.log(`Now is ${now}`)
+        const nowMs = Date.now();
         const { data, error } = await tryCatch(
             this
                 .cache
@@ -55,7 +53,7 @@ export class UsageCache extends EventEmitter {
                     usageKey,
                     limitKey,
                     amount,
-                    now
+                    nowMs
                 )
         )
 
@@ -65,12 +63,13 @@ export class UsageCache extends EventEmitter {
             })
         }
 
-        const [newAmount, resetAt] = data as [number, number | undefined];
+        const [newTotal, resetOccurred, lastResetAt] = data as [number, number, number];
 
         return {
             amount,
-            afterValue: newAmount,
-            resetAt: resetAt != null ? new Date(resetAt) : undefined,
+            afterValue: newTotal,
+            resetOccurred: resetOccurred === 1,
+            lastResetAt: lastResetAt ? new Date(lastResetAt) : undefined,
         }
 
     }
@@ -191,12 +190,12 @@ export class UsageCache extends EventEmitter {
         const { error } = await tryCatch(
             this.cache.hset(limitKey, {
                 ...limits,
-                // Need to be ISO string 
-                resetAt: limits.resetAt?.toISOString()
+                // Store as epoch_ms for Lua arithmetic
+                resetAt: limits.resetAt ? String(limits.resetAt.getTime()) : undefined,
+                lastResetAt: limits.lastResetAt ? String(limits.lastResetAt.getTime()) : undefined,
             })
         );
         if (error) {
-            console.log(`What's the problem now????? ${error.message}`)
             throw new APIError("INTERNAL_SERVER_ERROR", { message: `[ERROR][USAGE] Failed to insert limits for ${limitKey}, ${error.message}` })
         }
         return limits

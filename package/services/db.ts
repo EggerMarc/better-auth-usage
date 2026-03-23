@@ -1,0 +1,64 @@
+import { Context, Effect } from "effect"
+import { DbError } from "@/errors"
+import type { AuthContext } from "better-auth"
+
+/**
+ * DbService interface — wraps BetterAuth's adapter.
+ *
+ * BetterAuth provides a database adapter (Drizzle, Prisma, etc.)
+ * via the AuthContext. This service wraps it with typed Effect errors.
+ */
+export interface DbService {
+    findOne<T>(params: {
+        model: string,
+        where: Array<{ field: string, value: string }>
+    }): Effect.Effect<T | null, DbError>
+
+    findMany<T>(params: {
+        model: string,
+        where: Array<{ field: string, value: string }>,
+        sortBy?: { field: string, direction: "asc" | "desc" }
+    }): Effect.Effect<T[], DbError>
+
+    create<T>(params: {
+        model: string,
+        data: Record<string, unknown>
+    }): Effect.Effect<T, DbError>
+
+    update<T>(params: {
+        model: string,
+        where: Array<{ field: string, value: string }>,
+        update: Record<string, unknown>
+    }): Effect.Effect<T, DbError>
+}
+
+export const DbService = Context.GenericTag<DbService>("DbService")
+
+/**
+ * Wrap a BetterAuth adapter call in a typed Effect.
+ */
+const wrapDb = <T>(operation: string, fn: () => Promise<T>): Effect.Effect<T, DbError> =>
+    Effect.tryPromise({
+        try: fn,
+        catch: (cause) => new DbError({ cause, operation }),
+    })
+
+/**
+ * Create a DbService from a BetterAuth AuthContext.
+ *
+ * Called per-request since BetterAuth provides the adapter via context.
+ * Unlike RedisService (long-lived), this is created fresh per endpoint call.
+ */
+export const makeDbService = (ctx: AuthContext): DbService => ({
+    findOne: (params) =>
+        wrapDb("findOne", () => ctx.adapter.findOne(params)),
+
+    findMany: (params) =>
+        wrapDb("findMany", () => ctx.adapter.findMany(params)),
+
+    create: (params) =>
+        wrapDb("create", () => ctx.adapter.create(params)),
+
+    update: (params) =>
+        wrapDb("update", () => ctx.adapter.update(params)),
+})

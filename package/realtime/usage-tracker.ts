@@ -44,7 +44,8 @@ export class UsageTracker extends EventEmitter {
             try {
                 const parsed = JSON.parse(message);
                 const update = cached_usageEventSchema.parse(parsed);
-                await this.cache.insertEvent(update);
+                // Do NOT call cache.insertEvent here — the original write already happened.
+                // This handler only broadcasts to WebSocket clients.
                 this.emit("usage:update", update);
                 this.broadcastUpdate(update);
             } catch (err) {

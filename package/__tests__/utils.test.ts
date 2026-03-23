@@ -253,12 +253,11 @@ describe("shouldReset", () => {
         expect(result.shouldReset).toBe(true);
     });
 
-    it("should reset for daily when last reset was today (next reset is tomorrow)", () => {
+    it("should not reset for daily when last reset was today", () => {
         const today = new Date();
         const result = shouldReset(today, "daily");
-        // The implementation checks lastReset < nextResetTime (tomorrow midnight),
-        // which is always true for a lastReset set to "now"
-        expect(result.shouldReset).toBe(true);
+        // lastReset is after today's midnight boundary, so no reset needed
+        expect(result.shouldReset).toBe(false);
         expect(result.nextReset).toBeInstanceOf(Date);
     });
 });

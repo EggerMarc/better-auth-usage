@@ -59,7 +59,7 @@ export async function resolveSyncUsage({
             const resetData = await options.cache.insertEvent({
                 referenceId,
                 feature: feature.key,
-                amount: (feature.resetValue ?? 0 - data.amount),
+                amount: (feature.resetValue ?? 0) - data.amount,
                 event: "reset"
             })
 

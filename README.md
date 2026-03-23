@@ -2,21 +2,50 @@
 
 **Warning!** This package is a **work in progress**! Expect breaking changes and functionality changes.
 
-Feature and usage-based authorization plugin for [BetterAuth](https://www.better-auth.com/). Provides a way to define **features**, **track usage**, apply **per-plan limits**, and integrate with external systems (Stripe, custom hooks, etc).
+Usage tracking, feature gating, and billing metering plugin for [BetterAuth](https://www.better-auth.com/). Define features with limits and reset strategies in your config, track usage per customer/team/session, gate access based on plan-specific limits, and stream usage state to clients in real-time.
+
+## Vision
+
+This plugin aims to be the **single source of truth for feature access** in BetterAuth apps. From the config, you define the scopes and how the usage of a feature works. On the UI/UX side, you track whether a user still has access or not.
+
+**Core goals:**
+- **Type-safe feature keys** — Features defined in config become a union type. `featureKey: "api-calls"` autocompletes and type-checks everywhere.
+- **Entitlement API** — `canUse()` (check-only) and `useFeature()` (atomic check + consume). One call to gate any action.
+- **Sub-10ms writes** — Redis-primary with write-ahead log (WAL) for durability. Lua script does atomic increment + reset + WAL append + publish.
+- **Real-time state** — Reactive client with websocket subscription, local state, `isAllowed()` sync check, and threshold callbacks. Build your own dashboards.
+- **Plan transitions** — When a customer changes plans, usage carries over or resets per feature config. Plan ID recorded on every event for billing reconciliation.
+- **Analytics-ready** — Dual-table DB: `usage` (fast reads) + `usage_history` (append-only event log for time-series, billing, and audit).
+- **Framework-agnostic client** — Vanilla JS/TS tracker ships in-package. React/Vue/Svelte wrappers are ~15 lines.
 
 ## Roadmap
-Below are the action items to fix known limitations of this plugin. Namely, customer management and consumption idempotency.
+
+### Completed
 - [x] Customer table
 - [x] Consumption adapter as transaction
 - [x] Redis caching with Lua-based atomic increments
 - [x] Real-time WebSocket updates (optional)
-- [x] Integration test suite (DB-only + cached)
-- [x] Comprehensive E2E and unit test coverage (284 tests)
-- [ ] Customer provider (Optional - considering leaving this to dev)
-    - [ ] `useCustomer(referenceId)`
-- [ ] Per-customer feature limits (`featureLimits`)
-- [ ] Consumption idempotency keys
+- [x] Comprehensive test coverage (284 tests)
+- [x] Critical bug fixes (shouldReset, Lua script, operator precedence, falsy checks, double-write)
 
+### v1.0
+- [ ] Effect runtime (`effect` + `@effect/schema`, typed errors, service layers)
+- [ ] Type-safe feature keys (const generic inference from config)
+- [ ] Entitlement endpoints (`/usage/can-use`, `/usage/use-feature`)
+- [ ] Dual-table DB (`usage` + `usage_history` with `planId`)
+- [ ] Redis-primary + WAL (Redis Streams, background drain worker)
+- [ ] Plan transitions (`onPlanChange: "carry-over" | "reset"` per feature)
+- [ ] Reactive client (websocket + polling fallback, local state, threshold events)
+- [ ] Auto-resolve `overrideKey` from customer
+- [ ] Optional customer in consume flow
+- [ ] Config validation at init
+- [ ] Structured logging (user-provided logger)
+- [ ] Auth on all endpoints
+
+### Future
+- [ ] Idempotency keys
+- [ ] Bulk operations (batch consume, batch check)
+- [ ] Manual reset endpoint
+- [ ] Usage history query endpoint
 
 ## Features
 
@@ -45,35 +74,29 @@ import { usage } from "@eggermarc/better-auth-usage";
 export const auth = betterAuth({
     plugins: [usage({
         features: {
-            "token-feature": {
-                key: "token-feature",
+            "api-calls": {
+                key: "api-calls",
                 maxLimit: 1000,
                 reset: "monthly",
                 resetValue: 0,
-                details: ["Number of tokens per month"],
+                details: ["Number of API calls per month"],
+            },
+            "credits": {
+                key: "credits",
+                maxLimit: 50000,
+                reset: "never",
             }
         },
         overrides: {
             "starter-plan": {
                 features: {
-                    "token-feature": {
-                        maxLimit: 10_000,
-                        stripeId: "price_xxx", // Can declare extra fields
-                        hooks: {
-                            after: async ({ usage, customer, feature }) => {
-                                console.log(
-                                    `[AFTER HOOK] ${customer.referenceId} used ${usage.amount} of ${feature.key}`
-                                );
-                            },
-                        },
-                    },
+                    "api-calls": { maxLimit: 10_000 },
                 },
             },
             "pro-plan": {
                 features: {
-                    "token-feature": {
-                        maxLimit: 1_000_000,
-                    },
+                    "api-calls": { maxLimit: 1_000_000 },
+                    "credits": { maxLimit: 500_000 },
                 },
             },
         },
@@ -102,50 +125,53 @@ export const client = createAuthClient({
 **Important:** A customer must be registered before consuming usage. The consume endpoint requires the customer to exist.
 
 ```ts
-// Register a customer first
+// Register a customer (user, team, org, session — you define the scope)
 await client.usage.upsertCustomer({
-  referenceId: "123",
-  referenceType: "user",
-  name: "John Doe",
-  email: "john@example.com",
+  referenceId: "team-123",
+  referenceType: "team",
+  name: "Acme Corp",
+  overrideKey: "pro-plan",  // auto-resolved on consume/check
 });
 
-// Then consume usage
+// Consume usage
 await client.usage.consume({
-  featureKey: "token-feature",
-  overrideKey: "starter-plan",
-  referenceId: "123",
+  featureKey: "api-calls",
+  referenceId: "team-123",
   amount: 1,
 });
 
 // Check current usage and limits
 const status = await client.usage.check({
-  featureKey: "token-feature",
-  referenceId: "123",
+  featureKey: "api-calls",
+  referenceId: "team-123",
 });
-// => { status: "in-limit", currentAmount: 1, maxLimit: 1000, minLimit: undefined }
+// => { status: "in-limit", currentAmount: 1, maxLimit: 1000000, remaining: 999999, percent: 0 }
 ```
 
-### Goals
-Why customer registration and not per user / organization query?
-- Generalizing customer management is not straight forward. Our goal was to not make many assumptions on the origin of the customer to let this plugin be usable for non typical use cases, like users and organizations. By giving customer registration to the dev, we allow multiple scenarios to arise, for instance **per-session** or **per-ip** limitations. We also open the door to **team** based usage.
+### Design Philosophy
 
+Why customer registration and not per user / organization query?
+
+We don't make assumptions about the origin of the customer. By giving customer registration to the developer, we allow multiple scenarios:
+
+- **Per-user** — `referenceId: userId`
+- **Per-team** — `referenceId: teamId`, shared usage across team members
+- **Per-organization** — `referenceId: orgId`
+- **Per-session / per-IP** — `referenceId: session.ipAddress`, rate limiting
+- **Per-API-key** — `referenceId: apiKeyId`
 
 #### Examples
 ##### Team based
 ```ts
-const customer = {
+await client.usage.upsertCustomer({
     referenceId: teamId,
     referenceType: "team",
-    email: session.user.email,
     name: `${session.user.name}@${teamName}`,
-}
-
-await client.usage.upsertCustomer(customer)
+    overrideKey: "team-plan",
+})
 
 await client.usage.consume({
-    featureKey: "token-feature",
-    overrideKey: "team-plan",
+    featureKey: "api-calls",
     referenceId: teamId,
     amount: 1,
 })
@@ -160,7 +186,7 @@ await client.usage.upsertCustomer({
 })
 
 await client.usage.consume({
-    featureKey: "token-feature",
+    featureKey: "api-calls",
     referenceId,
     amount: 1,
 })
@@ -195,7 +221,7 @@ overrides: {
 }
 ```
 
-The `overrideKey` is passed per-request to `consume`, `check`, or `sync` endpoints to apply the override for that specific call.
+The `overrideKey` is passed per-request to `consume`, `check`, or `sync` endpoints to apply the override for that specific call. If a customer has an `overrideKey` set, it will be auto-resolved (v1.0).
 
 ### Reset Strategies
 

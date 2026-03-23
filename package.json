@@ -20,6 +20,8 @@
     "type": "module",
     "types": "./dist/index.d.ts",
     "dependencies": {
+        "@effect/schema": "^0.75.5",
+        "effect": "^3.21.0",
         "events": "^3.3.0",
         "ioredis": "^5.8.2",
         "socket.io": "^4.8.1",

@@ -33,19 +33,20 @@ export function shouldReset(
     shouldReset: boolean,
     nextReset?: Date
 } {
+    if (reset === "never") {
+        return { shouldReset: false };
+    }
 
     const now = new Date();
-    if (reset === "never") {
-        return { shouldReset: false, }
+    const prevBoundary = computePreviousResetTime(now, reset);
+    const nextBoundary = computeNextResetTime(now, reset);
+
+    // Reset is needed if lastReset is before the most recent boundary
+    if (!lastReset || lastReset < prevBoundary) {
+        return { shouldReset: true, nextReset: nextBoundary };
     }
-    let nextResetTime = computeNextResetTime(now, reset);
-    while (nextResetTime <= now) {
-        nextResetTime = computeNextResetTime(nextResetTime, reset);
-    }
-    if (!lastReset || lastReset < nextResetTime) {
-        return { shouldReset: true, nextReset: nextResetTime };
-    }
-    return { shouldReset: false, nextReset: nextResetTime };
+
+    return { shouldReset: false, nextReset: nextBoundary };
 }
 
 /**
@@ -111,6 +112,49 @@ function computeNextResetTime(base: Date, reset: ResetType): Date {
     return next;
 }
 
+/**
+ * Compute the most recent reset boundary at or before a reference date.
+ *
+ * For "daily" at Tuesday 10am, returns Tuesday 00:00 (midnight today).
+ * For "monthly" on March 15th, returns March 1st 00:00.
+ */
+function computePreviousResetTime(ref: Date, reset: ResetType): Date {
+    const d = new Date(ref);
+
+    switch (reset) {
+        case "hourly":
+            d.setMinutes(0, 0, 0);
+            return d;
+        case "6-hourly":
+            d.setHours(Math.floor(d.getHours() / 6) * 6, 0, 0, 0);
+            return d;
+        case "daily":
+            d.setHours(0, 0, 0, 0);
+            return d;
+        case "weekly": {
+            const day = d.getDay(); // 0 = Sunday
+            const diff = day === 0 ? 6 : day - 1; // Monday = start of week
+            d.setDate(d.getDate() - diff);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        }
+        case "monthly":
+            d.setDate(1);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        case "quarterly":
+            d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        case "yearly":
+            d.setMonth(0, 1);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        case "never":
+            return ref;
+    }
+}
+
 
 type Success<T> = {
     data: T;
@@ -164,7 +208,7 @@ export function normalizeData<
             feature: d.feature,
             amount: d.current,
             event: "cache",
-            createdAt: d.updatedAt,
+            createdAt: d.lastResetAt,
             lastResetAt: d.lastResetAt
         } as Usage
     }
