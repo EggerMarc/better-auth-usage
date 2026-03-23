@@ -11,7 +11,7 @@ import { bearer } from "better-auth/plugins/bearer";
 import { createAuthClient } from "better-auth/client";
 import { usage } from "../package/index";
 import type { UsageOptions } from "../package/types";
-import { shutdownUsage } from "../package/resolvers/options";
+import { resetRuntime as shutdownUsage } from "../package/runtime";
 
 /**
  * Creates a test instance with cacheOptions enabled.

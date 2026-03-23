@@ -1,8 +1,5 @@
-import type { UsageCache } from "./adapters/cache.ts";
-import type { UsageTracker } from "./realtime/usage-tracker.ts";
-import type { UsageAdapter } from "./adapters/index.ts";
 import { Schema } from "@effect/schema"
-import { UsageSchema, UsageEventSchema, CustomerSchema, CachedUsageSchema, CachedUsageEventSchema, CachedLimitsSchema } from "./schema.ts"
+import { UsageSchema, UsageEventSchema, CustomerSchema } from "./schema.ts"
 
 /**
  * Usage snapshot — one row per (referenceId, feature).
@@ -249,27 +246,3 @@ export interface UsageOptions {
         error?(message: string, context?: Record<string, unknown>): void;
     },
 }
-
-
-/**
- * Internal type used by endpoints (includes injected cache/tracker)
- */
-export interface UsageOptionsWithCache extends UsageOptions {
-    cache?: UsageCache;
-    tracker?: UsageTracker;
-}
-
-/*
- *
- */
-export interface EndpointParams {
-    options: UsageOptionsWithCache,
-    adapter: UsageAdapter
-}
-
-/**
- * Caching Types
- */
-export type cached_Usage = Schema.Schema.Type<typeof CachedUsageSchema>;
-export type cached_UsageEvent = Schema.Schema.Type<typeof CachedUsageEventSchema>;
-export type cached_Limits = Schema.Schema.Type<typeof CachedLimitsSchema>;

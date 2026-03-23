@@ -57,37 +57,3 @@ export const CachedUsageEventSchema = Schema.Struct({
     amount: Schema.Number,
     event: Schema.optional(Schema.String),
 })
-
-// ── Legacy Zod compatibility ──
-// BetterAuth endpoints require Zod for body validation.
-// These re-exports keep the old import paths working for
-// cache.ts and usage-tracker.ts until they're rewritten.
-
-import { z } from "zod"
-
-/** @deprecated Use CachedUsageEventSchema instead */
-export const cached_usageEventSchema = z.object({
-    referenceId: z.string(),
-    feature: z.string(),
-    amount: z.number(),
-    event: z.string().optional()
-})
-
-/** @deprecated Use CustomerSchema instead */
-export const customerSchema = z.object({
-    referenceId: z.string(),
-    referenceType: z.string(),
-    email: z.string().optional(),
-    name: z.string().optional(),
-    overrideKey: z.string().optional(),
-})
-
-/** @deprecated Use CachedUsageSchema instead */
-export const cached_usageSchema = z.object({
-    referenceId: z.string(),
-    lastResetAt: z.date().nullable(),
-    feature: z.string(),
-    current: z.number(),
-    maxLimit: z.number().optional(),
-    minLimit: z.number().optional(),
-})

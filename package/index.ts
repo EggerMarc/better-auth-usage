@@ -13,7 +13,7 @@ import {
     getCheckCustomerEndpoint,
     getFeaturesEndpoint,
     getFeatureEndpoint,
-} from "./endpoints/v2";
+} from "./endpoints";
 
 /**
  * Creates a usage plugin configured with the provided options.
