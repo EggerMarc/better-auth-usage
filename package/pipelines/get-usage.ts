@@ -42,7 +42,7 @@ export const getUsage = ({ referenceId, feature }: GetUsageParams) =>
         yield* hydrateCache(redis, logger, referenceId, feature, dbUsage).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
-                    logger.warn("Failed to hydrate cache from DB", {
+                    logger.debug("Failed to hydrate cache from DB", {
                         referenceId,
                         feature: feature.key,
                         error: err,

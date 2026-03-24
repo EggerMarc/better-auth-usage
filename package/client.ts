@@ -222,6 +222,7 @@ class UsageTrackerHandle {
         try {
             const res = await this.options.fetchImpl(`${this.baseURL}/usage/check`, {
                 method: "POST",
+                credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
                     ...this.getHeaders(),
@@ -234,7 +235,9 @@ class UsageTrackerHandle {
 
             if (!res.ok) return
 
-            const data = await res.json()
+            const json = await res.json()
+            // BetterAuth may wrap response as { data: ... } or return directly
+            const data = json?.data ?? json
             this.updateFeature(feature, data)
         } catch {
             // Silently fail — will retry on next poll or websocket event

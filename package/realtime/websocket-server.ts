@@ -1,8 +1,8 @@
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { Server as SocketServer } from "socket.io"
 import type { UsageOptions } from "@/types"
 import { checkUsage } from "@/pipelines/check"
-import { LoggerService } from "@/services"
+import { RedisService, DbService, LoggerService } from "@/services"
 import { redactId } from "@/utils"
 
 interface SubscribeRequest {
@@ -21,10 +21,15 @@ const liftAuthorize = (fn: (...args: any[]) => boolean | Promise<boolean>, ...ar
 
 /**
  * Set up Socket.IO connection handlers.
+ *
+ * Accepts a `layer` that provides all services needed by pipelines.
+ * This is the same layer used by `runPipeline` — passed in from runtime.ts
+ * so the websocket handlers can run Effect pipelines with proper services.
  */
 export const setupWebSocketHandlers = (
     io: SocketServer,
     options: UsageOptions,
+    layer: Layer.Layer<RedisService | DbService | LoggerService>,
 ) =>
     Effect.gen(function* () {
         const logger = yield* LoggerService
@@ -89,7 +94,8 @@ export const setupWebSocketHandlers = (
                             Effect.sync(() =>
                                 socket.emit("usage:error", { error: "Failed to fetch usage" })
                             )
-                        )
+                        ),
+                        Effect.provide(layer),
                     )
                 )
             })

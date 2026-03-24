@@ -119,11 +119,11 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
             newTotal = afterAmount
         }
 
-        // Write to DB — skip if WAL worker handles it (Redis + WAL enabled)
+        // Write to DB
         if (luaResult && walEnabled) {
             // WAL worker will drain stream → DB. No direct write needed.
         } else {
-            // DB-only mode OR WAL disabled — write directly
+            // DB write — always runs in background fiber for fast response
             const now = new Date()
             yield* writeToDb(db, logger, {
                 referenceId,
@@ -134,7 +134,6 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
                 overrideKey: customer?.overrideKey,
                 lastResetAt: currentUsage.lastResetAt,
                 now,
-                hasRedis: luaResult !== null && !walEnabled,
             })
         }
 
@@ -173,8 +172,11 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
     })
 
 /**
- * Write to DB: upsert usage row (current total) + append usage_events row (delta).
- * When Redis is available, runs in background fiber. When DB-only, runs blocking.
+ * Write to DB: update usage row + append usage_events row.
+ * Wrapped in a transaction for atomicity. No redundant findOne —
+ * getUsage already ensures the usage row exists.
+ *
+ * 2 DB calls in 1 transaction instead of 3 sequential calls.
  */
 const writeToDb = (
     db: DbService,
@@ -188,21 +190,12 @@ const writeToDb = (
         overrideKey?: string
         lastResetAt: Date
         now: Date
-        hasRedis: boolean
     }
-) => {
-    const pipeline = Effect.gen(function* () {
-        // 1. Upsert usage — one row per (referenceId, feature)
-        const existing = yield* db.findOne<any>({
-            model: "usage",
-            where: [
-                { field: "referenceId", value: params.referenceId },
-                { field: "feature", value: params.feature },
-            ],
-        })
-
-        if (existing) {
-            yield* db.update({
+) =>
+    db.transaction((tx) =>
+        Effect.gen(function* () {
+            // 1. Update usage row (getUsage already ensured it exists)
+            yield* tx.update({
                 model: "usage",
                 where: [
                     { field: "referenceId", value: params.referenceId },
@@ -215,55 +208,32 @@ const writeToDb = (
                     updatedAt: params.now,
                 },
             })
-        } else {
-            yield* db.create({
-                model: "usage",
+
+            // 2. Append to usage_events (history)
+            yield* tx.create({
+                model: "usageEvent",
                 data: {
                     referenceId: params.referenceId,
                     feature: params.feature,
-                    amount: params.newTotal,
+                    amount: params.amount,
                     event: params.event,
+                    overrideKey: params.overrideKey,
                     lastResetAt: params.lastResetAt,
                     createdAt: params.now,
-                    updatedAt: params.now,
                 },
             })
-        }
-
-        // 2. Append to usage_events (history)
-        yield* db.create({
-            model: "usageEvent",
-            data: {
-                referenceId: params.referenceId,
-                feature: params.feature,
-                amount: params.amount,
-                event: params.event,
-                overrideKey: params.overrideKey,
-                lastResetAt: params.lastResetAt,
-                createdAt: params.now,
-            },
         })
-    })
-
-    if (params.hasRedis) {
-        // Redis is authoritative — DB write runs in background
-        return pipeline.pipe(
-            Effect.catchAll((err) =>
-                Effect.sync(() =>
-                    logger.error("Background DB write failed", {
-                        referenceId: params.referenceId,
-                        feature: params.feature,
-                        error: err,
-                    })
-                )
-            ),
-            Effect.fork,
-        )
-    }
-
-    // DB-only — write is blocking
-    return pipeline
-}
+    ).pipe(
+        Effect.catchAll((err) =>
+            Effect.sync(() =>
+                logger.error("DB write failed", {
+                    referenceId: params.referenceId,
+                    feature: params.feature,
+                    error: String(err),
+                })
+            )
+        ),
+    )
 
 /**
  * Atomic check + consume: only increments if the result would be in-limit.

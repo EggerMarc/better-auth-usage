@@ -1,17 +1,15 @@
-import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { betterAuth } from "better-auth";
 import { openAPI } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
 import { usage } from "package/index"
 
-const appOrigin = process.env.APP_ORIGIN;
-if (!appOrigin) {
-    throw new Error("Missing APP_ORIGIN");
-}
-
-
 export const auth = betterAuth({
-    trustedOrigins: [appOrigin],
+    trustedOrigins: (req) => {
+        const origin = req.headers.get("origin") ?? ""
+        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return [origin]
+        return []
+    },
     database: drizzleAdapter(db, {
         provider: "pg",
     }),
@@ -59,8 +57,8 @@ export const auth = betterAuth({
             },
         },
         cacheOptions: {
-            redisUrl: process.env.CACHE_URL!,
+            redisUrl: process.env.CACHE_REDIS!,
         },
-    }) as BetterAuthPlugin,
+    }),
     openAPI()]
 });

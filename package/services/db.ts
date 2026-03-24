@@ -30,6 +30,9 @@ export interface DbService {
         where: Array<{ field: string, value: string }>,
         update: Record<string, unknown>
     }): Effect.Effect<T, DbError>
+
+    /** Run multiple operations in a single DB transaction */
+    transaction<R>(fn: (tx: DbService) => Effect.Effect<R, DbError>): Effect.Effect<R, DbError>
 }
 
 export const DbService = Context.GenericTag<DbService>("DbService")
@@ -49,16 +52,29 @@ const wrapDb = <T>(operation: string, fn: () => Promise<T>): Effect.Effect<T, Db
  * Called per-request since BetterAuth provides the adapter via context.
  * Unlike RedisService (long-lived), this is created fresh per endpoint call.
  */
-export const makeDbService = (ctx: AuthContext): DbService => ({
+const makeDbServiceFromAdapter = (adapter: any): DbService => ({
     findOne: (params) =>
-        wrapDb("findOne", () => ctx.adapter.findOne(params)),
+        wrapDb("findOne", () => adapter.findOne(params)),
 
     findMany: (params) =>
-        wrapDb("findMany", () => ctx.adapter.findMany(params)),
+        wrapDb("findMany", () => adapter.findMany(params)),
 
     create: (params) =>
-        wrapDb("create", () => ctx.adapter.create(params)),
+        wrapDb("create", () => adapter.create(params)),
 
     update: (params) =>
-        wrapDb("update", () => ctx.adapter.update(params)),
+        wrapDb("update", () => adapter.update(params)),
+
+    transaction: (fn) =>
+        adapter.transaction
+            ? wrapDb("transaction", () =>
+                adapter.transaction((trx: any) =>
+                    Effect.runPromise(fn(makeDbServiceFromAdapter(trx)))
+                )
+            )
+            // No transaction support — run sequentially
+            : fn(makeDbServiceFromAdapter(adapter)),
 })
+
+export const makeDbService = (ctx: AuthContext): DbService =>
+    makeDbServiceFromAdapter(ctx.adapter)

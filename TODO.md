@@ -110,8 +110,8 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 
 ## Phase 10: Hardening — priority order
 
-### P0 — Runtime bugs
-- [ ] **Realtime `get:usage` crashes** — `websocket-server.ts` calls `Effect.runPromise(checkUsage(...))` without providing `RedisService`/`DbService`/`LoggerService` layers. Will crash on any `get:usage` socket event. Fix: use `runPipeline` pattern or pass layers through handler setup.
+### P0 — Runtime bugs — DONE
+- [x] **Realtime `get:usage` fixed** — `setupWebSocketHandlers` now accepts a `layer` parameter and provides it to `checkUsage` via `Effect.provide(layer)`.
 
 ### P1 — Silent data corruption — DONE
 - [x] **`shouldReset` uses UTC** — all `getDay`/`setHours`/etc. replaced with UTC variants. Tests updated.

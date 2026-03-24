@@ -1,4 +1,4 @@
-import { Effect, Schedule, Duration } from "effect"
+import { Effect, Schedule, Duration, Layer } from "effect"
 import { RedisService, DbService, LoggerService } from "@/services"
 import type { RedisError } from "@/errors"
 
@@ -170,26 +170,29 @@ const checkBackpressure = Effect.gen(function* () {
  * Start the WAL worker with the "subscribe" strategy.
  * Listens to pub/sub events and drains on each event.
  * Zero idle cost.
+ *
+ * Accepts a `layer` so the drain can be run inside the callback
+ * with full service access.
  */
-export const startSubscribeWorker = Effect.gen(function* () {
-    const redis = yield* RedisService
-    const logger = yield* LoggerService
+export const startSubscribeWorker = (layer: Layer.Layer<RedisService | DbService | LoggerService>) =>
+    Effect.gen(function* () {
+        const redis = yield* RedisService
+        const logger = yield* LoggerService
 
-    logger.info("WAL: starting subscribe worker")
+        logger.info("WAL: starting subscribe worker")
 
-    yield* redis.psubscribe("usage:events:*", () => {
-        // On each event, trigger a drain cycle
-        Effect.runSync(
-            Effect.fork(
+        yield* redis.psubscribe("usage:events:*", () => {
+            // On each event, trigger a drain with full service layer
+            Effect.runPromise(
                 drain.pipe(
                     Effect.catchAll((err) =>
                         Effect.sync(() => logger.error("WAL: drain failed", { error: err }))
-                    )
+                    ),
+                    Effect.provide(layer),
                 )
-            )
-        )
+            ).catch(() => {})
+        })
     })
-})
 
 /**
  * Start the WAL worker with the "poll" strategy.

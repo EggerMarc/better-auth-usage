@@ -76,7 +76,7 @@ async function ensureWalStarted(options: UsageOptions) {
 
         // Start worker based on strategy
         if (strategy === "subscribe") {
-            yield* startSubscribeWorker
+            yield* startSubscribeWorker(fullLayer)
         } else {
             yield* startPollWorker(pollInterval)
         }
@@ -109,38 +109,55 @@ export async function runPipeline<A, E>(
 
     await ensureWalStarted(options)
 
-    return Effect.runPromise(
-        effect.pipe(
-            Effect.catchAll((err: any) => {
-                const tag = err?._tag
-
-                if (tag === "FeatureNotFound") {
-                    return Effect.die(new APIError("NOT_FOUND", {
-                        message: `Feature ${err.featureKey} not found`
-                    }))
-                }
-                if (tag === "CustomerNotFound") {
-                    return Effect.die(new APIError("NOT_FOUND", {
-                        message: `Customer not found`
-                    }))
-                }
-                if (tag === "LimitExceeded") {
-                    return Effect.die(new APIError("FORBIDDEN", {
-                        message: `Limit exceeded for ${err.featureKey}`
-                    }))
-                }
-                if (tag === "ValidationError") {
-                    return Effect.die(new APIError("BAD_REQUEST", {
-                        message: err.message
-                    }))
-                }
-                return Effect.die(new APIError("INTERNAL_SERVER_ERROR", {
-                    message: `${err?.message ?? err?._tag ?? "Unknown error"}`
-                }))
-            }),
-            Effect.provide(fullLayer),
-        )
+    const exit = await Effect.runPromiseExit(
+        effect.pipe(Effect.provide(fullLayer))
     )
+
+    if (exit._tag === "Success") {
+        return exit.value
+    }
+
+    // Map Effect errors to BetterAuth APIErrors with descriptive messages
+    const cause = exit.cause
+    const err = cause && "error" in cause ? (cause as any).error : null
+    const tag = err?._tag
+
+    if (tag === "FeatureNotFound") {
+        throw new APIError("NOT_FOUND", {
+            message: `Feature "${err.featureKey}" not found. Check that this feature is defined in your usage plugin config.`
+        })
+    }
+    if (tag === "CustomerNotFound") {
+        throw new APIError("NOT_FOUND", {
+            message: `Customer not found. Call upsert-customer before consuming usage.`
+        })
+    }
+    if (tag === "LimitExceeded") {
+        throw new APIError("FORBIDDEN", {
+            message: `Usage limit exceeded for "${err.featureKey}": current ${err.current}, limit ${err.limit}`
+        })
+    }
+    if (tag === "ValidationError") {
+        throw new APIError("BAD_REQUEST", {
+            message: `Validation error: ${err.message}`
+        })
+    }
+    if (tag === "RedisError") {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Redis error during ${err.operation}: ${err.cause instanceof Error ? err.cause.message : String(err.cause)}`
+        })
+    }
+    if (tag === "DbError") {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+            message: `Database error during ${err.operation}: ${err.cause instanceof Error ? err.cause.message : String(err.cause)}`
+        })
+    }
+
+    // Unknown error — extract as much info as possible
+    const message = err?.message ?? err?._tag ?? String(cause)
+    throw new APIError("INTERNAL_SERVER_ERROR", {
+        message: `Usage plugin error: ${message}`
+    })
 }
 
 /**

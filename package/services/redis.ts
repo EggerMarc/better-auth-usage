@@ -89,7 +89,18 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
     Layer.scoped(
         RedisService,
         Effect.gen(function* () {
-            const client = new Redis(redisUrl) as RedisClient
+            const client = new Redis(redisUrl, {
+                maxRetriesPerRequest: 3,
+                enableReadyCheck: false, // managed Redis (Upstash, etc.) may not allow INFO
+                retryStrategy: (times) => {
+                    if (times > 3) return null
+                    return Math.min(times * 200, 2000)
+                },
+                lazyConnect: false,
+            }) as RedisClient
+
+            // Suppress unhandled error events — errors are caught per-operation via wrapRedis
+            client.on("error", () => {})
 
             // Register cleanup: quit on layer teardown
             yield* Effect.addFinalizer(() =>
