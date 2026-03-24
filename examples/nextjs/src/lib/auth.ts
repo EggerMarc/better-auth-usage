@@ -58,6 +58,13 @@ export const auth = betterAuth({
         },
         cacheOptions: {
             redisUrl: process.env.CACHE_REDIS!,
+            enableRealtime: true,
+            port: 3178,
+            wal: {
+                enabled: true,
+                drainStrategy: "poll",
+                pollInterval: 100
+            }
         },
     }),
     openAPI()]

@@ -2,6 +2,9 @@ import { Effect, Layer, Fiber } from "effect"
 import { APIError } from "better-auth/api"
 import { RedisService, makeRedisServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "@/services"
 import { recover, startSubscribeWorker, startPollWorker } from "@/wal"
+import { startRealtimeSubscriber } from "@/realtime/usage-tracker"
+import { setupWebSocketHandlers } from "@/realtime/websocket-server"
+import { Server as SocketServer } from "socket.io"
 import type { UsageOptions } from "@/types"
 import type { AuthContext } from "better-auth"
 
@@ -12,6 +15,7 @@ let sharedLayer: Layer.Layer<RedisService | LoggerService> | null = null
 let capturedAdapter: any = null
 let walFiber: Fiber.RuntimeFiber<any, any> | null = null
 let walStarted = false
+let ioServer: SocketServer | null = null
 
 /**
  * Initialize the shared layer from plugin options.
@@ -86,6 +90,27 @@ async function ensureWalStarted(options: UsageOptions) {
     walFiber = Effect.runFork(
         walPipeline.pipe(Effect.provide(fullLayer))
     )
+
+    // Start realtime WebSocket server if configured
+    if (options.cacheOptions?.enableRealtime && options.cacheOptions?.port) {
+        const port = options.cacheOptions.port
+        const cors = options.cacheOptions.cors ?? { origin: "*", credentials: true }
+
+        ioServer = new SocketServer({ cors })
+        ioServer.listen(port)
+
+        // Start realtime subscriber (forwards Redis pub/sub → Socket.IO)
+        Effect.runFork(
+            startRealtimeSubscriber(ioServer).pipe(Effect.provide(fullLayer))
+        )
+
+        // Register WebSocket connection handlers
+        Effect.runFork(
+            setupWebSocketHandlers(ioServer, options, fullLayer).pipe(Effect.provide(fullLayer))
+        )
+
+        console.log(`[better-auth-usage] WebSocket server listening on port ${port}`)
+    }
 }
 
 /**
@@ -177,6 +202,10 @@ export function resetRuntime() {
     if (walFiber) {
         Effect.runSync(Fiber.interrupt(walFiber))
         walFiber = null
+    }
+    if (ioServer) {
+        ioServer.close()
+        ioServer = null
     }
     sharedLayer = null
     capturedAdapter = null

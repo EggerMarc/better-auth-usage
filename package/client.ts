@@ -61,6 +61,8 @@ interface TrackerOptions {
     pollInterval?: number
     /** Percentage thresholds that trigger "threshold" events. E.g. [0.5, 0.8, 0.9, 1.0] */
     thresholds?: number[]
+    /** WebSocket server URL (e.g. "http://localhost:3001"). If not set, derived from baseURL. */
+    wsUrl?: string
     /** Custom fetch implementation (for SSR, testing, etc.) */
     fetchImpl?: typeof fetch
     /** Headers to send with REST requests (e.g. auth cookies) */
@@ -97,6 +99,7 @@ export function createUsageTracker(options: TrackerOptions) {
     const {
         baseURL,
         websocket = true,
+        wsUrl,
         pollInterval = 5000,
         thresholds = [],
         fetchImpl = fetch,
@@ -106,7 +109,7 @@ export function createUsageTracker(options: TrackerOptions) {
     return {
         track(params: TrackParams): UsageTrackerHandle {
             return new UsageTrackerHandle(
-                baseURL, params, { websocket, pollInterval, thresholds, fetchImpl, headers }
+                baseURL, params, { websocket, wsUrl, pollInterval, thresholds, fetchImpl, headers }
             )
         }
     }
@@ -127,6 +130,7 @@ class UsageTrackerHandle {
         private params: TrackParams,
         private options: {
             websocket: boolean
+            wsUrl?: string
             pollInterval: number
             thresholds: number[]
             fetchImpl: typeof fetch
@@ -301,11 +305,13 @@ class UsageTrackerHandle {
 
     private async connectWebSocket() {
         try {
-            const wsUrl = this.baseURL.replace(/\/api\/auth$/, "")
-            const socket = io(wsUrl, { transports: ["websocket"] })
+            const url = this.options.wsUrl ?? this.baseURL.replace(/\/api\/auth$/, "")
+            console.debug("[usage-tracker] Connecting WebSocket to", url)
+            const socket = io(url, { transports: ["websocket"] })
             this.socket = socket
 
             socket.on("connect", () => {
+                console.debug("[usage-tracker] WebSocket connected, subscribing to", this.params.features)
                 socket.emit("subscribe:usage", {
                     subscriptions: this.params.features.map(feature => ({
                         referenceId: this.params.referenceId,
@@ -315,26 +321,37 @@ class UsageTrackerHandle {
                 })
             })
 
+            socket.on("subscribed", (data: any) => {
+                console.debug("[usage-tracker] Subscribed to rooms", data)
+            })
+
             socket.on("usage:updated", (data: any) => {
+                console.debug("[usage-tracker] Received usage:updated", data)
                 const feature = data.feature
                 if (feature && this.params.features.includes(feature)) {
                     this.fetchOne(feature)
                 }
             })
 
-            socket.on("disconnect", () => {
+            socket.on("disconnect", (reason: string) => {
+                console.debug("[usage-tracker] WebSocket disconnected:", reason)
                 if (!this.disposed && !this.pollHandle) {
                     this.startPolling()
                 }
             })
 
-            socket.on("connect_error", () => {
+            socket.on("connect_error", (err: Error) => {
+                console.debug("[usage-tracker] WebSocket connect error:", err.message)
                 if (!this.disposed && !this.pollHandle) {
                     this.startPolling()
                 }
             })
-        } catch {
-            // WebSocket connection failed — fall back to polling
+
+            socket.on("error", (data: any) => {
+                console.debug("[usage-tracker] WebSocket error event:", data)
+            })
+        } catch (err) {
+            console.debug("[usage-tracker] WebSocket setup failed:", err)
             this.startPolling()
         }
     }

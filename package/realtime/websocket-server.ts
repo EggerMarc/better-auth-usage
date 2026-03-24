@@ -35,7 +35,10 @@ export const setupWebSocketHandlers = (
         const logger = yield* LoggerService
 
         io.on("connection", (socket) => {
+            logger.info("WebSocket connected", { socketId: socket.id })
+
             socket.on("subscribe:usage", async (data: SubscribeRequest) => {
+                logger.info("WebSocket subscribe:usage", { socketId: socket.id, subscriptions: data.subscriptions.map(s => `${s.feature}:${s.referenceId}`) })
                 for (const sub of data.subscriptions) {
                     const feature = options.features[sub.feature]
                     if (!feature) {

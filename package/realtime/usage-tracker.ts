@@ -26,11 +26,15 @@ export const startRealtimeSubscriber = (io: SocketServer) =>
             Effect.runSync(
                 parsed.pipe(
                     Effect.andThen((update) =>
-                        Effect.sync(() =>
-                            io.to(`usage:${update.feature}:${update.refId}`).emit("usage:updated", update)
-                        )
+                        Effect.sync(() => {
+                            const room = `usage:${update.feature}:${update.refId}`
+                            logger.info("Realtime: broadcasting", { channel, room, feature: update.feature, refId: update.refId })
+                            io.to(room).emit("usage:updated", update)
+                        })
                     ),
-                    Effect.catchAll(() => Effect.void)
+                    Effect.catchAll((err) =>
+                        Effect.sync(() => logger.warn("Realtime: failed to parse/broadcast", { channel, error: String(err) }))
+                    )
                 )
             )
         })

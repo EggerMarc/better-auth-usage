@@ -71,7 +71,8 @@ export default function Home() {
     useEffect(() => {
         const tracker = createUsageTracker({
             baseURL: "/api/auth",
-            websocket: false,
+            websocket: true,
+            wsUrl: "http://localhost:3178", // Socket.IO server
             pollInterval: 3000,
             thresholds: [0.5, 0.75, 0.9, 1.0],
         })
@@ -128,18 +129,44 @@ export default function Home() {
     const handleConsume = async (featureKey: FeatureKey, amount: number) => {
         setLoading(prev => ({ ...prev, [featureKey]: true }))
         try {
-            const res = await timed(`consume(${featureKey}, ${amount > 0 ? "+" : ""}${amount})`, () =>
-                usage.consume({
+            // useFeature checks limit before consuming — blocks if over limit
+            const res = await timed(`useFeature(${featureKey}, ${amount > 0 ? "+" : ""}${amount})`, () =>
+                usage.useFeature({
                     referenceId: REF_ID,
                     featureKey,
                     amount,
                 })
             )
             const d = res?.data ?? res
-            addLog("info", `Consumed ${amount > 0 ? "+" : ""}${amount} on ${featureKey} — current: ${d.current}, allowed: ${d.allowed}`)
+            if (d.allowed === false) {
+                addLog("blocked", `Blocked: ${featureKey} is over limit (${d.current}/${d.max})`)
+            } else {
+                addLog("info", `Consumed ${amount > 0 ? "+" : ""}${amount} on ${featureKey} — current: ${d.current}`)
+            }
             updateCard(featureKey, d)
         } catch (e: any) {
             addLog("error", `consume(${featureKey}) failed: ${e.message ?? e}`)
+        } finally {
+            setLoading(prev => ({ ...prev, [featureKey]: false }))
+        }
+    }
+
+    const handleRefund = async (featureKey: FeatureKey, amount: number) => {
+        setLoading(prev => ({ ...prev, [featureKey]: true }))
+        try {
+            const res = await timed(`refund(${featureKey}, -${amount})`, () =>
+                usage.consume({
+                    referenceId: REF_ID,
+                    featureKey,
+                    amount: -amount,
+                    event: "refund",
+                })
+            )
+            const d = res?.data ?? res
+            addLog("info", `Refunded -${amount} on ${featureKey} — current: ${d.current}`)
+            updateCard(featureKey, d)
+        } catch (e: any) {
+            addLog("error", `refund(${featureKey}) failed: ${e.message ?? e}`)
         } finally {
             setLoading(prev => ({ ...prev, [featureKey]: false }))
         }
@@ -219,7 +246,20 @@ export default function Home() {
                     overrideKey: plan,
                 })
             )
-            addLog("info", `Customer plan set to "${plan}" — limits updated`)
+            addLog("info", `Customer plan set to "${plan}" — refreshing limits...`)
+
+            // Refresh all feature cards to show new limits
+            for (const f of FEATURES) {
+                try {
+                    const res = await usage.check({
+                        referenceId: REF_ID,
+                        featureKey: f.key,
+                    })
+                    const d = (res as any)?.data ?? res
+                    updateCard(f.key, d)
+                } catch { /* ignore */ }
+            }
+            addLog("info", `Limits updated for plan "${plan}"`)
         } catch (e: any) {
             addLog("error", `upsertCustomer failed: ${e.message ?? e}`)
         }
@@ -331,7 +371,7 @@ export default function Home() {
                                         +10
                                     </button>
                                     <button
-                                        onClick={() => handleConsume(feature.key, -5)}
+                                        onClick={() => handleRefund(feature.key, 5)}
                                         disabled={!!loading[feature.key]}
                                         className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                                     >
