@@ -55,7 +55,7 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
         } else {
             result = yield* db.create<Customer>({
                 model: "customer",
-                data: customer as any,
+                data: customer as Record<string, unknown>,
             })
         }
 

@@ -3,6 +3,14 @@ import Redis from "ioredis"
 import { RedisError } from "@/errors"
 
 /**
+ * ioredis has these commands at runtime but the type definitions
+ * don't include them. We use client.call() which accepts any command.
+ */
+type RedisClient = Redis & {
+    call(command: string, ...args: (string | number)[]): Promise<unknown>
+}
+
+/**
  * RedisService interface — defines what Redis operations the plugin needs.
  *
  * This is like a Rust trait: any implementation must provide these methods.
@@ -81,7 +89,7 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
     Layer.scoped(
         RedisService,
         Effect.gen(function* () {
-            const client = new Redis(redisUrl)
+            const client = new Redis(redisUrl) as RedisClient
 
             // Register cleanup: quit on layer teardown
             yield* Effect.addFinalizer(() =>
@@ -105,7 +113,10 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
                     wrapRedis("del", () => client.del(key).then(() => undefined)),
 
                 hset: (key, data) =>
-                    wrapRedis("hset", () => client.hset(key, data as any).then(() => undefined)),
+                    wrapRedis("hset", () => {
+                        const args = Object.entries(data).flat().map(String)
+                        return client.call("HSET", key, ...args).then(() => undefined)
+                    }),
 
                 hgetall: (key) =>
                     wrapRedis("hgetall", () => client.hgetall(key)),
@@ -123,7 +134,7 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
 
                 xgroupCreate: (stream, group, startId) =>
                     wrapRedis("xgroupCreate", () =>
-                        (client as any).xgroup("CREATE", stream, group, startId, "MKSTREAM")
+                        client.call("XGROUP", "CREATE", stream, group, startId, "MKSTREAM")
                             .then(() => undefined)
                     ).pipe(
                         // BUSYGROUP = group already exists — idempotent, not an error
@@ -136,28 +147,26 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
 
                 xreadgroup: (group, consumer, stream, id, count) =>
                     wrapRedis("xreadgroup", async () => {
-                        const result = await (client as any).xreadgroup(
-                            "GROUP", group, consumer,
+                        const result = await client.call(
+                            "XREADGROUP", "GROUP", group, consumer,
                             "COUNT", count,
                             "STREAMS", stream, id
-                        )
+                        ) as Array<[string, Array<[string, string[]]>]> | null
                         if (!result) return null
-                        // ioredis returns [[streamName, [[entryId, [field, value, ...]], ...]]]
-                        const entries = result[0]?.[1] ?? []
-                        return entries as Array<[string, string[]]>
+                        return result[0]?.[1] ?? []
                     }),
 
                 xack: (stream, group, ...ids) =>
                     wrapRedis("xack", () =>
-                        (client as any).xack(stream, group, ...ids).then(() => undefined)
+                        client.call("XACK", stream, group, ...ids).then(() => undefined)
                     ),
 
                 xlen: (stream) =>
-                    wrapRedis("xlen", () => (client as any).xlen(stream)),
+                    wrapRedis("xlen", () => client.call("XLEN", stream) as Promise<number>),
 
                 xtrim: (stream, maxLen) =>
                     wrapRedis("xtrim", () =>
-                        (client as any).xtrim(stream, "MAXLEN", "~", maxLen).then(() => undefined)
+                        client.call("XTRIM", stream, "MAXLEN", "~", maxLen).then(() => undefined)
                     ),
 
                 quit: () =>

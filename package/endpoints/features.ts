@@ -45,8 +45,7 @@ export function getFeatureEndpoint({ features, overrides }: UsageOptions) {
                 })
             }
 
-            const serializableFeature = { ...exit.value }
-            delete (serializableFeature as any).hooks
+            const { hooks, ...serializableFeature } = exit.value
             return { feature: serializableFeature }
         }
     )

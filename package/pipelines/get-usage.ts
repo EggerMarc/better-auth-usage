@@ -122,7 +122,7 @@ const getFromDb = (
             updatedAt: now,
             event: "sync",
         }
-        yield* db.create({ model: "usage", data: initial as any })
+        yield* db.create({ model: "usage", data: initial as Record<string, unknown> })
         return initial
     })
 

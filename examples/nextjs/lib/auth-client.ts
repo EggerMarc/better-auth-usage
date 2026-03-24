@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react"
-import { usageClient } from "../../../package/client"
+import { usageClient, createUsageTracker } from "../../../package/client"
 import type { BetterAuthClientPlugin } from "better-auth"
 
 export const authClient = createAuthClient({
@@ -9,3 +9,4 @@ export const authClient = createAuthClient({
     ]
 })
 
+export { createUsageTracker }

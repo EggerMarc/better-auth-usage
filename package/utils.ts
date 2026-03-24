@@ -51,105 +51,102 @@ export function shouldReset(
 }
 
 /**
- * Compute the next reset timestamp after a reference date for a given reset interval.
- *
- * @param base - The reference Date from which the next reset is calculated.
- * @param reset - The reset interval: "hourly", "6-hourly", "daily", "weekly", "monthly", "quarterly", "yearly", or "never".
- * @returns The Date of the next reset strictly after `base` for all intervals except `"never"`, which returns `base`.
+ * Compute the next reset timestamp (UTC) after a reference date.
+ * All boundaries are computed in UTC to ensure consistent behavior across timezones.
  */
 function computeNextResetTime(base: Date, reset: ResetType): Date {
     const next = new Date(base);
 
     switch (reset) {
         case "hourly":
-            next.setHours(next.getHours() + 1, 0, 0, 0);
+            next.setUTCHours(next.getUTCHours() + 1, 0, 0, 0);
             break;
         case "6-hourly": {
-            const hour = base.getHours();
+            const hour = base.getUTCHours();
             const nextBlock = Math.floor(hour / 6) * 6 + 6;
             if (nextBlock >= 24) {
-                next.setDate(next.getDate() + 1);
-                next.setHours(0, 0, 0, 0);
+                next.setUTCDate(next.getUTCDate() + 1);
+                next.setUTCHours(0, 0, 0, 0);
             } else {
-                next.setHours(nextBlock, 0, 0, 0);
+                next.setUTCHours(nextBlock, 0, 0, 0);
             }
             break;
         }
         case "daily":
-            next.setDate(next.getDate() + 1);
-            next.setHours(0, 0, 0, 0);
+            next.setUTCDate(next.getUTCDate() + 1);
+            next.setUTCHours(0, 0, 0, 0);
             break;
         case "weekly": {
-            const day = base.getDay(); // 0 = Sunday
+            const day = base.getUTCDay(); // 0 = Sunday
             const daysUntilNextMonday = (8 - day) % 7 || 7;
-            next.setDate(next.getDate() + daysUntilNextMonday);
-            next.setHours(0, 0, 0, 0);
+            next.setUTCDate(next.getUTCDate() + daysUntilNextMonday);
+            next.setUTCHours(0, 0, 0, 0);
             break;
         }
         case "monthly":
-            next.setMonth(next.getMonth() + 1, 1);
-            next.setHours(0, 0, 0, 0);
+            next.setUTCMonth(next.getUTCMonth() + 1, 1);
+            next.setUTCHours(0, 0, 0, 0);
             break;
         case "quarterly": {
-            const currentMonth = base.getMonth();
+            const currentMonth = base.getUTCMonth();
             const nextQuarterStartMonth = Math.floor(currentMonth / 3) * 3 + 3;
             if (nextQuarterStartMonth >= 12) {
-                next.setFullYear(next.getFullYear() + 1);
-                next.setMonth(0, 1);
+                next.setUTCFullYear(next.getUTCFullYear() + 1);
+                next.setUTCMonth(0, 1);
             } else {
-                next.setMonth(nextQuarterStartMonth, 1);
+                next.setUTCMonth(nextQuarterStartMonth, 1);
             }
-            next.setHours(0, 0, 0, 0);
+            next.setUTCHours(0, 0, 0, 0);
             break;
         }
         case "yearly":
-            next.setFullYear(next.getFullYear() + 1, 0, 1);
-            next.setHours(0, 0, 0, 0);
+            next.setUTCFullYear(next.getUTCFullYear() + 1, 0, 1);
+            next.setUTCHours(0, 0, 0, 0);
             break;
         case "never":
-            return base; // "never" just returns the base (ignored in main fn)
+            return base;
     }
 
     return next;
 }
 
 /**
- * Compute the most recent reset boundary at or before a reference date.
+ * Compute the most recent reset boundary (UTC) at or before a reference date.
  *
- * For "daily" at Tuesday 10am, returns Tuesday 00:00 (midnight today).
- * For "monthly" on March 15th, returns March 1st 00:00.
+ * For "daily" at Tuesday 10am UTC, returns Tuesday 00:00 UTC.
+ * For "monthly" on March 15th, returns March 1st 00:00 UTC.
  */
 function computePreviousResetTime(ref: Date, reset: ResetType): Date {
     const d = new Date(ref);
 
     switch (reset) {
         case "hourly":
-            d.setMinutes(0, 0, 0);
+            d.setUTCMinutes(0, 0, 0);
             return d;
         case "6-hourly":
-            d.setHours(Math.floor(d.getHours() / 6) * 6, 0, 0, 0);
+            d.setUTCHours(Math.floor(d.getUTCHours() / 6) * 6, 0, 0, 0);
             return d;
         case "daily":
-            d.setHours(0, 0, 0, 0);
+            d.setUTCHours(0, 0, 0, 0);
             return d;
         case "weekly": {
-            const day = d.getDay(); // 0 = Sunday
+            const day = d.getUTCDay(); // 0 = Sunday
             const diff = day === 0 ? 6 : day - 1; // Monday = start of week
-            d.setDate(d.getDate() - diff);
-            d.setHours(0, 0, 0, 0);
+            d.setUTCDate(d.getUTCDate() - diff);
+            d.setUTCHours(0, 0, 0, 0);
             return d;
         }
         case "monthly":
-            d.setDate(1);
-            d.setHours(0, 0, 0, 0);
+            d.setUTCDate(1);
+            d.setUTCHours(0, 0, 0, 0);
             return d;
         case "quarterly":
-            d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
-            d.setHours(0, 0, 0, 0);
+            d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3, 1);
+            d.setUTCHours(0, 0, 0, 0);
             return d;
         case "yearly":
-            d.setMonth(0, 1);
-            d.setHours(0, 0, 0, 0);
+            d.setUTCMonth(0, 1);
+            d.setUTCHours(0, 0, 0, 0);
             return d;
         case "never":
             return ref;

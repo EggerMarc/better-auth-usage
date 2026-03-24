@@ -67,13 +67,13 @@ describe("shouldReset", () => {
     test("returns correct nextReset for hourly", () => {
         const result = shouldReset(null, "hourly");
         expect(result.shouldReset).toBe(true);
-        expect(result.nextReset!.getMinutes()).toBe(0);
-        expect(result.nextReset!.getSeconds()).toBe(0);
+        expect(result.nextReset!.getUTCMinutes()).toBe(0);
+        expect(result.nextReset!.getUTCSeconds()).toBe(0);
     });
 
     test("returns correct nextReset for weekly (next Monday)", () => {
         const result = shouldReset(null, "weekly");
         expect(result.shouldReset).toBe(true);
-        expect(result.nextReset!.getDay()).toBe(1);
+        expect(result.nextReset!.getUTCDay()).toBe(1);
     });
 });
