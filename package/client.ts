@@ -86,7 +86,10 @@ export interface UsageEvent {
     type: "consume" | "update"
     feature: string
     data: UsageEventData
+    /** When the event was recorded on the client */
     ts: number
+    /** Round-trip duration in ms (only on "consume" events) */
+    duration?: number
 }
 
 type UpdateHandler = (state: Record<string, UsageState>) => void
@@ -208,6 +211,7 @@ export class UsageTrackerHandle {
      * Routes through WS when connected, REST fallback.
      */
     async consume(featureKey: string, amount = 1, event = "use"): Promise<ConsumeResult> {
+        const start = performance.now()
         let result: ConsumeResult
 
         if (this.socket?.connected) {
@@ -220,7 +224,8 @@ export class UsageTrackerHandle {
             })
         }
 
-        this.addEvent(featureKey, "consume", result)
+        const duration = Math.round((performance.now() - start) * 100) / 100
+        this.addEvent(featureKey, "consume", result, duration)
         this.updateFeature(featureKey, result)
         this.skipNextUpdate.add(featureKey)
         return result
@@ -434,7 +439,7 @@ export class UsageTrackerHandle {
         }, this.options.pollInterval)
     }
 
-    private addEvent(feature: string, type: UsageEvent["type"], raw: any) {
+    private addEvent(feature: string, type: UsageEvent["type"], raw: any, duration?: number) {
         const existing = this.snapshot.state[feature]
         const max = raw.max ?? raw.maxLimit ?? existing?.max ?? null
         const min = raw.min ?? raw.minLimit ?? existing?.min ?? null
@@ -450,7 +455,7 @@ export class UsageTrackerHandle {
         const prev = this.snapshot.events[feature] ?? []
         this.snapshot = {
             ...this.snapshot,
-            events: { ...this.snapshot.events, [feature]: [...prev, { type, feature, data: normalized, ts: Date.now() }] },
+            events: { ...this.snapshot.events, [feature]: [...prev, { type, feature, data: normalized, ts: Date.now(), duration }] },
         }
         this.updateHandlers.forEach(h => h(this.snapshot.state))
     }

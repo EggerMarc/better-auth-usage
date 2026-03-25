@@ -19,9 +19,10 @@ export function Providers({ children }: { children: ReactNode }) {
             const userId = res.data?.user?.id
             if (!userId) return
             // Assign starter plan to anonymous user
-            ;(authClient as any).$fetch("/api/auth/usage/upsert-customer", {
-                method: "POST",
-                body: { referenceId: userId, referenceType: "user", overrideKey: "starter" },
+            ;authClient.usage.upsertCustomer({
+                referenceId: userId,
+                referenceType: "user",
+                overrideKey: "starter",
             })
         })
     }, [session.data, session.isPending])

@@ -1,6 +1,7 @@
 "use client"
 
-import { useFeature, useAllEvents } from "./providers"
+import { useFeature, useAllEvents, useSetReference } from "./providers"
+import { authClient } from "@/lib/auth-client"
 import { useState, useRef, useEffect } from "react"
 
 const FEATURES = [
@@ -47,7 +48,7 @@ function FeatureCard({ featureKey, label, icon, unit }: {
 
     const action = async (fn: () => Promise<any>) => {
         setLoading(true)
-        try { const res = await fn(); console.log(res) }
+        try { await fn() }
         catch (e: any) { console.error(`[${featureKey}] failed:`, e.message) }
         finally { setLoading(false) }
     }
@@ -130,7 +131,6 @@ function EventLog() {
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: "smooth" })
-        console.log(events)
     }, [events.length])
 
     return (
@@ -158,9 +158,92 @@ function EventLog() {
                             {entry.data?.current ?? "—"}/{entry.data?.max ?? "—"}
                             {entry.data?.status === "above-max-limit" && " OVER LIMIT"}
                         </span>
+                        {entry.duration != null && (
+                            <span className="text-blue-400">{entry.duration}ms</span>
+                        )}
                     </div>
                 ))}
                 <div ref={endRef} />
+            </div>
+        </div>
+    )
+}
+
+// ── Auth Bar ──
+
+function AuthBar() {
+    const session = authClient.useSession()
+    const setReference = useSetReference()
+    const [selectedPlan, setSelectedPlan] = useState<string>("starter")
+    const [switching, setSwitching] = useState(false)
+
+    const user = session.data?.user
+    const isAnonymous = (user as any)?.isAnonymous
+
+    const handleGitHubLogin = () => {
+        authClient.signIn.social({ provider: "github", callbackURL: "/" })
+    }
+
+    const handleSignOut = () => {
+        authClient.signOut().then(() => window.location.reload())
+    }
+
+    const handlePlanSwitch = async (plan: string) => {
+        if (!user?.id || switching) return
+        setSwitching(true)
+        setSelectedPlan(plan)
+        try {
+            await authClient.usage.upsertCustomer({
+                referenceId: user.id,
+                referenceType: "user",
+                overrideKey: plan,
+            })
+            // Re-trigger the provider to refetch with new limits
+            setReference(user.id, "user")
+        } catch (e: any) {
+            console.error("Plan switch failed:", e.message)
+        } finally {
+            setSwitching(false)
+        }
+    }
+
+    return (
+        <div className="flex items-center gap-3">
+            {isAnonymous ? (
+                <button
+                    onClick={handleGitHubLogin}
+                    className="rounded-full bg-zinc-900 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                >
+                    Sign in with GitHub
+                </button>
+            ) : (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500">{user?.name ?? user?.email}</span>
+                    <button
+                        onClick={handleSignOut}
+                        className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                    >
+                        Sign out
+                    </button>
+                </div>
+            )}
+
+            <div className="ml-2 flex items-center gap-1.5">
+                <span className="text-[10px] text-zinc-400">Plan:</span>
+                {["starter", "pro"].map(plan => (
+                    <button
+                        key={plan}
+                        onClick={() => handlePlanSwitch(plan)}
+                        disabled={switching}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                            selectedPlan === plan
+                                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                        }`}
+                    >
+                        {plan}
+                    </button>
+                ))}
             </div>
         </div>
     )
@@ -181,6 +264,7 @@ export default function Home() {
                             Feature usage tracking, entitlements & realtime state
                         </p>
                     </div>
+                    <AuthBar />
                 </div>
             </header>
 
@@ -205,11 +289,11 @@ export default function Home() {
                             How it works
                         </h2>
                         <ul className="space-y-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                            <li>Anonymous session via BetterAuth</li>
+                            <li>Anonymous or GitHub OAuth session</li>
                             <li>Real-time state via WebSocket (auto-discovered)</li>
                             <li>Operations route through WS, REST fallback</li>
-                            <li>Redis atomic Lua scripts for sub-10ms writes</li>
-                            <li>WAL for durable event sourcing to DB</li>
+                            <li>Switch plans to see limits change instantly</li>
+                            <li>Round-trip timing on every consume event</li>
                         </ul>
                     </div>
                 </div>
