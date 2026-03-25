@@ -44,6 +44,8 @@ if resetAt and now_ms >= resetAt then
     redis.call('SET', counterKey, current)
     lastResetAt = now_ms
     redis.call('HSET', metaKey, 'lastResetAt', now_ms)
+    -- Clear resetAt so we don't reset again until sync sets the next boundary
+    redis.call('HDEL', metaKey, 'resetAt')
     resetOccurred = 1
 end
 

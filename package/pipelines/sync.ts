@@ -55,33 +55,35 @@ export const syncUsage = ({
         const resetValue = feature.resetValue ?? 0
         const resetDelta = resetValue - usage.amount
 
-        // 1. Append reset event to history
-        yield* db.create({
-            model: "usageEvent",
-            data: {
-                referenceId,
-                feature: feature.key,
-                amount: resetDelta,
-                event: "reset",
-                lastResetAt: now,
-                createdAt: now,
-            },
-        })
-
-        // 2. Upsert the materialized usage row
-        yield* db.update({
-            model: "usage",
-            where: [
-                { field: "referenceId", value: referenceId },
-                { field: "feature", value: feature.key },
-            ],
-            update: {
-                amount: resetValue,
-                event: "reset",
-                lastResetAt: now,
-                updatedAt: now,
-            },
-        })
+        // Append reset event + update usage row in a single transaction
+        yield* db.transaction((tx) =>
+            Effect.gen(function* () {
+                yield* tx.create({
+                    model: "usageEvent",
+                    data: {
+                        referenceId,
+                        feature: feature.key,
+                        amount: resetDelta,
+                        event: "reset",
+                        lastResetAt: now,
+                        createdAt: now,
+                    },
+                })
+                yield* tx.update({
+                    model: "usage",
+                    where: [
+                        { field: "referenceId", value: referenceId },
+                        { field: "feature", value: feature.key },
+                    ],
+                    update: {
+                        amount: resetValue,
+                        event: "reset",
+                        lastResetAt: now,
+                        updatedAt: now,
+                    },
+                })
+            })
+        )
 
         // Reset Redis counter + update metadata with post-reset timestamps
         const usageKey = `usage:${feature.key}:${referenceId}`

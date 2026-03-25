@@ -18,6 +18,8 @@ import {
     type UsageEvent,
 } from "../client"
 
+const emptySnapshot = { state: {} as Record<string, UsageState>, events: {} as Record<string, UsageEvent[]> }
+
 // ── Context ──
 
 interface UsageContextValue {
@@ -83,6 +85,8 @@ export function createUsageProvider<Auth = any>() {
     }: UsageProviderProps) {
         const featuresRef = useRef<Set<string>>(new Set())
         const handleRef = useRef<UsageTrackerHandle | null>(null)
+        const refIdRef = useRef(initialRefId)
+        const refTypeRef = useRef(initialRefType)
 
         const [ctx, setCtx] = useState<UsageContextValue>(() => ({
             handle: null,
@@ -96,6 +100,9 @@ export function createUsageProvider<Auth = any>() {
             if (handleRef.current) {
                 handleRef.current.dispose()
             }
+
+            refIdRef.current = refId
+            refTypeRef.current = refType
 
             const features = Array.from(featuresRef.current)
             if (features.length === 0) {
@@ -120,15 +127,14 @@ export function createUsageProvider<Auth = any>() {
         }, [baseURL])
 
         const setReference = useCallback((referenceId: string, referenceType?: string) => {
-            const refType = referenceType ?? ctx.referenceType
-            createHandle(referenceId, refType)
-        }, [createHandle, ctx.referenceType])
+            createHandle(referenceId, referenceType ?? refTypeRef.current)
+        }, [createHandle])
 
         const registerFeature = useCallback((feature: string) => {
             if (featuresRef.current.has(feature)) return
             featuresRef.current.add(feature)
-            createHandle(ctx.referenceId, ctx.referenceType)
-        }, [createHandle, ctx.referenceId, ctx.referenceType])
+            createHandle(refIdRef.current, refTypeRef.current)
+        }, [createHandle])
 
         useEffect(() => {
             setCtx(prev => ({ ...prev, setReference, registerFeature }))
@@ -160,7 +166,6 @@ export function createUsageProvider<Auth = any>() {
             registerFeature(feature)
         }, [feature, registerFeature])
 
-        const emptySnapshot = { state: {} as Record<string, UsageState>, events: {} as Record<string, UsageEvent[]> }
         const snapshot = useSyncExternalStore(
             useCallback((cb) => handle?.subscribe(cb) ?? (() => {}), [handle]),
             useCallback(() => handle?.getSnapshot() ?? emptySnapshot, [handle]),
@@ -168,7 +173,7 @@ export function createUsageProvider<Auth = any>() {
         )
 
         const usage = snapshot.state[feature] ?? null
-        const events =snapshot.events[feature] ?? []
+        const events = snapshot.events[feature] ?? []
 
         const consume = useCallback(
             (amount = 1, event?: string) => {
@@ -196,7 +201,6 @@ export function createUsageProvider<Auth = any>() {
         if (!ctx) throw new Error("useAllEvents must be used within <UsageProvider>")
 
         const { handle } = ctx
-        const emptySnapshot = { state: {} as Record<string, UsageState>, events: {} as Record<string, UsageEvent[]> }
         const snapshot = useSyncExternalStore(
             useCallback((cb) => handle?.subscribe(cb) ?? (() => {}), [handle]),
             useCallback(() => handle?.getSnapshot() ?? emptySnapshot, [handle]),

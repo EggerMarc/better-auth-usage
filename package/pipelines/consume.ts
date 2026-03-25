@@ -110,10 +110,17 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
 
         let newTotal: number
 
+        let luaResetOccurred = false
+        let effectiveLastResetAt = currentUsage.lastResetAt
+
         if (luaResult) {
-            // Redis succeeded — newTotal comes from Lua
-            const [total] = luaResult as [number, number, number]
+            // Redis succeeded — unpack all Lua return values
+            const [total, resetFlag, luaLastResetAt] = luaResult as [number, number, number]
             newTotal = total
+            luaResetOccurred = resetFlag === 1
+            if (luaResetOccurred) {
+                effectiveLastResetAt = new Date(luaLastResetAt)
+            }
         } else {
             // DB-only path — calculate newTotal locally
             newTotal = afterAmount
@@ -123,7 +130,6 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
         if (luaResult && walEnabled) {
             // WAL worker will drain stream → DB. No direct write needed.
         } else {
-            // DB write — always runs in background fiber for fast response
             const now = new Date()
             yield* writeToDb(db, logger, {
                 referenceId,
@@ -132,7 +138,7 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
                 newTotal,
                 event,
                 overrideKey: customer?.overrideKey,
-                lastResetAt: currentUsage.lastResetAt,
+                lastResetAt: effectiveLastResetAt,
                 now,
             })
         }

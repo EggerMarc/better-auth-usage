@@ -59,7 +59,8 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
             })
         }
 
-        // Sync to cache (background, errors logged)
+        // Sync to cache — delete first to clear stale optional fields, then re-set
+        const customerKey = `customer:${result.referenceId}`
         const hash: Record<string, string> = {
             referenceId: result.referenceId,
             referenceType: result.referenceType,
@@ -68,7 +69,8 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
         if (result.name) hash.name = result.name
         if (result.overrideKey) hash.overrideKey = result.overrideKey
 
-        yield* redis.hset(`customer:${result.referenceId}`, hash).pipe(
+        yield* redis.del(customerKey).pipe(Effect.catchAll(() => Effect.void))
+        yield* redis.hset(customerKey, hash).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
                     logger.warn("Failed to cache customer", { referenceId: result.referenceId, error: err })

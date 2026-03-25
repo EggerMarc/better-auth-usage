@@ -195,16 +195,35 @@ export const startSubscribeWorker = (layer: Layer.Layer<RedisService | DbService
 
         logger.info("WAL: starting subscribe worker")
 
-        yield* redis.psubscribe("usage:events:*", () => {
-            // On each event, trigger a drain with full service layer
-            Effect.runPromise(
-                drain.pipe(
-                    Effect.catchAll((err) =>
-                        Effect.sync(() => logger.error("WAL: drain failed", { error: err }))
-                    ),
-                    Effect.provide(layer),
+        // Serialize drains — only one in-flight at a time, queue pending triggers
+        let draining = false
+        let queued = false
+
+        const runDrain = async () => {
+            if (draining) {
+                queued = true
+                return
+            }
+            draining = true
+            try {
+                await Effect.runPromise(
+                    drain.pipe(
+                        Effect.catchAll((err) =>
+                            Effect.sync(() => logger.error("WAL: drain failed", { error: err }))
+                        ),
+                        Effect.provide(layer),
+                    )
                 )
-            ).catch(() => {})
+            } catch { /* already handled by catchAll */ }
+            draining = false
+            if (queued) {
+                queued = false
+                runDrain()
+            }
+        }
+
+        yield* redis.psubscribe("usage:events:*", () => {
+            runDrain()
         })
     })
 
