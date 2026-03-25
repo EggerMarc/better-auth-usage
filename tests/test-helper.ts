@@ -4,21 +4,23 @@ import { createAuthClient } from "better-auth/client";
 import { usage } from "../package/index";
 import type { UsageOptions } from "../package/types";
 
-export { shutdownUsage } from "../package/resolvers/options";
+import { resetRuntime } from "../package/runtime";
+
+export async function shutdownUsage() {
+    resetRuntime();
+}
 
 /**
  * Default feature config used across tests.
  */
 export const defaultFeatures: UsageOptions["features"] = {
     "api-calls": {
-        key: "api-calls",
         maxLimit: 100,
         minLimit: 0,
         reset: "monthly",
         resetValue: 0,
     },
     "credits": {
-        key: "credits",
         maxLimit: 1000,
         minLimit: -500,
         reset: "never",
@@ -61,7 +63,7 @@ export async function createTestInstance(opts?: {
         },
         plugins: [
             bearer(),
-            usage({ features, overrides }) as BetterAuthPlugin,
+            usage({ features, overrides }),
         ],
     });
 

@@ -162,7 +162,6 @@ describe("sync triggers actual reset", () => {
         instance = await createTestInstance({
             features: {
                 "hourly-feature": {
-                    key: "hourly-feature",
                     maxLimit: 100,
                     minLimit: 0,
                     reset: "hourly",
@@ -200,6 +199,7 @@ describe("sync triggers actual reset", () => {
         // Use internal API to update the usage record
         await instance.auth.api.syncUsage({
             body: { referenceId: refId, featureKey: "hourly-feature" },
+            headers,
         });
 
         // After sync, the usage should have been reset

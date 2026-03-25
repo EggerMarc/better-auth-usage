@@ -1,60 +1,59 @@
-import { z } from "zod";
+import { Schema } from "@effect/schema"
 
-export const customerSchema = z.object({
-    referenceId: z.string(),
-    referenceType: z.string(),
-    email: z.string().optional(),
-    name: z.string().optional(),
-    overrideKey: z.string().optional(),
-    /*
-    featureLimits: z.record(
-        z.string(),
-        z.object({
-            maxLimit: z.number().optional(),
-            minLimit: z.number().optional(),
-        })
-    ).optional(),
-    */
+// ── Core schemas ──
+
+export const CustomerSchema = Schema.Struct({
+    referenceId: Schema.String,
+    referenceType: Schema.String,
+    email: Schema.optional(Schema.String),
+    name: Schema.optional(Schema.String),
+    overrideKey: Schema.optional(Schema.String),
 })
 
-export const customerLimitsSchema = z.object({
-    referenceId: z.string(),
-    featureKey: z.string(),
-    maxLimit: z.number().optional(),
-    minLimit: z.number().optional()
+export const UsageSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    amount: Schema.Number,
+    event: Schema.optional(Schema.String),
+    createdAt: Schema.DateFromSelf,
+    lastResetAt: Schema.DateFromSelf,
+    updatedAt: Schema.optional(Schema.DateFromSelf),
 })
 
-export const usageSchema = z.object({
-    referenceId: z.string(),
-    event: z.string().optional(),
-    createdAt: z.date(),
-    lastResetAt: z.date(),
-    amount: z.number(),
-    feature: z.string(),
+export const UsageEventSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    amount: Schema.Number,
+    event: Schema.String,
+    overrideKey: Schema.optional(Schema.String),
+    lastResetAt: Schema.DateFromSelf,
+    createdAt: Schema.DateFromSelf,
 })
 
-export const cached_usageSchema = z.object({
-    referenceId: z.string(),
-    lastResetAt: z.date().nullable(),
-    feature: z.string(),
-    current: z.number(),
-    maxLimit: z.number().optional(), // -> These two we might remove
-    minLimit: z.number().optional(), // 
+// ── Cache schemas ──
+
+export const CachedUsageSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    current: Schema.Number,
+    lastResetAt: Schema.NullOr(Schema.DateFromSelf),
+    maxLimit: Schema.optional(Schema.Number),
+    minLimit: Schema.optional(Schema.Number),
 })
 
-export const cached_limitsSchema = z.object({
-    referenceId: z.string(),
-    feature: z.string(),
-    maxLimit: z.number().optional(),
-    minLimit: z.number().optional(),
-    resetValue: z.number().optional(),
-    lastResetAt: z.date().optional(),
-    resetAt: z.date().optional()
+export const CachedLimitsSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    maxLimit: Schema.optional(Schema.Number),
+    minLimit: Schema.optional(Schema.Number),
+    resetValue: Schema.optional(Schema.Number),
+    lastResetAt: Schema.optional(Schema.DateFromSelf),
+    resetAt: Schema.optional(Schema.DateFromSelf),
 })
 
-export const cached_usageEventSchema = z.object({
-    referenceId: z.string(),
-    feature: z.string(),
-    amount: z.number(),
-    event: z.string().optional()
+export const CachedUsageEventSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    amount: Schema.Number,
+    event: Schema.optional(Schema.String),
 })

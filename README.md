@@ -2,42 +2,37 @@
 
 **Warning!** This package is a **work in progress**! Expect breaking changes and functionality changes.
 
-Feature and usage-based authorization plugin for [BetterAuth](https://www.better-auth.com/). Provides a way to define **features**, **track usage**, apply **per-plan limits**, and integrate with external systems (Stripe, custom hooks, etc).
+Usage tracking, feature gating, and billing metering plugin for [BetterAuth](https://www.better-auth.com/). Define features with limits and reset strategies in your config, track usage per customer/team/session, gate access based on plan-specific limits, and stream usage state to clients in real-time.
 
-## Roadmap
-Below are the action items to fix known limitations of this plugin. Namely, customer management and consumption idempotency.
-- [x] Customer table
-- [x] Consumption adapter as transaction
-- [x] Redis caching with Lua-based atomic increments
-- [x] Real-time WebSocket updates (optional)
-- [x] Integration test suite (DB-only + cached)
-- [x] Comprehensive E2E and unit test coverage (284 tests)
-- [ ] Customer provider (Optional - considering leaving this to dev)
-    - [ ] `useCustomer(referenceId)`
-- [ ] Per-customer feature limits (`featureLimits`)
-- [ ] Consumption idempotency keys
+## Architecture
 
-
-## Features
-
-- Define features with maxLimit, minLimit, reset strategies, and metadata.
-- Apply plan-specific overrides (e.g. different limits per plan).
-- Hook into usage events (before and after).
-- Add custom authorization logic with authorizeReference.
-- Optional Redis caching with atomic Lua-based increments.
-- Optional real-time usage tracking via WebSocket (Socket.IO).
-
-### Installation
-```bash
-npm add @eggermarc/better-auth-usage
-# or
-bun add @eggermarc/better-auth-usage
-# or
-pnpm add @eggermarc/better-auth-usage
+```
+Client Request → BetterAuth Endpoint → Effect Pipeline → Redis (Lua, <10ms)
+                                                       ↓
+                                              WAL Stream (XADD)
+                                                       ↓
+                                              WAL Worker (subscribe/poll)
+                                                       ↓
+                                              DB: usage (current) + usage_event (history)
 ```
 
-### Usage
-#### Server
+- **Redis-primary**: Atomic Lua script handles increment, reset check, WAL append, and pub/sub in a single `EVAL`
+- **WAL durability**: Redis Stream acts as a write-ahead log, drained to DB by a background worker
+- **DB fallback**: Works without Redis (DB-only mode) — just slower
+- **Effect runtime**: All server-side logic uses [Effect](https://effect.website/) for typed errors, composable pipelines, and structured concurrency
+
+## Installation
+
+```bash
+bun add @eggermarc/better-auth-usage
+# or
+npm add @eggermarc/better-auth-usage
+```
+
+## Quick Start
+
+### Server
+
 ```typescript
 import { betterAuth } from "better-auth";
 import { usage } from "@eggermarc/better-auth-usage";
@@ -45,169 +40,278 @@ import { usage } from "@eggermarc/better-auth-usage";
 export const auth = betterAuth({
     plugins: [usage({
         features: {
-            "token-feature": {
-                key: "token-feature",
+            "api-calls": {
+                key: "api-calls",
                 maxLimit: 1000,
                 reset: "monthly",
                 resetValue: 0,
-                details: ["Number of tokens per month"],
-            }
+            },
+            "credits": {
+                key: "credits",
+                maxLimit: 50000,
+                reset: "never",
+                onPlanChange: "reset", // reset credits when plan changes
+            },
         },
         overrides: {
-            "starter-plan": {
+            "starter": {
                 features: {
-                    "token-feature": {
-                        maxLimit: 10_000,
-                        stripeId: "price_xxx", // Can declare extra fields
-                        hooks: {
-                            after: async ({ usage, customer, feature }) => {
-                                console.log(
-                                    `[AFTER HOOK] ${customer.referenceId} used ${usage.amount} of ${feature.key}`
-                                );
-                            },
-                        },
-                    },
+                    "api-calls": { maxLimit: 1_000 },
                 },
             },
-            "pro-plan": {
+            "pro": {
                 features: {
-                    "token-feature": {
-                        maxLimit: 1_000_000,
-                    },
+                    "api-calls": { maxLimit: 100_000 },
+                    "credits": { maxLimit: 500_000 },
                 },
             },
         },
-        // Optional: enable Redis caching
-        // cacheOptions: {
-        //     redisUrl: process.env.REDIS_URL!,
-        //     enableRealtime: true,  // optional WebSocket support
-        //     port: 3001,            // required if enableRealtime is true
-        // },
+        // Optional: Redis for sub-10ms writes + WAL durability
+        cacheOptions: {
+            redisUrl: process.env.REDIS_URL!,
+            wal: {
+                enabled: true,
+                drainStrategy: "subscribe", // zero idle cost (default)
+                // drainStrategy: "poll",   // use if pub/sub unavailable
+                // pollInterval: 1000,      // ms, only for "poll"
+            },
+        },
+        // Optional: custom logger (default: console)
+        // logger: { debug: ..., info: ..., warn: ..., error: ... },
     })]
 })
 ```
 
-#### Client
+### Client
+
 ```ts
 import { createAuthClient } from "better-auth/client";
 import { usageClient } from "@eggermarc/better-auth-usage/client";
 
 export const client = createAuthClient({
-  plugins: [usageClient()],
+    plugins: [usageClient()],
 });
 ```
 
-### Customer Registration
+## API
 
-**Important:** A customer must be registered before consuming usage. The consume endpoint requires the customer to exist.
+### Consume usage
 
 ```ts
-// Register a customer first
-await client.usage.upsertCustomer({
-  referenceId: "123",
-  referenceType: "user",
-  name: "John Doe",
-  email: "john@example.com",
-});
-
-// Then consume usage
 await client.usage.consume({
-  featureKey: "token-feature",
-  overrideKey: "starter-plan",
-  referenceId: "123",
-  amount: 1,
+    featureKey: "api-calls",
+    referenceId: "team-123",
+    amount: 1,
 });
-
-// Check current usage and limits
-const status = await client.usage.check({
-  featureKey: "token-feature",
-  referenceId: "123",
-});
-// => { status: "in-limit", currentAmount: 1, maxLimit: 1000, minLimit: undefined }
 ```
 
-### Goals
-Why customer registration and not per user / organization query?
-- Generalizing customer management is not straight forward. Our goal was to not make many assumptions on the origin of the customer to let this plugin be usable for non typical use cases, like users and organizations. By giving customer registration to the dev, we allow multiple scenarios to arise, for instance **per-session** or **per-ip** limitations. We also open the door to **team** based usage.
+### Check usage (read-only)
 
-
-#### Examples
-##### Team based
 ```ts
-const customer = {
-    referenceId: teamId,
+const res = await client.usage.check({
+    featureKey: "api-calls",
+    referenceId: "team-123",
+});
+// res.data => { current: 42, max: 1000, remaining: 958, percent: 4, status: "in-limit", allowed: true }
+```
+
+### Entitlement check (can I use this?)
+
+```ts
+const res = await client.usage.canUse({
+    featureKey: "api-calls",
+    referenceId: "team-123",
+    amount: 1, // optional, defaults to 1
+});
+// res.data => { allowed: true, status: "in-limit", remaining: 958 }
+```
+
+### Atomic check + consume
+
+```ts
+const res = await client.usage.useFeature({
+    featureKey: "api-calls",
+    referenceId: "team-123",
+    amount: 1,
+});
+// res.data => { allowed: true, current: 43, ... } — only consumes if allowed
+```
+
+### Customer registration
+
+```ts
+await client.usage.upsertCustomer({
+    referenceId: "team-123",
     referenceType: "team",
-    email: session.user.email,
-    name: `${session.user.name}@${teamName}`,
-}
-
-await client.usage.upsertCustomer(customer)
-
-await client.usage.consume({
-    featureKey: "token-feature",
-    overrideKey: "team-plan",
-    referenceId: teamId,
-    amount: 1,
-})
+    name: "Acme Corp",
+    overrideKey: "pro", // auto-resolved on consume/check when not passed explicitly
+});
 ```
-##### Session based / IP based
+
+## Reactive Client
+
+Track usage in real-time from the browser. Ships as part of the `/client` export.
+
 ```ts
-const referenceId = session.session.ipAddress ?? session.session.id;
+import { createUsageTracker } from "@eggermarc/better-auth-usage/client";
 
-await client.usage.upsertCustomer({
-    referenceId,
-    referenceType: "session",
-})
+const tracker = createUsageTracker({
+    baseURL: "/api/auth",
+    websocket: false,      // true for Socket.IO, false for polling
+    pollInterval: 3000,    // ms, only when websocket is false
+    thresholds: [0.5, 0.8, 0.9, 1.0],
+});
 
-await client.usage.consume({
-    featureKey: "token-feature",
-    referenceId,
-    amount: 1,
-})
+const handle = tracker.track({
+    referenceId: "team-123",
+    features: ["api-calls", "credits"],
+});
+
+// Sync reads — zero latency, reads from local state
+handle.isAllowed("api-calls")  // true
+handle.getUsage("api-calls")   // { current, max, remaining, percent, status, allowed }
+
+// Events
+handle.on("update", (state) => { /* all features updated */ });
+handle.on("threshold", (e) => { /* e.feature crossed e.threshold */ });
+handle.on("blocked", (e) => { /* e.feature is now over limit */ });
+
+// Cleanup
+handle.dispose();
 ```
 
-### API Endpoints
+Framework wrappers are trivial — a React hook is ~15 lines:
+
+```tsx
+function useUsage(referenceId: string, features: string[]) {
+    const [state, setState] = useState({});
+    useEffect(() => {
+        const tracker = createUsageTracker({ baseURL: "/api/auth", pollInterval: 3000 });
+        const handle = tracker.track({ referenceId, features });
+        handle.on("update", setState);
+        return () => handle.dispose();
+    }, [referenceId]);
+    return state;
+}
+```
+
+## Endpoints
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `/usage/features` | GET | none | List all registered features |
-| `/usage/features/{featureKey}` | GET | none | Get a single feature config (with optional override) |
-| `/usage/consume` | POST | session | Consume/increment usage for a feature |
-| `/usage/check` | POST | session | Check current usage vs limits (with optional preview amount) |
-| `/usage/check-customer` | POST | session | Get customer details by referenceId |
+| `/usage/consume` | POST | session | Consume/increment usage |
+| `/usage/check` | POST | session | Check current usage vs limits |
+| `/usage/can-use` | POST | session | Entitlement check (read-only) |
+| `/usage/use-feature` | POST | session | Atomic check + consume |
 | `/usage/upsert-customer` | POST | session | Create or update a customer |
-| `/usage/sync` | POST | none | Manually trigger reset if due |
+| `/usage/check-customer` | POST | session | Get customer by referenceId |
+| `/usage/features` | GET | session | List all features |
+| `/usage/features/:key` | GET | session | Get single feature config |
+| `/usage/sync` | POST | session | Manually trigger reset if due |
 
-### Override Structure
+## Customer Model
 
-Overrides require a nested `features` key:
+We don't assume who the customer is. You define the scope:
+
+| Scope | referenceId | referenceType |
+|-------|------------|---------------|
+| Per-user | `userId` | `"user"` |
+| Per-team | `teamId` | `"team"` |
+| Per-org | `orgId` | `"org"` |
+| Per-session | `session.id` | `"session"` |
+| Per-IP | `request.ip` | `"ip"` |
+
+Set `overrideKey` on the customer to auto-resolve plan overrides on every consume/check.
+
+## Plan Transitions
+
+When a customer's `overrideKey` changes, each feature handles the transition independently:
 
 ```ts
-overrides: {
-    "plan-name": {
-        features: {                    // <-- required
-            "feature-key": {
-                maxLimit: 10_000,      // overrides the base feature's maxLimit
-                // any Feature field except `key` can be overridden
-            },
-        },
+features: {
+    "api-calls": {
+        key: "api-calls",
+        maxLimit: 100,
+        onPlanChange: "carry-over", // default — usage stays, limits change
+    },
+    "credits": {
+        key: "credits",
+        maxLimit: 1000,
+        onPlanChange: "reset",      // usage resets to resetValue on plan change
     },
 }
 ```
 
-The `overrideKey` is passed per-request to `consume`, `check`, or `sync` endpoints to apply the override for that specific call.
+Plan changes are logged to `usage_event` with `event: "plan-change"` and the new `overrideKey` for billing reconciliation.
 
-### Reset Strategies
+## Reset Strategies
 
-Features can specify a `reset` interval to automatically zero out usage:
+All reset boundaries are computed in **UTC**.
 
 | Reset | Boundary |
 |-------|----------|
-| `"hourly"` | Start of next hour |
-| `"6-hourly"` | Next 6-hour block (00:00, 06:00, 12:00, 18:00) |
-| `"daily"` | Tomorrow at 00:00 |
-| `"weekly"` | Next Monday at 00:00 |
-| `"monthly"` | 1st of next month at 00:00 |
-| `"quarterly"` | 1st of next quarter at 00:00 |
-| `"yearly"` | January 1st of next year at 00:00 |
+| `"hourly"` | Start of next UTC hour |
+| `"6-hourly"` | Next 6-hour block (00:00, 06:00, 12:00, 18:00 UTC) |
+| `"daily"` | Tomorrow at 00:00 UTC |
+| `"weekly"` | Next Monday at 00:00 UTC |
+| `"monthly"` | 1st of next month at 00:00 UTC |
+| `"quarterly"` | 1st of next quarter at 00:00 UTC |
+| `"yearly"` | January 1st of next year at 00:00 UTC |
 | `"never"` | Never resets |
+
+## Redis Configuration
+
+Redis is optional. Without it, the plugin works in DB-only mode (slower but functional).
+
+With Redis, the plugin uses:
+- **Lua scripts** for atomic increment + reset check (<1ms)
+- **Redis Streams** as a WAL for durable DB sync
+- **Pub/sub** for real-time event broadcasting
+
+```ts
+cacheOptions: {
+    redisUrl: "redis://localhost:6379",
+    wal: {
+        enabled: true,              // default
+        drainStrategy: "subscribe", // default — zero idle cost via pub/sub
+        // drainStrategy: "poll",   // alternative — polls every pollInterval
+        // pollInterval: 1000,      // ms, only for "poll" strategy
+    },
+}
+```
+
+**Important:** Redis must allow `EVAL`, `XADD`, `PUBLISH`, `SET`, `GET`, `HSET`, `HGETALL` commands. Managed Redis services with restricted ACLs (e.g. Upstash free tier) may not support the Lua script path — the plugin will fall back to DB-only mode silently.
+
+## DB Schema
+
+The plugin registers two tables via BetterAuth's schema system:
+
+**`usage`** — one row per (referenceId, feature), fast reads:
+- `referenceId`, `feature`, `amount` (current total), `event`, `lastResetAt`, `createdAt`, `updatedAt`
+
+**`usage_event`** — append-only event log for analytics/billing:
+- `referenceId`, `feature`, `amount` (delta), `event`, `overrideKey`, `lastResetAt`, `createdAt`
+
+## Running the Example
+
+```bash
+# Start local Redis
+docker compose up -d
+
+# Build the plugin
+bun run build
+
+# Run the Next.js example
+cd examples/nextjs
+bun install
+bun run dev
+```
+
+## Development
+
+```bash
+bun run build              # Build the plugin
+bun run test               # 136 tests (no Docker needed)
+bun run test:redis         # 11 Redis integration tests (needs: docker compose up -d)
+bun run test:perf          # Performance benchmarks
+```

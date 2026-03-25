@@ -74,11 +74,10 @@ describe("feature overrides", () => {
     });
 
     test("get single feature via API returns config without hooks", async () => {
-        // Use the auth.api directly since the GET endpoint has a body schema
-        // which doesn't work well with $fetch for GET requests
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
-            body: {},
+            query: {},
+            headers,
         });
 
         expect(res).toBeDefined();
@@ -91,7 +90,8 @@ describe("feature overrides", () => {
         try {
             await instance.auth.api.getFeature({
                 params: { featureKey: "nonexistent" },
-                body: {},
+                query: {},
+                headers,
             });
             // Should not reach here
             expect(true).toBe(false);
@@ -111,7 +111,6 @@ describe("hooks", () => {
         const instance = await createTestInstance({
             features: {
                 "limited": {
-                    key: "limited",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,
@@ -162,7 +161,6 @@ describe("hooks", () => {
         const instance = await createTestInstance({
             features: {
                 "tracked": {
-                    key: "tracked",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,
@@ -315,7 +313,6 @@ describe("feature details and overrideKey lookup", () => {
         instance = await createTestInstance({
             features: {
                 "api-calls": {
-                    key: "api-calls",
                     maxLimit: 100,
                     minLimit: 0,
                     reset: "monthly",
@@ -323,7 +320,6 @@ describe("feature details and overrideKey lookup", () => {
                     details: ["Rate limited", "Resets monthly"],
                 },
                 "credits": {
-                    key: "credits",
                     maxLimit: 1000,
                     minLimit: -500,
                     reset: "never",
@@ -357,7 +353,8 @@ describe("feature details and overrideKey lookup", () => {
     test("get single feature with overrideKey returns merged config", async () => {
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
-            body: { overrideKey: "pro-plan" },
+            query: { overrideKey: "pro-plan" },
+            headers,
         });
 
         expect(res.feature.maxLimit).toBe(10000);
@@ -375,7 +372,6 @@ describe("both before and after hooks on same feature", () => {
         const instance = await createTestInstance({
             features: {
                 "dual-hook": {
-                    key: "dual-hook",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,

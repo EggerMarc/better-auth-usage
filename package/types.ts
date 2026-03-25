@@ -1,14 +1,11 @@
-import type { UsageCache } from "./adapters/cache.ts";
-import type { UsageTracker } from "./realtime/usage-tracker.ts";
-import { cached_limitsSchema, cached_usageEventSchema, cached_usageSchema, customerLimitsSchema, customerSchema, usageSchema } from "./schema.ts"
-import { z } from "zod";
-import type { UsageAdapter } from "./adapters/index.ts";
+import { Schema } from "@effect/schema"
+import { UsageSchema, UsageEventSchema, CustomerSchema } from "./schema.ts"
 
 /**
- * Usage entry as inferred from the Zod schema.
- * Represents a single recorded usage event.
+ * Usage snapshot — one row per (referenceId, feature).
  */
-export type Usage = z.infer<typeof usageSchema>;
+export type Usage = Schema.Schema.Type<typeof UsageSchema>;
+export type UsageEvent = Schema.Schema.Type<typeof UsageEventSchema>;
 
 /**
  * Generic key/value store for extending base types
@@ -22,7 +19,12 @@ type ExtraFields = {
  * Customer specific usage limits
  * E.g.: Purchased credits
  */
-export type CustomerLimits = z.infer<typeof customerLimitsSchema>;
+export type CustomerLimits = {
+    referenceId: string
+    featureKey: string
+    maxLimit?: number
+    minLimit?: number
+};
 
 /**
  * Core Customer type used across the plugin.
@@ -32,7 +34,7 @@ export type CustomerLimits = z.infer<typeof customerLimitsSchema>;
  * - `email` / `name`: Optional metadata for identification.
  *
  */
-export type Customer = z.infer<typeof customerSchema>
+export type Customer = Schema.Schema.Type<typeof CustomerSchema>
 
 /**
  * Represents the deltas of usage for a single operation.
@@ -61,7 +63,8 @@ export type CustomerExpanded = Customer & ExtraFields;
  */
 export type Feature = {
     /**
-     * Unique identifier of the feature (e.g. `"api-tokens"`).
+     * Unique identifier. Auto-populated from the config object key.
+     * Users should not set this — it is derived from `features["my-key"]`.
      */
     key: string;
 
@@ -120,21 +123,40 @@ export type Feature = {
     };
 
     /**
-     * Optional authorization function that decides if a given
-     * customer is allowed to consume this feature.
+     * Behavior when a customer's plan (overrideKey) changes.
+     * - "carry-over" (default): usage stays, only limits change
+     * - "reset": usage resets to resetValue on plan change
      */
-    authorizeReference?: (params: {
-        feature: string;
-        referenceId: string;
-        referenceType: string;
-        incomingId: string;
-    }) => Promise<boolean> | boolean;
+    onPlanChange?: "carry-over" | "reset";
+
 };
 
 /**
- * Dictionary of features keyed by their unique `key`.
+ * Feature config as written by the user — `key` is optional (derived from object key).
+ * All fields are optional — an empty `{}` is valid (limits defined per override/plan).
  */
-export type Features = Record<string, Feature>;
+export type FeatureConfig = Omit<Feature, "key">
+
+/**
+ * Dictionary of features keyed by their unique key.
+ * Users write `FeatureConfig` (no `key`), internally resolved to `Feature` (with `key`).
+ */
+export type Features = Record<string, FeatureConfig>;
+
+/**
+ * Extract feature keys as a union type from a UsageOptions config.
+ *
+ * usage({ features: { "api-calls": {...}, "credits": {...} } })
+ *   → InferFeatureKeys = "api-calls" | "credits"
+ */
+export type InferFeatureKeys<O extends UsageOptions> = keyof O["features"] & string;
+
+/**
+ * Extract override keys as a union type from a UsageOptions config.
+ */
+export type InferOverrideKeys<O extends UsageOptions> = O["overrides"] extends Record<string, any>
+    ? keyof O["overrides"] & string
+    : never;
 
 /**
  * Dictionary of customers keyed by their `referenceId`.
@@ -195,9 +217,35 @@ export type ConsumptionLimitType =
  * - `overrides`: Optional per-customer or per-plan overrides.
  * - `customers`: Optional pre-registered customer dictionary.
  */
+/**
+ * Internal resolved options — features have `key` populated.
+ * Used by endpoints and pipelines.
+ */
+export interface ResolvedUsageOptions {
+    features: Record<string, Feature>;
+    overrides?: Overrides;
+    authorizeUser?: UsageOptions["authorizeUser"];
+    cacheOptions?: UsageOptions["cacheOptions"];
+    logger?: UsageOptions["logger"];
+}
+
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
+    /**
+     * Global authorization callback. Called on every operation (REST and WS)
+     * to verify the authenticated user has permission to act on the given
+     * referenceId.
+     *
+     * Return `true` to allow, `false` to deny.
+     * If not provided, all authenticated users can act on any referenceId.
+     */
+    authorizeUser?: (params: {
+        userId: string;
+        referenceId: string;
+        referenceType: string;
+        feature: string;
+    }) => Promise<boolean> | boolean;
     cacheOptions?: {
         enableRealtime?: boolean,
         redisUrl: string;
@@ -206,29 +254,19 @@ export interface UsageOptions {
             origin: string | string[];
             credentials?: boolean;
         };
+        wal?: {
+            /** Enable WAL for durable Redis→DB sync. Default: true */
+            enabled?: boolean;
+            /** "subscribe" (default, zero idle cost) or "poll" (sends ~4 cmds/sec when idle) */
+            drainStrategy?: "subscribe" | "poll";
+            /** Poll interval in ms. Only used when drainStrategy is "poll". Default: 1000 */
+            pollInterval?: number;
+        };
+    },
+    logger?: {
+        debug?(message: string, context?: Record<string, unknown>): void;
+        info?(message: string, context?: Record<string, unknown>): void;
+        warn?(message: string, context?: Record<string, unknown>): void;
+        error?(message: string, context?: Record<string, unknown>): void;
     },
 }
-
-
-/**
- * Internal type used by endpoints (includes injected cache/tracker)
- */
-export interface UsageOptionsWithCache extends UsageOptions {
-    cache?: UsageCache;
-    tracker?: UsageTracker;
-}
-
-/*
- *
- */
-export interface EndpointParams {
-    options: UsageOptionsWithCache,
-    adapter: UsageAdapter
-}
-
-/**
- * Caching Types
- */
-export type cached_Usage = z.infer<typeof cached_usageSchema>;
-export type cached_UsageEvent = z.infer<typeof cached_usageEventSchema>;
-export type cached_Limits = z.infer<typeof cached_limitsSchema>;
