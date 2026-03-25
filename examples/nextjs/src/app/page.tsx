@@ -174,11 +174,11 @@ function EventLog() {
 function AuthBar() {
     const session = authClient.useSession()
     const setReference = useSetReference()
-    const [selectedPlan, setSelectedPlan] = useState<string>("starter")
+    const [selectedPlan, setSelectedPlan] = useState<string | null>()
     const [switching, setSwitching] = useState(false)
 
-    const user = session.data?.user
-    const isAnonymous = (user as any)?.isAnonymous
+    const user = session.data?.user;
+    const isAnonymous = user?.isAnonymous;
 
     const handleGitHubLogin = () => {
         authClient.signIn.social({ provider: "github", callbackURL: "/" })
@@ -198,7 +198,6 @@ function AuthBar() {
                 referenceType: "user",
                 overrideKey: plan,
             })
-            // Re-trigger the provider to refetch with new limits
             setReference(user.id, "user")
         } catch (e: any) {
             console.error("Plan switch failed:", e.message)
@@ -228,23 +227,22 @@ function AuthBar() {
                 </div>
             )}
 
-            <div className="ml-2 flex items-center gap-1.5">
+            {isAnonymous || <div className="ml-2 flex items-center gap-1.5">
                 <span className="text-[10px] text-zinc-400">Plan:</span>
                 {["starter", "pro"].map(plan => (
                     <button
                         key={plan}
                         onClick={() => handlePlanSwitch(plan)}
                         disabled={switching}
-                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
-                            selectedPlan === plan
-                                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                        }`}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${selectedPlan === plan
+                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                            : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                            }`}
                     >
                         {plan}
                     </button>
                 ))}
-            </div>
+            </div>}
         </div>
     )
 }

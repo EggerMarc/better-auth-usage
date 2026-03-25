@@ -15,15 +15,8 @@ export function Providers({ children }: { children: ReactNode }) {
         if (session.data) return
         if (session.isPending) return
 
-        authClient.signIn.anonymous().then((res) => {
-            const userId = res.data?.user?.id
-            if (!userId) return
-            authClient.usage.upsertCustomer({
-                referenceId: userId,
-                referenceType: "user",
-                overrideKey: "starter",
-            })
-        }).catch((err) => console.error("Anonymous sign-in failed:", err))
+        authClient.signIn.anonymous()
+            .catch((err) => console.error("Anonymous sign-in failed:", err))
     }, [session.data, session.isPending])
 
     if (!session.data?.user?.id) {
