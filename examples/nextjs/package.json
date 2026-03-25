@@ -4,8 +4,8 @@
     "private": true,
     "scripts": {
         "dev": "next dev --turbopack",
-        "build": "bun drizzle-kit push && next build",
-        "start": "next start",
+        "build": "next build",
+        "start": "bun drizzle-kit push && next start",
         "lint": "eslint"
     },
     "dependencies": {
