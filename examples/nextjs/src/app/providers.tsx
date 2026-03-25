@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from "react"
 import { authClient } from "@/lib/auth-client"
-import { createUsageProvider } from "package/react"
+import { createUsageProvider } from "@eggermarc/better-auth-usage/react"
 import type { auth } from "@/lib/auth"
 
 export const { UsageProvider, useFeature, useSetReference, useAllEvents } = createUsageProvider<typeof auth>()

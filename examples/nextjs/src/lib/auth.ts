@@ -3,7 +3,7 @@ import { openAPI } from "better-auth/plugins";
 import { anonymous } from "better-auth/plugins/anonymous";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
-import { usage, type UsageOptions } from "package/index"
+import { usage, type UsageOptions } from "@eggermarc/better-auth-usage"
 
 export const usageOptions = {
     features: {
