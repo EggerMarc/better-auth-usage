@@ -4,7 +4,7 @@
     "private": true,
     "scripts": {
         "dev": "next dev --turbopack",
-        "build": "next build",
+        "build": "cd ../.. && bun install && bun tsup && cd examples/nextjs && next build",
         "start": "bun drizzle-kit push && next start",
         "lint": "eslint"
     },
