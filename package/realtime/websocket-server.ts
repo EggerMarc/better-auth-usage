@@ -317,21 +317,13 @@ export const setupWebSocketHandlers = (
                     "consume:result",
                     Effect.gen(function* () {
                         const feature = yield* authorizeAndResolve(options, auth, data)
-                        const result = yield* consumeUsage({
+                        return yield* consumeUsage({
                             referenceId: data.referenceId,
                             amount: data.amount,
                             event: data.event ?? "use",
                             feature,
                             walEnabled,
                         })
-                        // Broadcast to all subscribers
-                        io.to(`usage:${data.featureKey}:${data.referenceId}`)
-                            .emit("usage:updated", {
-                                feature: data.featureKey,
-                                refId: data.referenceId,
-                                ...result,
-                            })
-                        return result
                     }),
                     layer,
                 )
@@ -345,21 +337,13 @@ export const setupWebSocketHandlers = (
                     "use-feature:result",
                     Effect.gen(function* () {
                         const feature = yield* authorizeAndResolve(options, auth, data)
-                        const result = yield* useFeature({
+                        return yield* useFeature({
                             referenceId: data.referenceId,
                             amount: data.amount ?? 1,
                             event: data.event ?? "use",
                             feature,
                             walEnabled,
                         })
-                        // Broadcast to all subscribers (even if blocked — state changed)
-                        io.to(`usage:${data.featureKey}:${data.referenceId}`)
-                            .emit("usage:updated", {
-                                feature: data.featureKey,
-                                refId: data.referenceId,
-                                ...result,
-                            })
-                        return result
                     }),
                     layer,
                 )

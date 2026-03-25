@@ -1,7 +1,7 @@
 "use client"
 
-import { useUsage } from "package/react"
-import { useState } from "react"
+import { useFeature, useAllLogs } from "package/react"
+import { useState, useRef, useEffect } from "react"
 
 const FEATURES = [
     { key: "api-calls", label: "API Calls", icon: "GET", unit: "requests" },
@@ -27,6 +27,10 @@ function statusBadge(status: string | undefined) {
     return { text: "Below Min", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" }
 }
 
+function ts(epoch: number) {
+    return new Date(epoch).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" })
+}
+
 // ── Feature Card ──
 
 function FeatureCard({ featureKey, label, icon, unit }: {
@@ -35,24 +39,17 @@ function FeatureCard({ featureKey, label, icon, unit }: {
     icon: string
     unit: string
 }) {
-    const { usage, isAllowed, consume, check, canUse, useFeature } = useUsage(featureKey)
+    const { usage, consume } = useFeature(featureKey)
     const [loading, setLoading] = useState(false)
 
     const p = pct(usage?.current ?? 0, usage?.max ?? null)
     const badge = statusBadge(usage?.status)
 
-    const action = async (label: string, fn: () => Promise<any>) => {
+    const action = async (fn: () => Promise<any>) => {
         setLoading(true)
-        try {
-            const start = performance.now()
-            const result = await fn()
-            const ms = (performance.now() - start).toFixed(1)
-            console.log(`[${label}] ${ms}ms`, result)
-        } catch (e: any) {
-            console.error(`[${label}] failed:`, e.message)
-        } finally {
-            setLoading(false)
-        }
+        try { await fn() }
+        catch (e: any) { console.error(`[${featureKey}] failed:`, e.message) }
+        finally { setLoading(false) }
     }
 
     return (
@@ -93,45 +90,71 @@ function FeatureCard({ featureKey, label, icon, unit }: {
 
             <div className="flex flex-wrap gap-1.5">
                 <button
-                    onClick={() => action("consume+1", () => consume(1))}
+                    onClick={() => action(() => consume(1))}
                     disabled={loading}
                     className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                 >
                     +1
                 </button>
                 <button
-                    onClick={() => action("consume+10", () => consume(10))}
+                    onClick={() => action(() => consume(10))}
                     disabled={loading}
                     className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                 >
                     +10
                 </button>
                 <button
-                    onClick={() => action("consume-5", () => consume(-5, "refund"))}
+                    onClick={() => action(() => consume(100))}
                     disabled={loading}
-                    className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="rounded-md bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                 >
-                    -5
+                    +100
                 </button>
-                <button
-                    onClick={() => action("useFeature", () => useFeature())}
-                    disabled={loading}
-                    className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                >
-                    useFeature
-                </button>
-                <button
-                    onClick={() => action("canUse", () => canUse())}
-                    className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                >
-                    canUse
-                </button>
-                <button
-                    onClick={() => action("check", () => check())}
-                    className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                >
-                    check
-                </button>
+            </div>
+        </div>
+    )
+}
+
+// ── Event Log ──
+
+function EventLog() {
+    const logs = useAllLogs()
+    const endRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        endRef.current?.scrollIntoView({ behavior: "smooth" })
+    }, [logs.length])
+
+    return (
+        <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:col-span-2">
+            <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Event Log</h2>
+                <span className="text-[10px] text-zinc-400">{logs.length} events</span>
+            </div>
+            <div className="h-64 overflow-y-auto px-4 py-2 font-mono text-xs">
+                {logs.length === 0 && (
+                    <p className="py-8 text-center text-zinc-400">
+                        Interact with the features above to see events here
+                    </p>
+                )}
+                {logs.slice(-50).map((entry, i) => (
+                    <div key={i} className="flex gap-2 py-0.5">
+                        <span className="shrink-0 text-zinc-400">{ts(entry.ts)}</span>
+                        <span className={`shrink-0 ${
+                            entry.type === "consume" ? "text-blue-500" : "text-zinc-500"
+                        }`}>
+                            [{entry.type}]
+                        </span>
+                        <span className="shrink-0 text-zinc-500 dark:text-zinc-400">
+                            {entry.feature}
+                        </span>
+                        <span className="text-zinc-700 dark:text-zinc-300">
+                            {entry.data?.current ?? "—"}/{entry.data?.max ?? "—"}
+                            {entry.data?.status === "above-max-limit" && " OVER LIMIT"}
+                        </span>
+                    </div>
+                ))}
+                <div ref={endRef} />
             </div>
         </div>
     )
@@ -168,17 +191,21 @@ export default function Home() {
                     ))}
                 </div>
 
-                <div className="mt-6 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800/50">
-                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                        How it works
-                    </h3>
-                    <ul className="space-y-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        <li>Anonymous session via BetterAuth — no login required</li>
-                        <li>Real-time state via WebSocket (auto-discovered, auto-reconnect)</li>
-                        <li>Operations route through WS when connected, REST fallback</li>
-                        <li>Redis atomic Lua scripts for sub-10ms writes</li>
-                        <li>WAL for durable event sourcing to DB</li>
-                    </ul>
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                    <EventLog />
+
+                    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                            How it works
+                        </h2>
+                        <ul className="space-y-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                            <li>Anonymous session via BetterAuth</li>
+                            <li>Real-time state via WebSocket (auto-discovered)</li>
+                            <li>Operations route through WS, REST fallback</li>
+                            <li>Redis atomic Lua scripts for sub-10ms writes</li>
+                            <li>WAL for durable event sourcing to DB</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

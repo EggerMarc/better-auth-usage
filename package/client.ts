@@ -32,17 +32,6 @@ export interface UsageState {
     remaining: number | null
     percent: number | null
     status: "in-limit" | "above-max-limit" | "below-min-limit"
-    allowed: boolean
-}
-
-export interface CheckResult {
-    allowed: boolean
-    status: string
-    current: number
-    max: number | undefined
-    min: number | undefined
-    remaining: number | null
-    percent: number | null
 }
 
 export interface ConsumeResult {
@@ -53,6 +42,13 @@ export interface ConsumeResult {
     min: number | undefined
     remaining: number | null
     status: string
+}
+
+export interface LogEntry {
+    type: "consume" | "update"
+    feature: string
+    data: any
+    ts: number
 }
 
 type UpdateHandler = (state: Record<string, UsageState>) => void
@@ -73,27 +69,11 @@ export interface TrackerOptions {
 interface TrackParams {
     referenceId: string
     features: string[]
-    /** Reference type passed to authorizeUser on the server. Default: "user" */
     referenceType?: string
 }
 
 // ── Factory ──
 
-/**
- * Create a reactive usage tracker.
- *
- * WS URL is auto-discovered from the server via `/usage/ws`.
- *
- * ```ts
- * const tracker = createUsageTracker({ baseURL: "/api/auth", token: sessionToken })
- * const handle = tracker.track({ referenceId: "org-123", features: ["api-calls"] })
- *
- * handle.isAllowed("api-calls")
- * await handle.consume("api-calls", 1)
- * handle.subscribe(() => console.log(handle.getSnapshot()))
- * handle.dispose()
- * ```
- */
 export function createUsageTracker(options: TrackerOptions) {
     const {
         baseURL,
@@ -114,8 +94,13 @@ export function createUsageTracker(options: TrackerOptions) {
 
 // ── Handle ──
 
+interface Snapshot {
+    state: Record<string, UsageState>
+    logs: Record<string, LogEntry[]>
+}
+
 export class UsageTrackerHandle {
-    private state: Record<string, UsageState> = {}
+    private snapshot: Snapshot = { state: {}, logs: {} }
     private updateHandlers: UpdateHandler[] = []
     private pollHandle: ReturnType<typeof setInterval> | null = null
     private socket: Socket | null = null
@@ -131,6 +116,10 @@ export class UsageTrackerHandle {
             headers?: Record<string, string> | (() => Record<string, string>)
         }
     ) {
+        for (const feature of params.features) {
+            this.snapshot.logs[feature] = []
+        }
+
         this.fetchAll()
 
         if (options.websocket) {
@@ -142,16 +131,20 @@ export class UsageTrackerHandle {
 
     // ── Sync reads ──
 
-    isAllowed(feature: string): boolean {
-        return this.state[feature]?.allowed ?? true
-    }
-
     getUsage(feature: string): UsageState | null {
-        return this.state[feature] ?? null
+        return this.snapshot.state[feature] ?? null
     }
 
     getAll(): Record<string, UsageState> {
-        return this.state
+        return this.snapshot.state
+    }
+
+    getLog(feature: string): LogEntry[] {
+        return this.snapshot.logs[feature] ?? []
+    }
+
+    getAllLogs(): LogEntry[] {
+        return Object.values(this.snapshot.logs).flat().sort((a, b) => a.ts - b.ts)
     }
 
     // ── useSyncExternalStore compat ──
@@ -164,54 +157,32 @@ export class UsageTrackerHandle {
         }
     }
 
-    getSnapshot(): Record<string, UsageState> {
-        return this.state
+    getSnapshot(): Snapshot {
+        return this.snapshot
     }
 
-    // ── Operations (WS → REST fallback) ──
+    // ── Operations ──
 
-    async consume(featureKey: string, amount: number, event = "use"): Promise<ConsumeResult> {
+    /**
+     * Atomic check + consume. Only consumes if in-limit.
+     * Routes through WS when connected, REST fallback.
+     */
+    async consume(featureKey: string, amount = 1, event = "use"): Promise<ConsumeResult> {
+        let result: ConsumeResult
+
         if (this.socket?.connected) {
-            return this.emitAndWait("consume", "consume:result", {
+            result = await this.emitAndWait("use-feature", "use-feature:result", {
+                referenceId: this.params.referenceId, featureKey, amount, event,
+            })
+        } else {
+            result = await this.restPost<ConsumeResult>("/usage/use-feature", {
                 referenceId: this.params.referenceId, featureKey, amount, event,
             })
         }
-        return this.restPost<ConsumeResult>("/usage/consume", {
-            referenceId: this.params.referenceId, featureKey, amount, event,
-        })
-    }
 
-    async check(featureKey: string, amount?: number): Promise<CheckResult> {
-        if (this.socket?.connected) {
-            return this.emitAndWait("check", "check:result", {
-                referenceId: this.params.referenceId, featureKey, amount,
-            })
-        }
-        return this.restPost<CheckResult>("/usage/check", {
-            referenceId: this.params.referenceId, featureKey, amount,
-        })
-    }
-
-    async canUse(featureKey: string, amount?: number): Promise<CheckResult> {
-        if (this.socket?.connected) {
-            return this.emitAndWait("can-use", "can-use:result", {
-                referenceId: this.params.referenceId, featureKey, amount,
-            })
-        }
-        return this.restPost<CheckResult>("/usage/can-use", {
-            referenceId: this.params.referenceId, featureKey, amount,
-        })
-    }
-
-    async useFeature(featureKey: string, amount = 1, event = "use"): Promise<ConsumeResult> {
-        if (this.socket?.connected) {
-            return this.emitAndWait("use-feature", "use-feature:result", {
-                referenceId: this.params.referenceId, featureKey, amount, event,
-            })
-        }
-        return this.restPost<ConsumeResult>("/usage/use-feature", {
-            referenceId: this.params.referenceId, featureKey, amount, event,
-        })
+        this.addLog(featureKey, "consume", result)
+        this.updateFeature(featureKey, result)
+        return result
     }
 
     // ── Events ──
@@ -281,10 +252,8 @@ export class UsageTrackerHandle {
 
     // ── Internal: WS ──
 
-    /** Auto-discover WS URL and session token from server, then connect. */
     private async discoverAndConnect() {
         try {
-            // Fetch WS info and session in parallel
             const [wsRes, sessionRes] = await Promise.all([
                 this.options.fetchImpl(`${this.baseURL}/usage/ws`, {
                     method: "GET",
@@ -389,6 +358,7 @@ export class UsageTrackerHandle {
             socket.on("usage:updated", (data: any) => {
                 const feature = data.feature
                 if (!feature || !this.params.features.includes(feature)) return
+                this.addLog(feature, "update", data)
                 if (data.current !== undefined && data.status !== undefined) {
                     this.updateFeature(feature, data)
                 } else {
@@ -416,6 +386,15 @@ export class UsageTrackerHandle {
         }, this.options.pollInterval)
     }
 
+    private addLog(feature: string, type: LogEntry["type"], data: any) {
+        const prev = this.snapshot.logs[feature] ?? []
+        this.snapshot = {
+            ...this.snapshot,
+            logs: { ...this.snapshot.logs, [feature]: [...prev, { type, feature, data, ts: Date.now() }] },
+        }
+        this.updateHandlers.forEach(h => h(this.snapshot.state))
+    }
+
     private updateFeature(feature: string, data: any) {
         const max = data.max ?? data.maxLimit ?? null
         const min = data.min ?? data.minLimit ?? null
@@ -429,10 +408,12 @@ export class UsageTrackerHandle {
             remaining: max != null ? max - current : null,
             percent: max != null && max > 0 ? Math.round((current / max) * 100) : null,
             status,
-            allowed: status === "in-limit",
         }
 
-        this.state = { ...this.state, [feature]: next }
-        this.updateHandlers.forEach(h => h(this.state))
+        this.snapshot = {
+            ...this.snapshot,
+            state: { ...this.snapshot.state, [feature]: next },
+        }
+        this.updateHandlers.forEach(h => h(this.snapshot.state))
     }
 }

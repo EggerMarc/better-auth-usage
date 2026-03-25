@@ -14,8 +14,8 @@ import {
     createUsageTracker,
     type UsageTrackerHandle,
     type UsageState,
-    type CheckResult,
     type ConsumeResult,
+    type LogEntry,
 } from "../client"
 
 // ── Context ──
@@ -98,16 +98,13 @@ export function UsageProvider({
     const registerFeature = useCallback((feature: string) => {
         if (featuresRef.current.has(feature)) return
         featuresRef.current.add(feature)
-        // Recreate handle with new feature list
         createHandle(ctx.referenceId, ctx.referenceType)
     }, [createHandle, ctx.referenceId, ctx.referenceType])
 
-    // Update setReference/registerFeature in context when they change
     useEffect(() => {
         setCtx(prev => ({ ...prev, setReference, registerFeature }))
     }, [setReference, registerFeature])
 
-    // Cleanup on unmount
     useEffect(() => {
         return () => {
             handleRef.current?.dispose()
@@ -122,83 +119,59 @@ export function UsageProvider({
     )
 }
 
-// ── useUsage ──
+// ── useFeature ──
 
-export interface UseUsageResult {
+export interface UseFeatureResult {
     /** Current usage state. Null until first fetch completes. */
     usage: UsageState | null
-    /** Whether the feature is within its limits. */
-    isAllowed: boolean
-    /** Consume usage. */
-    consume: (amount: number, event?: string) => Promise<ConsumeResult>
-    /** Check usage without consuming. */
-    check: (amount?: number) => Promise<CheckResult>
-    /** Entitlement check. */
-    canUse: (amount?: number) => Promise<CheckResult>
-    /** Atomic check + consume. */
-    useFeature: (amount?: number, event?: string) => Promise<ConsumeResult>
+    /** Atomic check + consume. Only consumes if in-limit. */
+    consume: (amount?: number, event?: string) => Promise<ConsumeResult>
+    /** Event log for this feature. */
+    log: LogEntry[]
 }
 
 /**
- * Access usage state and operations for a feature.
+ * Track and consume a feature.
  *
  * ```tsx
- * const { usage, isAllowed, consume, check } = useUsage("api-calls")
+ * const { usage, consume, log } = useFeature("api-calls")
+ *
+ * usage?.status  // "in-limit" | "above-max-limit" | "below-min-limit"
+ * usage?.current // 74
+ * usage?.max     // 100
+ *
+ * await consume(1)
  * ```
  */
-export function useUsage(feature: string): UseUsageResult {
+export function useFeature(feature: string): UseFeatureResult {
     const ctx = useContext(UsageContext)
-    if (!ctx) throw new Error("useUsage must be used within <UsageProvider>")
+    if (!ctx) throw new Error("useFeature must be used within <UsageProvider>")
 
     const { handle, registerFeature } = ctx
 
-    // Register this feature on mount
     useEffect(() => {
         registerFeature(feature)
     }, [feature, registerFeature])
 
-    const state = useSyncExternalStore(
+    const emptySnapshot = { state: {} as Record<string, UsageState>, logs: {} as Record<string, LogEntry[]> }
+    const snapshot = useSyncExternalStore(
         useCallback((cb) => handle?.subscribe(cb) ?? (() => {}), [handle]),
-        useCallback(() => handle?.getSnapshot() ?? {}, [handle]),
-        () => ({} as Record<string, UsageState>),
+        useCallback(() => handle?.getSnapshot() ?? emptySnapshot, [handle]),
+        () => emptySnapshot,
     )
 
-    const usage = state[feature] ?? null
-    const isAllowed = usage?.allowed ?? true
+    const usage = snapshot.state[feature] ?? null
+    const log = snapshot.logs[feature] ?? []
 
     const consume = useCallback(
-        (amount: number, event?: string) => {
+        (amount = 1, event?: string) => {
             if (!handle) return Promise.reject(new Error("Not connected"))
             return handle.consume(feature, amount, event)
         },
         [handle, feature],
     )
 
-    const check = useCallback(
-        (amount?: number) => {
-            if (!handle) return Promise.reject(new Error("Not connected"))
-            return handle.check(feature, amount)
-        },
-        [handle, feature],
-    )
-
-    const canUse = useCallback(
-        (amount?: number) => {
-            if (!handle) return Promise.reject(new Error("Not connected"))
-            return handle.canUse(feature, amount)
-        },
-        [handle, feature],
-    )
-
-    const useFeatureFn = useCallback(
-        (amount?: number, event?: string) => {
-            if (!handle) return Promise.reject(new Error("Not connected"))
-            return handle.useFeature(feature, amount, event)
-        },
-        [handle, feature],
-    )
-
-    return { usage, isAllowed, consume, check, canUse, useFeature: useFeatureFn }
+    return { usage, consume, log }
 }
 
 // ── useSetReference ──
@@ -217,10 +190,30 @@ export function useSetReference(): (referenceId: string, referenceType?: string)
     return ctx.setReference
 }
 
+// ── useAllLogs ──
+
+/**
+ * Get the combined event log across all features, sorted by time.
+ */
+export function useAllLogs(): LogEntry[] {
+    const ctx = useContext(UsageContext)
+    if (!ctx) throw new Error("useAllLogs must be used within <UsageProvider>")
+
+    const { handle } = ctx
+    const emptySnapshot = { state: {} as Record<string, UsageState>, logs: {} as Record<string, LogEntry[]> }
+    const snapshot = useSyncExternalStore(
+        useCallback((cb) => handle?.subscribe(cb) ?? (() => {}), [handle]),
+        useCallback(() => handle?.getSnapshot() ?? emptySnapshot, [handle]),
+        () => emptySnapshot,
+    )
+
+    return Object.values(snapshot.logs).flat().sort((a, b) => a.ts - b.ts)
+}
+
 // ── Re-exports ──
 
 export type {
     UsageState,
-    CheckResult,
     ConsumeResult,
+    LogEntry,
 } from "../client"
