@@ -4,12 +4,11 @@
     "private": true,
     "scripts": {
         "dev": "next dev --turbopack",
-        "build": "cd ../.. && bun install && bun tsup && cd examples/nextjs && next build",
+        "build": "cd ../.. && bun tsup && cd examples/nextjs && next build",
         "start": "bun drizzle-kit push && next start",
         "lint": "eslint"
     },
     "dependencies": {
-        "@eggermarc/better-auth-usage": "link:../../",
         "better-auth": "^1.3.34",
         "drizzle-orm": "^0.44.7",
         "next": "^16.2.0",
