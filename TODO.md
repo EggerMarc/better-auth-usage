@@ -128,7 +128,6 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 - [ ] **consume.ts is 303 lines** — 5 concerns in one file. Split into `consume.ts`, `use-feature.ts`, `helpers/write-to-db.ts`, `helpers/lift-callback.ts`.
 
 ### P5 — Resilience
-- [ ] **Client has no WebSocket reconnection** — disconnect falls back to polling permanently, never retries WebSocket. Fix: exponential backoff reconnect, resume WebSocket when available.
 - [ ] **Plan transitions aren't atomic** — `handleFeaturePlanChange` runs features concurrently. Process crash mid-way = partial plan change. Fix: wrap in DB transaction via `adapter.transaction`.
 - [ ] **No max amount protection** — `consume({ amount: Number.MAX_SAFE_INTEGER })` is valid. Add `maxAmount` config per feature or global cap.
 
@@ -136,6 +135,58 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 - [ ] **BetterAuth schema fields not type-checked** — `overrideKey` was missing from DB schema but present in TypeScript type. No compile-time detection. Fix: build-time assertion that type keys match schema fields.
 - [ ] **Zod + @effect/schema coexist** — can't remove Zod (BetterAuth requires it). Document it.
 - [ ] **No idempotency keys** — retry = double-count. Add optional `idempotencyKey` on consume.
+
+---
+
+## Phase 11: WebSocket First-Class Transport + Auth
+
+Full technical plan: `.claude/plans/fancy-cooking-sparkle.md`
+
+### 11a. Auth Infrastructure
+- [ ] Add `authorizeUser` callback to `UsageOptions` — global auth: `({ userId, referenceId, referenceType, feature }) => boolean`. Replaces per-feature `authorizeReference`.
+- [ ] Remove `authorizeReference` from `Feature` type
+- [ ] Create `realtime/auth.ts` — token validation via BetterAuth session lookup (accepts session token or bearer token)
+- [ ] WS handshake auth middleware — validates token in `socket.handshake.auth.token`, attaches `socket.data.userId`
+- [ ] Update REST endpoints to call `authorizeUser` with `session.user.id` before running pipelines
+
+### 11b. Full WS API
+- [ ] Rewrite `websocket-server.ts` — full operation handlers: `check`, `can-use`, `consume`, `use-feature` (reuse existing Effect pipelines)
+- [ ] WS request-response pattern: client emits `check` → server emits `check:result`
+- [ ] All mutations (REST or WS) broadcast `usage:updated` to subscribed WS rooms (Lua pub/sub handles Redis path; direct `io.to(room).emit()` for non-Redis/belt-and-suspenders)
+- [ ] Error mapping on WS matches `runPipeline` error mapping
+- [ ] Pass auth context to WS server setup in `runtime.ts`
+
+### 11c. Client WS Transport + Reconnection Fix
+- [ ] Fix WS reconnection: on `connect` event stop polling fallback, re-subscribe to rooms
+- [ ] Add explicit Socket.IO reconnection config (`reconnection: true`, exponential backoff)
+- [ ] Auth token in `socket.handshake.auth.token`
+- [ ] Client operations (consume, check, canUse, useFeature) route through WS when connected, fall back to REST
+- [ ] Immutable state (new object ref on update) for `useSyncExternalStore` compat
+- [ ] Add public `subscribe(cb)` and `getSnapshot()` methods to `UsageTrackerHandle`
+
+## Phase 12: Framework Clients
+
+### 12a. React Hooks — `@eggermarc/better-auth-usage/react`
+- [ ] `UsageProvider` — creates tracker with config + auth token, handle cache with refCounting, SSR-safe
+- [ ] `useUsage({ referenceId, features })` — `useSyncExternalStore` for zero-tearing reads
+- [ ] `useFeatureUsage(feature, referenceId)` — single-feature convenience hook
+- [ ] `useUsageActions(referenceId)` — returns bound `consume`, `check`, `canUse`, `useFeature` functions (WS or REST)
+- [ ] `useUsageEvent("threshold" | "blocked", handler)` — stable handler ref via `useRef`
+- [ ] Build config: `react` entry in `tsup.config.ts`, `./react` export in `package.json`, `react ^18 || ^19` optional peer dep
+- [ ] Update `examples/nextjs/src/app/page.tsx` to use hooks
+
+### 12b. Vue Composables — `@eggermarc/better-auth-usage/vue`
+- [ ] `useUsage`, `useFeatureUsage`, `useUsageActions`, `useUsageEvent` as Vue composables
+- [ ] Uses `ref()` / `watchEffect()` with `subscribe()`/`getSnapshot()`
+
+### 12c. Svelte Stores — `@eggermarc/better-auth-usage/svelte`
+- [ ] Svelte store adapters wrapping `subscribe()`/`getSnapshot()`
+
+### 12d. Solid Signals — `@eggermarc/better-auth-usage/solid`
+- [ ] `createStore`-based integration
+
+### 12e. Angular Service — `@eggermarc/better-auth-usage/angular`
+- [ ] Injectable service with RxJS Observable wrappers
 
 ---
 
@@ -164,10 +215,11 @@ package/
 ├── runtime.ts            runPipeline + WAL init + centralized error mapping
 ├── utils.ts              checkLimit, shouldReset, redactId
 ├── client.ts             BetterAuth client + reactive tracker (createUsageTracker)
+├── react.ts              React hooks (UsageProvider, useUsage, useFeatureUsage, useUsageActions, useUsageEvent)
 ├── services/             RedisService, DbService, LoggerService
 ├── pipelines/            All business logic (Effect)
 ├── endpoints/            9 endpoints (thin wrappers, zero try-catch)
 ├── wal/                  WAL worker + recovery
 ├── adapters/lua/         increment.lua, set-meta.lua
-└── realtime/             Pure subscriber + websocket handlers (Effect)
+└── realtime/             Auth, pure subscriber, full WS API handlers (Effect)
 ```
