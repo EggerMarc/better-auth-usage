@@ -133,30 +133,42 @@ const handleFeaturePlanChange = ({
     Effect.gen(function* () {
         const behavior = feature.onPlanChange ?? "carry-over"
 
-        // Log plan-change event (both behaviors)
-        yield* db.create({
-            model: "usageEvent",
-            data: {
-                referenceId,
-                feature: feature.key,
-                amount: 0,
-                event: "plan-change",
-                overrideKey: toOverride,
-                lastResetAt: now,
-                createdAt: now,
-            },
-        }).pipe(
-            Effect.catchAll((err) =>
-                Effect.sync(() =>
-                    logger.warn("Failed to log plan-change event", {
-                        referenceId, feature: feature.key, error: err,
-                    })
-                )
-            )
-        )
-
         if (behavior === "reset") {
             const resetValue = feature.resetValue ?? 0
+
+            // Fetch current usage to compute delta for history
+            const existing = yield* db.findOne<{ amount: number }>({
+                model: "usage",
+                where: [
+                    { field: "referenceId", value: referenceId },
+                    { field: "feature", value: feature.key },
+                ],
+            }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+            const currentAmount = existing?.amount ?? 0
+            const delta = resetValue - currentAmount
+
+            // Log plan-change event with actual delta
+            yield* db.create({
+                model: "usageEvent",
+                data: {
+                    referenceId,
+                    feature: feature.key,
+                    amount: delta,
+                    event: "plan-change",
+                    overrideKey: toOverride,
+                    lastResetAt: now,
+                    createdAt: now,
+                },
+            }).pipe(
+                Effect.catchAll((err) =>
+                    Effect.sync(() =>
+                        logger.warn("Failed to log plan-change event", {
+                            referenceId, feature: feature.key, error: err,
+                        })
+                    )
+                )
+            )
 
             // Reset Redis counter + update DB — concurrent
             yield* Effect.all([
@@ -195,5 +207,27 @@ const handleFeaturePlanChange = ({
             logger.info("Feature reset on plan change", {
                 referenceId, feature: feature.key, resetTo: resetValue,
             })
+        } else {
+            // Carry-over: log plan-change event with zero delta (usage unchanged)
+            yield* db.create({
+                model: "usageEvent",
+                data: {
+                    referenceId,
+                    feature: feature.key,
+                    amount: 0,
+                    event: "plan-change",
+                    overrideKey: toOverride,
+                    lastResetAt: now,
+                    createdAt: now,
+                },
+            }).pipe(
+                Effect.catchAll((err) =>
+                    Effect.sync(() =>
+                        logger.warn("Failed to log plan-change event", {
+                            referenceId, feature: feature.key, error: err,
+                        })
+                    )
+                )
+            )
         }
     })

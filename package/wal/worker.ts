@@ -6,7 +6,6 @@ const STREAM = "wal:usage"
 const GROUP = "wal-drain"
 const CONSUMER = `consumer-${process.pid}`
 const BATCH_SIZE = 100
-const TRIM_MAX = 10_000
 const BACKPRESSURE_THRESHOLD = 10_000
 
 export interface WalEntry {
@@ -102,8 +101,10 @@ export const drain = Effect.gen(function* () {
     const ids = entries.map((e) => e.id)
     yield* redis.xack(STREAM, GROUP, ...ids)
 
-    // 5. Trim stream
-    yield* redis.xtrim(STREAM, TRIM_MAX)
+    // 5. Trim stream — only remove entries older than the oldest ACKed ID
+    // Using MINID ensures pending/unread entries are never dropped
+    const oldestAckedId = ids[0]
+    yield* redis.xtrim(STREAM, oldestAckedId)
 
     logger.debug("WAL: drained", { count: entries.length, coalesced: coalesced.size })
     return entries.length
@@ -111,6 +112,12 @@ export const drain = Effect.gen(function* () {
 
 /**
  * Upsert a single usage row from a WAL entry.
+ *
+ * Uses the stream entry ID as a monotonic guard — only updates if the
+ * incoming entry ID is newer than the last applied one. This prevents
+ * stale writes from out-of-order replays or recovery scenarios.
+ *
+ * Stream IDs are `{timestamp}-{seq}` and sort lexicographically.
  */
 const upsertUsageRow = (db: DbService, entry: WalEntry) =>
     Effect.gen(function* () {
@@ -124,6 +131,11 @@ const upsertUsageRow = (db: DbService, entry: WalEntry) =>
         })
 
         if (existing) {
+            // Monotonic guard: skip if this entry is older than what's already applied
+            if (existing.walStreamId && existing.walStreamId >= entry.id) {
+                return
+            }
+
             yield* db.update({
                 model: "usage",
                 where: [
@@ -135,6 +147,7 @@ const upsertUsageRow = (db: DbService, entry: WalEntry) =>
                     event: entry.event,
                     lastResetAt: new Date(entry.lastResetAt),
                     updatedAt: now,
+                    walStreamId: entry.id,
                 },
             })
         } else {
@@ -148,6 +161,7 @@ const upsertUsageRow = (db: DbService, entry: WalEntry) =>
                     lastResetAt: new Date(entry.lastResetAt),
                     createdAt: now,
                     updatedAt: now,
+                    walStreamId: entry.id,
                 },
             })
         }

@@ -48,6 +48,7 @@ export function usage<const O extends UsageOptions>(options: O) {
                     lastResetAt: { type: "date", required: true },
                     createdAt: { type: "date", required: true },
                     updatedAt: { type: "date", required: true },
+                    walStreamId: { type: "string", required: false },
                 },
             },
             // Append-only event log — one row per consumption event

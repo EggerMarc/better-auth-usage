@@ -33,6 +33,7 @@ interface ConsumeRequest {
     amount: number
     event?: string
     overrideKey?: string
+    requestId?: string
 }
 
 interface UseFeatureRequest {
@@ -41,6 +42,7 @@ interface UseFeatureRequest {
     amount?: number
     event?: string
     overrideKey?: string
+    requestId?: string
 }
 
 // ── Error mapping ──
@@ -54,6 +56,7 @@ function mapErrorToSocket(
     socket: Socket,
     eventName: string,
     cause: unknown,
+    requestId?: string,
 ) {
     const err = cause && typeof cause === "object" && "error" in cause
         ? (cause as any).error
@@ -61,7 +64,7 @@ function mapErrorToSocket(
     const tag = err?._tag
 
     const emit = (message: string) =>
-        socket.emit("error", { message, event: eventName })
+        socket.emit("error", { message, event: eventName, requestId })
 
     if (tag === "NotAuthorized") {
         return emit(`Not authorized: user "${err.userId}" cannot access "${err.feature}" for "${err.referenceId}"`)
@@ -147,14 +150,15 @@ async function runWsPipeline<A>(
     resultEvent: string,
     effect: Effect.Effect<A, any, RedisService | DbService | LoggerService>,
     layer: Layer.Layer<RedisService | DbService | LoggerService>,
+    requestId?: string,
 ) {
     const exit = await Effect.runPromiseExit(
         effect.pipe(Effect.provide(layer))
     )
     if (exit._tag === "Success") {
-        socket.emit(resultEvent, exit.value)
+        socket.emit(resultEvent, { ...exit.value as any, requestId })
     } else {
-        mapErrorToSocket(socket, resultEvent, exit.cause)
+        mapErrorToSocket(socket, resultEvent, exit.cause, requestId)
     }
 }
 
@@ -326,6 +330,7 @@ export const setupWebSocketHandlers = (
                         })
                     }),
                     layer,
+                    data.requestId,
                 )
             })
 
@@ -346,6 +351,7 @@ export const setupWebSocketHandlers = (
                         })
                     }),
                     layer,
+                    data.requestId,
                 )
             })
 

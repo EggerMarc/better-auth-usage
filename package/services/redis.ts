@@ -53,8 +53,8 @@ export interface RedisService {
     /** XLEN — get stream length */
     xlen(stream: string): Effect.Effect<number, RedisError>
 
-    /** XTRIM — trim stream to max length */
-    xtrim(stream: string, maxLen: number): Effect.Effect<void, RedisError>
+    /** XTRIM — trim stream entries older than minId (uses MINID) */
+    xtrim(stream: string, minId: string | number): Effect.Effect<void, RedisError>
 
     /** QUIT — disconnect */
     quit(): Effect.Effect<void, RedisError>
@@ -175,9 +175,9 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
                 xlen: (stream) =>
                     wrapRedis("xlen", () => client.call("XLEN", stream) as Promise<number>),
 
-                xtrim: (stream, maxLen) =>
+                xtrim: (stream, minId) =>
                     wrapRedis("xtrim", () =>
-                        client.call("XTRIM", stream, "MAXLEN", "~", maxLen).then(() => undefined)
+                        client.call("XTRIM", stream, "MINID", "~", minId).then(() => undefined)
                     ),
 
                 quit: () =>

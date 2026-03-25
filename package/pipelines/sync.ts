@@ -51,17 +51,36 @@ export const syncUsage = ({
             return { reset: false, message: "No reset required", feature: feature.key }
         }
 
-        // Reset needed — write reset record to DB
-        const resetAmount = (feature.resetValue ?? 0) - usage.amount
+        // Reset needed — update usage row + append reset event to history
+        const now = new Date()
+        const resetValue = feature.resetValue ?? 0
+        const resetDelta = resetValue - usage.amount
+
+        // 1. Append reset event to history
         yield* db.create({
-            model: "usage",
+            model: "usageEvent",
             data: {
                 referenceId,
-                amount: resetAmount,
                 feature: feature.key,
+                amount: resetDelta,
                 event: "reset",
-                lastResetAt: new Date(),
-                createdAt: new Date(),
+                lastResetAt: now,
+                createdAt: now,
+            },
+        })
+
+        // 2. Upsert the materialized usage row
+        yield* db.update({
+            model: "usage",
+            where: [
+                { field: "referenceId", value: referenceId },
+                { field: "feature", value: feature.key },
+            ],
+            update: {
+                amount: resetValue,
+                event: "reset",
+                lastResetAt: now,
+                updatedAt: now,
             },
         })
 

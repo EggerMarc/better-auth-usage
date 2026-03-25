@@ -140,14 +140,19 @@ interface Snapshot {
     events: Record<string, UsageEvent[]>
 }
 
+let reqCounter = 0
+function nextRequestId(): string {
+    return `${Date.now()}-${++reqCounter}`
+}
+
 export class UsageTrackerHandle {
     private snapshot: Snapshot = { state: {}, events: {} }
     private updateHandlers: UpdateHandler[] = []
     private pollHandle: ReturnType<typeof setInterval> | null = null
     private socket: Socket | null = null
     private disposed = false
-    /** Features to skip next usage:updated for (dedup after consume:result) */
-    private skipNextUpdate: Set<string> = new Set()
+    /** Pending request IDs per feature — skip matching usage:updated events */
+    private pendingRequests: Set<string> = new Set()
 
     constructor(
         private baseURL: string,
@@ -212,11 +217,14 @@ export class UsageTrackerHandle {
      */
     async consume(featureKey: string, amount = 1, event = "use"): Promise<ConsumeResult> {
         const start = performance.now()
+        const requestId = nextRequestId()
+        this.pendingRequests.add(requestId)
+
         let result: ConsumeResult
 
         if (this.socket?.connected) {
             result = await this.emitAndWait("use-feature", "use-feature:result", {
-                referenceId: this.params.referenceId, featureKey, amount, event,
+                referenceId: this.params.referenceId, featureKey, amount, event, requestId,
             })
         } else {
             result = await this.restPost<ConsumeResult>("/usage/use-feature", {
@@ -224,10 +232,10 @@ export class UsageTrackerHandle {
             })
         }
 
+        this.pendingRequests.delete(requestId)
         const duration = Math.round((performance.now() - start) * 100) / 100
         this.addEvent(featureKey, "consume", result, duration)
         this.updateFeature(featureKey, result)
-        this.skipNextUpdate.add(featureKey)
         return result
     }
 
@@ -339,6 +347,8 @@ export class UsageTrackerHandle {
     }
 
     private emitAndWait<T>(emitEvent: string, resultEvent: string, data: Record<string, unknown>): Promise<T> {
+        const requestId = data.requestId as string | undefined
+
         return new Promise<T>((resolve, reject) => {
             const socket = this.socket
             if (!socket) return reject(new Error("WebSocket not connected"))
@@ -349,14 +359,18 @@ export class UsageTrackerHandle {
                 reject(new Error(`${emitEvent} timed out`))
             }, 10000)
 
-            const onResult = (result: T) => {
+            const onResult = (result: any) => {
+                // If requestId was sent, only resolve on matching response
+                if (requestId && result?.requestId !== requestId) return
+
                 clearTimeout(timeout)
                 socket.off(resultEvent, onResult)
                 socket.off("error", onError)
-                resolve(result)
+                resolve(result as T)
             }
 
-            const onError = (err: { message: string; event?: string }) => {
+            const onError = (err: { message: string; event?: string; requestId?: string }) => {
+                if (requestId && err.requestId !== requestId) return
                 if (err.event === resultEvent || err.event === emitEvent) {
                     clearTimeout(timeout)
                     socket.off(resultEvent, onResult)
@@ -405,9 +419,9 @@ export class UsageTrackerHandle {
                 const feature = data.feature
                 if (!feature || !this.params.features.includes(feature)) return
 
-                // Skip duplicate from Lua PUBLISH after a consume:result
-                if (this.skipNextUpdate.has(feature)) {
-                    this.skipNextUpdate.delete(feature)
+                // Skip duplicate from Lua PUBLISH while we have a pending consume for this feature
+                // The consume:result already updated state — the Lua broadcast is redundant
+                if (this.pendingRequests.size > 0) {
                     return
                 }
 

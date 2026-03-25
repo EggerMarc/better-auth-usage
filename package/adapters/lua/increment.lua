@@ -51,8 +51,8 @@ end
 local newTotal = current + amount
 redis.call('SET', counterKey, newTotal)
 
--- Append to WAL stream for durable DB sync (pcall guards against mock Redis without stream support)
-pcall(redis.call, 'XADD', walKey, '*',
+-- Append to WAL stream for durable DB sync
+redis.call('XADD', walKey, '*',
     'refId', refId,
     'feature', feature,
     'amount', amount,
