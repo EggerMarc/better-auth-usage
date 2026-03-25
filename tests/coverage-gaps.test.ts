@@ -9,18 +9,10 @@ import type { UsageOptions } from "../package/types";
  */
 
 describe("config validation edge cases", () => {
-    test("rejects feature where key doesn't match object key", () => {
-        expect(() => validateConfig({
-            features: {
-                "api-calls": { key: "wrong-key", maxLimit: 100 },
-            },
-        })).toThrow("must match the object key");
-    });
-
     test("rejects non-finite maxLimit", () => {
         expect(() => validateConfig({
             features: {
-                "api-calls": { key: "api-calls", maxLimit: Infinity },
+                "api-calls": { maxLimit: Infinity },
             },
         })).toThrow("finite non-negative");
     });
@@ -28,7 +20,7 @@ describe("config validation edge cases", () => {
     test("rejects negative maxLimit", () => {
         expect(() => validateConfig({
             features: {
-                "api-calls": { key: "api-calls", maxLimit: -10 },
+                "api-calls": { maxLimit: -10 },
             },
         })).toThrow("finite non-negative");
     });
@@ -36,7 +28,7 @@ describe("config validation edge cases", () => {
     test("rejects non-finite minLimit", () => {
         expect(() => validateConfig({
             features: {
-                "api-calls": { key: "api-calls", minLimit: NaN },
+                "api-calls": { minLimit: NaN },
             },
         })).toThrow("finite number");
     });
@@ -44,7 +36,7 @@ describe("config validation edge cases", () => {
     test("rejects non-finite resetValue", () => {
         expect(() => validateConfig({
             features: {
-                "api-calls": { key: "api-calls", resetValue: Infinity },
+                "api-calls": { resetValue: Infinity },
             },
         })).toThrow("finite number");
     });
@@ -52,28 +44,28 @@ describe("config validation edge cases", () => {
     test("rejects invalid onPlanChange value", () => {
         expect(() => validateConfig({
             features: {
-                "api-calls": { key: "api-calls", onPlanChange: "invalid" as any },
+                "api-calls": { onPlanChange: "invalid" as any },
             },
         })).toThrow("carry-over");
     });
 
     test("rejects missing redisUrl when cacheOptions provided", () => {
         expect(() => validateConfig({
-            features: { "api-calls": { key: "api-calls" } },
+            features: { "api-calls": {} },
             cacheOptions: { redisUrl: "" },
         })).toThrow("redisUrl");
     });
 
     test("rejects enableRealtime without port", () => {
         expect(() => validateConfig({
-            features: { "api-calls": { key: "api-calls" } },
+            features: { "api-calls": {} },
             cacheOptions: { redisUrl: "redis://localhost:6379", enableRealtime: true },
         })).toThrow("port is required");
     });
 
     test("rejects invalid drainStrategy", () => {
         expect(() => validateConfig({
-            features: { "api-calls": { key: "api-calls" } },
+            features: { "api-calls": {} },
             cacheOptions: {
                 redisUrl: "redis://localhost:6379",
                 wal: { drainStrategy: "invalid" as any },
@@ -83,7 +75,7 @@ describe("config validation edge cases", () => {
 
     test("rejects pollInterval under 100ms", () => {
         expect(() => validateConfig({
-            features: { "api-calls": { key: "api-calls" } },
+            features: { "api-calls": {} },
             cacheOptions: {
                 redisUrl: "redis://localhost:6379",
                 wal: { pollInterval: 50 },

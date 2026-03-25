@@ -1,6 +1,6 @@
 "use client"
 
-import { useFeature, useAllLogs } from "package/react"
+import { useFeature, useAllEvents } from "./providers"
 import { useState, useRef, useEffect } from "react"
 
 const FEATURES = [
@@ -34,7 +34,7 @@ function ts(epoch: number) {
 // ── Feature Card ──
 
 function FeatureCard({ featureKey, label, icon, unit }: {
-    featureKey: string
+    featureKey: typeof FEATURES[number]["key"]
     label: string
     icon: string
     unit: string
@@ -47,7 +47,7 @@ function FeatureCard({ featureKey, label, icon, unit }: {
 
     const action = async (fn: () => Promise<any>) => {
         setLoading(true)
-        try { await fn() }
+        try { const res = await fn(); console.log(res) }
         catch (e: any) { console.error(`[${featureKey}] failed:`, e.message) }
         finally { setLoading(false) }
     }
@@ -110,6 +110,13 @@ function FeatureCard({ featureKey, label, icon, unit }: {
                 >
                     +100
                 </button>
+                <button
+                    onClick={() => action(() => consume(-5))}
+                    disabled={loading}
+                    className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                    -5
+                </button>
             </div>
         </div>
     )
@@ -118,31 +125,30 @@ function FeatureCard({ featureKey, label, icon, unit }: {
 // ── Event Log ──
 
 function EventLog() {
-    const logs = useAllLogs()
+    const events = useAllEvents()
     const endRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: "smooth" })
-    }, [logs.length])
+        console.log(events)
+    }, [events.length])
 
     return (
         <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 md:col-span-2">
             <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
                 <h2 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Event Log</h2>
-                <span className="text-[10px] text-zinc-400">{logs.length} events</span>
+                <span className="text-[10px] text-zinc-400">{events.length} events</span>
             </div>
             <div className="h-64 overflow-y-auto px-4 py-2 font-mono text-xs">
-                {logs.length === 0 && (
+                {events.length === 0 && (
                     <p className="py-8 text-center text-zinc-400">
                         Interact with the features above to see events here
                     </p>
                 )}
-                {logs.slice(-50).map((entry, i) => (
+                {events.slice(-50).map((entry, i) => (
                     <div key={i} className="flex gap-2 py-0.5">
                         <span className="shrink-0 text-zinc-400">{ts(entry.ts)}</span>
-                        <span className={`shrink-0 ${
-                            entry.type === "consume" ? "text-blue-500" : "text-zinc-500"
-                        }`}>
+                        <span className={`shrink-0 ${entry.type === "consume" ? "text-blue-500" : "text-zinc-500"}`}>
                             [{entry.type}]
                         </span>
                         <span className="shrink-0 text-zinc-500 dark:text-zinc-400">

@@ -236,38 +236,11 @@ const writeToDb = (
     )
 
 /**
- * Atomic check + consume: only increments if the result would be in-limit.
+ * Consume usage and return the result with status.
  *
- * This is the `useFeature` endpoint — checks first, consumes only if allowed.
+ * Always consumes — does NOT block on over-limit by default.
+ * To enforce limits, use a `before` hook that throws on over-limit.
+ * Returns `status` so the caller can decide what to do.
  */
 export const useFeature = (params: ConsumeParams) =>
-    Effect.gen(function* () {
-        const currentUsage = yield* getUsage({
-            referenceId: params.referenceId,
-            feature: params.feature,
-        })
-
-        const projected = currentUsage.amount + params.amount
-        const status = checkLimit({
-            maxLimit: params.feature.maxLimit,
-            minLimit: params.feature.minLimit,
-            value: projected,
-        })
-
-        if (status !== "in-limit") {
-            return {
-                allowed: false,
-                current: currentUsage.amount,
-                afterAmount: currentUsage.amount,
-                max: params.feature.maxLimit,
-                min: params.feature.minLimit,
-                remaining: params.feature.maxLimit != null
-                    ? params.feature.maxLimit - currentUsage.amount
-                    : null,
-                status,
-            } satisfies ConsumeResult
-        }
-
-        // In limit — proceed with consume
-        return yield* consumeUsage(params)
-    })
+    consumeUsage(params)

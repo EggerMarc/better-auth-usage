@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect"
 import { Server as SocketServer, type Socket } from "socket.io"
 import type { AuthContext } from "better-auth"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 import { checkUsage, canUse } from "@/pipelines/check"
 import { consumeUsage, useFeature } from "@/pipelines/consume"
 import { resolveFeature } from "@/pipelines/features"
@@ -163,7 +163,7 @@ async function runWsPipeline<A>(
  * Returns the resolved Feature or fails with NotAuthorized/FeatureNotFound.
  */
 const authorizeAndResolve = (
-    options: UsageOptions,
+    options: ResolvedUsageOptions,
     auth: SocketAuth,
     data: { referenceId: string; featureKey: string; overrideKey?: string },
 ) =>
@@ -210,7 +210,7 @@ const authorizeAndResolve = (
  */
 export const setupWebSocketHandlers = (
     io: SocketServer,
-    options: UsageOptions,
+    options: ResolvedUsageOptions,
     layer: Layer.Layer<RedisService | DbService | LoggerService>,
 ) =>
     Effect.gen(function* () {

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 import { NotAuthorized } from "@/errors"
 
 /**
@@ -9,7 +9,7 @@ import { NotAuthorized } from "@/errors"
  * fails with `NotAuthorized`. If not configured, succeeds (open access).
  */
 export const authorizeUser = (
-    options: UsageOptions,
+    options: ResolvedUsageOptions,
     params: {
         userId: string
         referenceId: string

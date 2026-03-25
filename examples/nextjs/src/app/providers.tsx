@@ -1,19 +1,29 @@
 "use client"
 
-import { useState, useEffect, type ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { authClient } from "@/lib/auth-client"
-import { UsageProvider } from "package/react"
+import { createUsageProvider } from "package/react"
+import type { auth } from "@/lib/auth"
+
+export const { UsageProvider, useFeature, useSetReference, useAllEvents } = createUsageProvider<typeof auth>()
 
 export function Providers({ children }: { children: ReactNode }) {
     const session = authClient.useSession()
-    const [ready, setReady] = useState(false)
 
-    // Auto sign-in anonymously if no session
+    // Auto sign-in anonymously if no session, then assign starter plan
     useEffect(() => {
         if (session.data) return
         if (session.isPending) return
 
-        authClient.signIn.anonymous()
+        authClient.signIn.anonymous().then((res) => {
+            const userId = res.data?.user?.id
+            if (!userId) return
+            // Assign starter plan to anonymous user
+            ;(authClient as any).$fetch("/api/auth/usage/upsert-customer", {
+                method: "POST",
+                body: { referenceId: userId, referenceType: "user", overrideKey: "starter" },
+            })
+        })
     }, [session.data, session.isPending])
 
     if (!session.data?.user?.id) {
@@ -25,10 +35,7 @@ export function Providers({ children }: { children: ReactNode }) {
     }
 
     return (
-        <UsageProvider
-            baseURL="/api/auth"
-            referenceId={session.data.user.id}
-        >
+        <UsageProvider referenceId={session.data.user.id}>
             {children}
         </UsageProvider>
     )

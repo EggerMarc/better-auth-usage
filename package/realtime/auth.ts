@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import type { AuthContext } from "better-auth"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 
 /**
  * Validated session result attached to socket.data after handshake.
@@ -43,7 +43,7 @@ export const validateSessionToken = (
  * Returns `false` on any error.
  */
 export const liftAuthorizeUser = (
-    options: UsageOptions,
+    options: ResolvedUsageOptions,
     params: {
         userId: string
         referenceId: string

@@ -5,7 +5,7 @@ import { recover, startSubscribeWorker, startPollWorker } from "@/wal"
 import { startRealtimeSubscriber } from "@/realtime/usage-tracker"
 import { setupWebSocketHandlers, registerAuthMiddleware } from "@/realtime/websocket-server"
 import { Server as SocketServer } from "socket.io"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 import type { AuthContext } from "better-auth"
 
 /**
@@ -20,7 +20,7 @@ let ioServer: SocketServer | null = null
 /**
  * Initialize the shared layer from plugin options.
  */
-function getSharedLayer(options: UsageOptions): Layer.Layer<RedisService | LoggerService> {
+function getSharedLayer(options: ResolvedUsageOptions): Layer.Layer<RedisService | LoggerService> {
     if (sharedLayer) return sharedLayer
 
     const loggerLayer = makeLoggerServiceLive(options.logger)
@@ -55,7 +55,7 @@ function getSharedLayer(options: UsageOptions): Layer.Layer<RedisService | Logge
  * Start the WAL worker if Redis is configured and WAL is enabled.
  * Called once on first request.
  */
-async function ensureWalStarted(options: UsageOptions) {
+async function ensureWalStarted(options: ResolvedUsageOptions) {
     if (walStarted) return
     walStarted = true
 
@@ -126,7 +126,7 @@ async function ensureWalStarted(options: UsageOptions) {
  */
 export async function runPipeline<A, E>(
     authCtx: AuthContext,
-    options: UsageOptions,
+    options: ResolvedUsageOptions,
     effect: Effect.Effect<A, E, RedisService | DbService | LoggerService>
 ): Promise<A> {
     if (!capturedAdapter) {
@@ -199,7 +199,7 @@ export async function runPipeline<A, E>(
  * Check if WAL is enabled and active.
  * Used by consume pipeline to decide whether to skip direct DB writes.
  */
-export function isWalActive(options: UsageOptions): boolean {
+export function isWalActive(options: ResolvedUsageOptions): boolean {
     if (!options.cacheOptions?.redisUrl) return false
     const walConfig = options.cacheOptions.wal ?? {}
     return walConfig.enabled !== false

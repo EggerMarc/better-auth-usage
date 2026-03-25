@@ -113,7 +113,6 @@ describe("hooks", () => {
         const instance = await createTestInstance({
             features: {
                 "limited": {
-                    key: "limited",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,
@@ -164,7 +163,6 @@ describe("hooks", () => {
         const instance = await createTestInstance({
             features: {
                 "tracked": {
-                    key: "tracked",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,
@@ -317,7 +315,6 @@ describe("feature details and overrideKey lookup", () => {
         instance = await createTestInstance({
             features: {
                 "api-calls": {
-                    key: "api-calls",
                     maxLimit: 100,
                     minLimit: 0,
                     reset: "monthly",
@@ -325,7 +322,6 @@ describe("feature details and overrideKey lookup", () => {
                     details: ["Rate limited", "Resets monthly"],
                 },
                 "credits": {
-                    key: "credits",
                     maxLimit: 1000,
                     minLimit: -500,
                     reset: "never",
@@ -378,7 +374,6 @@ describe("both before and after hooks on same feature", () => {
         const instance = await createTestInstance({
             features: {
                 "dual-hook": {
-                    key: "dual-hook",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,

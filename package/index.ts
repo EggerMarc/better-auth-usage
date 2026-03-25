@@ -26,7 +26,15 @@ import { validateConfig } from "./config";
  */
 export function usage<const O extends UsageOptions>(options: O) {
     validateConfig(options);
-    return {
+
+    // Populate `key` from object keys so users don't have to write it
+    const resolvedFeatures: Record<string, import("./types").Feature> = {}
+    for (const [key, config] of Object.entries(options.features)) {
+        resolvedFeatures[key] = { ...config, key }
+    }
+    const resolved = { ...options, features: resolvedFeatures }
+
+    const plugin = {
         id: "usage",
 
         schema: {
@@ -76,20 +84,26 @@ export function usage<const O extends UsageOptions>(options: O) {
 
         endpoints: {
             // Existing endpoints (v2 — Effect-powered)
-            getFeature: getFeatureEndpoint(options),
-            consumeFeature: getConsumeEndpoint(options),
-            listFeatures: getFeaturesEndpoint(options),
-            checkUsage: getCheckEndpoint(options),
-            checkCustomer: getCheckCustomerEndpoint(options),
-            upsertCustomer: getUpsertCustomerEndpoint(options),
-            syncUsage: getSyncEndpoint(options),
+            getFeature: getFeatureEndpoint(resolved),
+            consumeFeature: getConsumeEndpoint(resolved),
+            listFeatures: getFeaturesEndpoint(resolved),
+            checkUsage: getCheckEndpoint(resolved),
+            checkCustomer: getCheckCustomerEndpoint(resolved),
+            upsertCustomer: getUpsertCustomerEndpoint(resolved),
+            syncUsage: getSyncEndpoint(resolved),
 
             // New entitlement endpoints
-            canUse: getCanUseEndpoint(options),
-            useFeature: getUseFeatureEndpoint(options),
+            canUse: getCanUseEndpoint(resolved),
+            useFeature: getUseFeatureEndpoint(resolved),
 
             // WS discovery
-            wsInfo: getWsEndpoint(options),
+            wsInfo: getWsEndpoint(resolved),
         },
-    } satisfies BetterAuthPlugin;
+    } satisfies BetterAuthPlugin
+
+    return {
+        ...plugin,
+        /** @internal Phantom type carrying feature keys for client inference */
+        _featureKeys: {} as keyof O["features"] & string,
+    }
 }

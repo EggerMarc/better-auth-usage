@@ -16,10 +16,6 @@ export function validateConfig(options: UsageOptions): void {
 
     // Validate each feature
     for (const [key, feature] of Object.entries(options.features)) {
-        if (feature.key !== key) {
-            errors.push(`features["${key}"].key must match the object key (got "${feature.key}")`)
-        }
-
         if (feature.maxLimit != null && feature.minLimit != null && feature.maxLimit < feature.minLimit) {
             errors.push(`features["${key}"]: maxLimit (${feature.maxLimit}) must be >= minLimit (${feature.minLimit})`)
         }

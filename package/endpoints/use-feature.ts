@@ -1,14 +1,14 @@
 import { Effect } from "effect"
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { z } from "zod"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { authorizeUser } from "@/pipelines/authorize"
 import { useFeature } from "@/pipelines/consume"
 import { runPipeline, isWalActive } from "@/runtime"
 
-export function getUseFeatureEndpoint(endpointOptions: UsageOptions) {
+export function getUseFeatureEndpoint(endpointOptions: ResolvedUsageOptions) {
     return createAuthEndpoint(
         "/usage/use-feature",
         {

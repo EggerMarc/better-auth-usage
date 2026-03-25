@@ -21,7 +21,6 @@ describe("config validation", () => {
             await createTestInstance({
                 features: {
                     "bad-feature": {
-                        key: "bad-feature",
                         maxLimit: 5,
                         minLimit: 10,
                         reset: "never",
@@ -42,7 +41,6 @@ describe("config validation", () => {
             await createTestInstance({
                 features: {
                     "api-calls": {
-                        key: "api-calls",
                         maxLimit: 100,
                         minLimit: 0,
                         reset: "monthly",

@@ -23,14 +23,12 @@ async function createCachedTestInstance(opts?: {
 }) {
     const features: UsageOptions["features"] = opts?.features ?? {
         "api-calls": {
-            key: "api-calls",
             maxLimit: 100,
             minLimit: 0,
             reset: "monthly",
             resetValue: 0,
         },
         "credits": {
-            key: "credits",
             maxLimit: 1000,
             minLimit: -500,
             reset: "never",
@@ -352,7 +350,6 @@ describe("cache-enabled: hooks with cache", () => {
         const instance = await createCachedTestInstance({
             features: {
                 "guarded": {
-                    key: "guarded",
                     maxLimit: 100,
                     reset: "never",
                     resetValue: 0,

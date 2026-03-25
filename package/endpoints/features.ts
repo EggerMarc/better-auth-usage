@@ -1,10 +1,10 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { resolveFeature } from "@/pipelines/features"
-import type { UsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "@/types"
 import { z } from "zod"
 import { Effect, Exit } from "effect"
 
-export function getFeaturesEndpoint({ features }: UsageOptions) {
+export function getFeaturesEndpoint({ features }: ResolvedUsageOptions) {
     return createAuthEndpoint(
         "/usage/features",
         {
@@ -19,7 +19,7 @@ export function getFeaturesEndpoint({ features }: UsageOptions) {
     )
 }
 
-export function getFeatureEndpoint({ features, overrides }: UsageOptions) {
+export function getFeatureEndpoint({ features, overrides }: ResolvedUsageOptions) {
     return createAuthEndpoint(
         "/usage/features/:featureKey",
         {

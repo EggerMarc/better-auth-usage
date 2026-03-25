@@ -63,7 +63,8 @@ export type CustomerExpanded = Customer & ExtraFields;
  */
 export type Feature = {
     /**
-     * Unique identifier of the feature (e.g. `"api-tokens"`).
+     * Unique identifier. Auto-populated from the config object key.
+     * Users should not set this — it is derived from `features["my-key"]`.
      */
     key: string;
 
@@ -131,9 +132,16 @@ export type Feature = {
 };
 
 /**
- * Dictionary of features keyed by their unique `key`.
+ * Feature config as written by the user — `key` is optional (derived from object key).
+ * All fields are optional — an empty `{}` is valid (limits defined per override/plan).
  */
-export type Features = Record<string, Feature>;
+export type FeatureConfig = Omit<Feature, "key">
+
+/**
+ * Dictionary of features keyed by their unique key.
+ * Users write `FeatureConfig` (no `key`), internally resolved to `Feature` (with `key`).
+ */
+export type Features = Record<string, FeatureConfig>;
 
 /**
  * Extract feature keys as a union type from a UsageOptions config.
@@ -209,6 +217,18 @@ export type ConsumptionLimitType =
  * - `overrides`: Optional per-customer or per-plan overrides.
  * - `customers`: Optional pre-registered customer dictionary.
  */
+/**
+ * Internal resolved options — features have `key` populated.
+ * Used by endpoints and pipelines.
+ */
+export interface ResolvedUsageOptions {
+    features: Record<string, Feature>;
+    overrides?: Overrides;
+    authorizeUser?: UsageOptions["authorizeUser"];
+    cacheOptions?: UsageOptions["cacheOptions"];
+    logger?: UsageOptions["logger"];
+}
+
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;

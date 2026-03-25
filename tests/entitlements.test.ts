@@ -162,7 +162,7 @@ describe("use-feature endpoint", () => {
             headers,
         });
 
-        // use-feature should reject
+        // use-feature should consume but report over-limit status
         const res = await instance.client.$fetch("/usage/use-feature", {
             method: "POST",
             body: { referenceId: refId, featureKey: "api-calls", amount: 1 },
@@ -170,17 +170,17 @@ describe("use-feature endpoint", () => {
         });
 
         expect(res.error).toBeNull();
-        expect(res.data.allowed).toBe(false);
         expect(res.data.status).toBe("above-max-limit");
+        expect(res.data.current).toBe(101);
 
-        // Verify current didn't change
+        // Verify current increased
         const checkRes = await instance.client.$fetch("/usage/check", {
             method: "POST",
             body: { referenceId: refId, featureKey: "api-calls" },
             headers,
         });
 
-        expect(checkRes.data.currentAmount).toBe(100);
+        expect(checkRes.data.currentAmount).toBe(101);
     });
 
     test("defaults amount to 1", async () => {

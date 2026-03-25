@@ -4,6 +4,35 @@ import { io, type Socket } from "socket.io-client";
 
 // ── BetterAuth Client Plugin ──
 
+/**
+ * Client plugin for better-auth-usage.
+ *
+ * Pass feature keys as a type parameter for autocomplete:
+ * ```ts
+ * import type { UsageOptions } from "@eggermarc/better-auth-usage"
+ * // Option 1: from your config type
+ * usageClient<"api-calls" | "storage" | "credits">()
+ *
+ * // Option 2: from InferFeatureKeys
+ * import type { InferFeatureKeys } from "@eggermarc/better-auth-usage"
+ * usageClient<InferFeatureKeys<typeof myUsageConfig>>()
+ * ```
+ */
+/**
+ * Extract feature key union type from a `typeof auth` instance.
+ *
+ * ```ts
+ * import type { auth } from "./auth"
+ * type F = InferFeatures<typeof auth>  // "api-calls" | "storage" | "credits"
+ * ```
+ */
+export type InferFeatures<Auth> =
+    Auth extends { options: { plugins: readonly (infer P)[] } }
+        ? P extends { id: "usage"; _featureKeys: infer K }
+            ? K & string
+            : string
+        : string
+
 export const usageClient = () => {
     return {
         id: "usage",
@@ -44,10 +73,19 @@ export interface ConsumeResult {
     status: string
 }
 
-export interface LogEntry {
+export interface UsageEventData {
+    current: number
+    max: number | null
+    min: number | null
+    remaining: number | null
+    status: string
+    amount?: number
+}
+
+export interface UsageEvent {
     type: "consume" | "update"
     feature: string
-    data: any
+    data: UsageEventData
     ts: number
 }
 
@@ -96,15 +134,17 @@ export function createUsageTracker(options: TrackerOptions) {
 
 interface Snapshot {
     state: Record<string, UsageState>
-    logs: Record<string, LogEntry[]>
+    events: Record<string, UsageEvent[]>
 }
 
 export class UsageTrackerHandle {
-    private snapshot: Snapshot = { state: {}, logs: {} }
+    private snapshot: Snapshot = { state: {}, events: {} }
     private updateHandlers: UpdateHandler[] = []
     private pollHandle: ReturnType<typeof setInterval> | null = null
     private socket: Socket | null = null
     private disposed = false
+    /** Features to skip next usage:updated for (dedup after consume:result) */
+    private skipNextUpdate: Set<string> = new Set()
 
     constructor(
         private baseURL: string,
@@ -117,7 +157,7 @@ export class UsageTrackerHandle {
         }
     ) {
         for (const feature of params.features) {
-            this.snapshot.logs[feature] = []
+            this.snapshot.events[feature] = []
         }
 
         this.fetchAll()
@@ -139,12 +179,12 @@ export class UsageTrackerHandle {
         return this.snapshot.state
     }
 
-    getLog(feature: string): LogEntry[] {
-        return this.snapshot.logs[feature] ?? []
+    getEvents(feature: string): UsageEvent[] {
+        return this.snapshot.events[feature] ?? []
     }
 
-    getAllLogs(): LogEntry[] {
-        return Object.values(this.snapshot.logs).flat().sort((a, b) => a.ts - b.ts)
+    getAllEvents(): UsageEvent[] {
+        return Object.values(this.snapshot.events).flat().sort((a, b) => a.ts - b.ts)
     }
 
     // ── useSyncExternalStore compat ──
@@ -180,8 +220,9 @@ export class UsageTrackerHandle {
             })
         }
 
-        this.addLog(featureKey, "consume", result)
+        this.addEvent(featureKey, "consume", result)
         this.updateFeature(featureKey, result)
+        this.skipNextUpdate.add(featureKey)
         return result
     }
 
@@ -358,7 +399,14 @@ export class UsageTrackerHandle {
             socket.on("usage:updated", (data: any) => {
                 const feature = data.feature
                 if (!feature || !this.params.features.includes(feature)) return
-                this.addLog(feature, "update", data)
+
+                // Skip duplicate from Lua PUBLISH after a consume:result
+                if (this.skipNextUpdate.has(feature)) {
+                    this.skipNextUpdate.delete(feature)
+                    return
+                }
+
+                this.addEvent(feature, "update", data)
                 if (data.current !== undefined && data.status !== undefined) {
                     this.updateFeature(feature, data)
                 } else {
@@ -386,11 +434,23 @@ export class UsageTrackerHandle {
         }, this.options.pollInterval)
     }
 
-    private addLog(feature: string, type: LogEntry["type"], data: any) {
-        const prev = this.snapshot.logs[feature] ?? []
+    private addEvent(feature: string, type: UsageEvent["type"], raw: any) {
+        const existing = this.snapshot.state[feature]
+        const max = raw.max ?? raw.maxLimit ?? existing?.max ?? null
+        const min = raw.min ?? raw.minLimit ?? existing?.min ?? null
+        const current = raw.current ?? raw.newTotal ?? raw.currentAmount ?? 0
+        const normalized: UsageEventData = {
+            current,
+            max,
+            min,
+            remaining: max != null ? max - current : null,
+            status: raw.status ?? (max != null && current > max ? "above-max-limit" : "in-limit"),
+            amount: raw.amount,
+        }
+        const prev = this.snapshot.events[feature] ?? []
         this.snapshot = {
             ...this.snapshot,
-            logs: { ...this.snapshot.logs, [feature]: [...prev, { type, feature, data, ts: Date.now() }] },
+            events: { ...this.snapshot.events, [feature]: [...prev, { type, feature, data: normalized, ts: Date.now() }] },
         }
         this.updateHandlers.forEach(h => h(this.snapshot.state))
     }

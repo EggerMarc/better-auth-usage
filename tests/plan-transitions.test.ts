@@ -4,14 +4,12 @@ import type { UsageOptions } from "../package/types";
 
 const planFeatures: UsageOptions["features"] = {
     "api-calls": {
-        key: "api-calls",
         maxLimit: 100,
         reset: "monthly",
         resetValue: 0,
         onPlanChange: "carry-over",
     },
     "credits": {
-        key: "credits",
         maxLimit: 1000,
         reset: "never",
         resetValue: 0,

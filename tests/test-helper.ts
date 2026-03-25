@@ -15,14 +15,12 @@ export async function shutdownUsage() {
  */
 export const defaultFeatures: UsageOptions["features"] = {
     "api-calls": {
-        key: "api-calls",
         maxLimit: 100,
         minLimit: 0,
         reset: "monthly",
         resetValue: 0,
     },
     "credits": {
-        key: "credits",
         maxLimit: 1000,
         minLimit: -500,
         reset: "never",
