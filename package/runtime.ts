@@ -3,7 +3,7 @@ import { APIError } from "better-auth/api"
 import { RedisService, makeRedisServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "@/services"
 import { recover, startSubscribeWorker, startPollWorker } from "@/wal"
 import { startRealtimeSubscriber } from "@/realtime/usage-tracker"
-import { setupWebSocketHandlers } from "@/realtime/websocket-server"
+import { setupWebSocketHandlers, registerAuthMiddleware } from "@/realtime/websocket-server"
 import { Server as SocketServer } from "socket.io"
 import type { UsageOptions } from "@/types"
 import type { AuthContext } from "better-auth"
@@ -74,7 +74,7 @@ async function ensureWalStarted(options: UsageOptions) {
     const strategy = walConfig.drainStrategy ?? "subscribe"
     const pollInterval = walConfig.pollInterval ?? 1000
 
-    const walPipeline = Effect.gen(function* () {
+    const walPipeline = Effect.gen(function*() {
         // Recovery first — reclaim pending entries from previous run
         yield* recover
 
@@ -98,6 +98,11 @@ async function ensureWalStarted(options: UsageOptions) {
 
         ioServer = new SocketServer({ cors })
         ioServer.listen(port)
+
+        // Register handshake auth middleware (validates token → attaches userId)
+        Effect.runFork(
+            registerAuthMiddleware(ioServer, capturedAdapter).pipe(Effect.provide(fullLayer))
+        )
 
         // Start realtime subscriber (forwards Redis pub/sub → Socket.IO)
         Effect.runFork(
@@ -147,6 +152,11 @@ export async function runPipeline<A, E>(
     const err = cause && "error" in cause ? (cause as any).error : null
     const tag = err?._tag
 
+    if (tag === "NotAuthorized") {
+        throw new APIError("UNAUTHORIZED", {
+            message: `User "${err.userId}" is not authorized to access "${err.feature}" for reference "${err.referenceId}"`
+        })
+    }
     if (tag === "FeatureNotFound") {
         throw new APIError("NOT_FOUND", {
             message: `Feature "${err.featureKey}" not found. Check that this feature is defined in your usage plugin config.`

@@ -13,6 +13,7 @@ import {
     getCheckCustomerEndpoint,
     getFeaturesEndpoint,
     getFeatureEndpoint,
+    getWsEndpoint,
 } from "./endpoints";
 import { validateConfig } from "./config";
 
@@ -86,6 +87,9 @@ export function usage<const O extends UsageOptions>(options: O) {
             // New entitlement endpoints
             canUse: getCanUseEndpoint(options),
             useFeature: getUseFeatureEndpoint(options),
+
+            // WS discovery
+            wsInfo: getWsEndpoint(options),
         },
     } satisfies BetterAuthPlugin;
 }

@@ -128,16 +128,6 @@ export type Feature = {
      */
     onPlanChange?: "carry-over" | "reset";
 
-    /**
-     * Optional authorization function that decides if a given
-     * customer is allowed to consume this feature.
-     */
-    authorizeReference?: (params: {
-        feature: string;
-        referenceId: string;
-        referenceType: string;
-        incomingId: string;
-    }) => Promise<boolean> | boolean;
 };
 
 /**
@@ -222,6 +212,20 @@ export type ConsumptionLimitType =
 export interface UsageOptions {
     features: Features;
     overrides?: Overrides;
+    /**
+     * Global authorization callback. Called on every operation (REST and WS)
+     * to verify the authenticated user has permission to act on the given
+     * referenceId.
+     *
+     * Return `true` to allow, `false` to deny.
+     * If not provided, all authenticated users can act on any referenceId.
+     */
+    authorizeUser?: (params: {
+        userId: string;
+        referenceId: string;
+        referenceType: string;
+        feature: string;
+    }) => Promise<boolean> | boolean;
     cacheOptions?: {
         enableRealtime?: boolean,
         redisUrl: string;

@@ -200,6 +200,7 @@ describe("sync triggers actual reset", () => {
         // Use internal API to update the usage record
         await instance.auth.api.syncUsage({
             body: { referenceId: refId, featureKey: "hourly-feature" },
+            headers,
         });
 
         // After sync, the usage should have been reset

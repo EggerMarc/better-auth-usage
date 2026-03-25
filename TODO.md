@@ -142,50 +142,61 @@ Note: Zod remains a dependency — BetterAuth's `createAuthEndpoint` requires Zo
 
 Full technical plan: `.claude/plans/fancy-cooking-sparkle.md`
 
-### 11a. Auth Infrastructure
-- [ ] Add `authorizeUser` callback to `UsageOptions` — global auth: `({ userId, referenceId, referenceType, feature }) => boolean`. Replaces per-feature `authorizeReference`.
-- [ ] Remove `authorizeReference` from `Feature` type
-- [ ] Create `realtime/auth.ts` — token validation via BetterAuth session lookup (accepts session token or bearer token)
-- [ ] WS handshake auth middleware — validates token in `socket.handshake.auth.token`, attaches `socket.data.userId`
-- [ ] Update REST endpoints to call `authorizeUser` with `session.user.id` before running pipelines
+### 11a. Auth Infrastructure — DONE
+- [x] Add `authorizeUser` callback to `UsageOptions` — global auth: `({ userId, referenceId, referenceType, feature }) => boolean`. Replaces per-feature `authorizeReference`.
+- [x] Remove `authorizeReference` from `Feature` type
+- [x] Create `realtime/auth.ts` — token validation via BetterAuth `internalAdapter.findSession()`
+- [x] WS handshake auth middleware — validates token in `socket.handshake.auth.token`, attaches `socket.data.auth`
+- [x] Update REST endpoints to call `authorizeUser` with `ctx.context.session.user.id` before running pipelines
+- [x] Add `NotAuthorized` error type + FORBIDDEN mapping in `runPipeline`
+- [x] Fix `middleware:` → `use:` on all endpoints (session middleware was silently ignored)
+- [x] Create `pipelines/authorize.ts` — reusable Effect authorization step
+- [x] Compatible with session cookies, bearer tokens, API keys, and JWTs (all produce same `ctx.context.session.user.id`)
 
-### 11b. Full WS API
-- [ ] Rewrite `websocket-server.ts` — full operation handlers: `check`, `can-use`, `consume`, `use-feature` (reuse existing Effect pipelines)
-- [ ] WS request-response pattern: client emits `check` → server emits `check:result`
-- [ ] All mutations (REST or WS) broadcast `usage:updated` to subscribed WS rooms (Lua pub/sub handles Redis path; direct `io.to(room).emit()` for non-Redis/belt-and-suspenders)
-- [ ] Error mapping on WS matches `runPipeline` error mapping
-- [ ] Pass auth context to WS server setup in `runtime.ts`
+### 11b. Full WS API — DONE
+- [x] Full operation handlers: `check`, `can-use`, `consume`, `use-feature` — all reuse existing Effect pipelines
+- [x] WS request-response pattern: `check` → `check:result`, `can-use` → `can-use:result`, `consume` → `consume:result`, `use-feature` → `use-feature:result`
+- [x] All WS mutations broadcast `usage:updated` to room `usage:{feature}:{refId}` (belt-and-suspenders with Redis pub/sub)
+- [x] `mapErrorToSocket` mirrors `runPipeline` error mapping — same error tags, emits via socket
+- [x] `runWsPipeline` helper: runs Effect, emits result or error uniformly
+- [x] `authorizeAndResolve` helper: authorize + resolveOverrideKey + resolveFeature in one step
+- [x] WAL-aware: checks `walEnabled` from config for consume/use-feature
 
-### 11c. Client WS Transport + Reconnection Fix
-- [ ] Fix WS reconnection: on `connect` event stop polling fallback, re-subscribe to rooms
-- [ ] Add explicit Socket.IO reconnection config (`reconnection: true`, exponential backoff)
-- [ ] Auth token in `socket.handshake.auth.token`
-- [ ] Client operations (consume, check, canUse, useFeature) route through WS when connected, fall back to REST
-- [ ] Immutable state (new object ref on update) for `useSyncExternalStore` compat
-- [ ] Add public `subscribe(cb)` and `getSnapshot()` methods to `UsageTrackerHandle`
+### 11c. Client WS Transport + Reconnection Fix — DONE
+- [x] WS reconnection: on `connect` stop polling, re-subscribe to rooms. Socket.IO exponential backoff (1s→10s, infinite retries)
+- [x] Auth token in `socket.handshake.auth.token` — `token` option on `TrackerOptions` (string or getter fn)
+- [x] Client operations: `handle.consume()`, `handle.check()`, `handle.canUse()`, `handle.useFeature()` — WS when connected, REST fallback
+- [x] `emitAndWait` pattern: emit event, one-shot listener for `:result`, 10s timeout, error matching by event name
+- [x] Immutable state (`this.state = { ...this.state, [feature]: next }`) for `useSyncExternalStore`
+- [x] `subscribe(cb)` / `getSnapshot()` public methods for framework integration
+- [x] Direct state update from `usage:updated` payload when it contains full state (no refetch)
+- [x] `referenceType` param on `track()` for multi-tenant scenarios
+
+### 11d. Free/Anonymous Usage — SCRAPPED
+Replaced by BetterAuth's `anonymous()` plugin. Anonymous users get real sessions with real user IDs — same auth pipeline, no special endpoints, no spoofable referenceIds. Document: "enable `anonymous()` plugin for free-tier usage."
 
 ## Phase 12: Framework Clients
 
-### 12a. React Hooks — `@eggermarc/better-auth-usage/react`
-- [ ] `UsageProvider` — creates tracker with config + auth token, handle cache with refCounting, SSR-safe
-- [ ] `useUsage({ referenceId, features })` — `useSyncExternalStore` for zero-tearing reads
-- [ ] `useFeatureUsage(feature, referenceId)` — single-feature convenience hook
-- [ ] `useUsageActions(referenceId)` — returns bound `consume`, `check`, `canUse`, `useFeature` functions (WS or REST)
-- [ ] `useUsageEvent("threshold" | "blocked", handler)` — stable handler ref via `useRef`
-- [ ] Build config: `react` entry in `tsup.config.ts`, `./react` export in `package.json`, `react ^18 || ^19` optional peer dep
-- [ ] Update `examples/nextjs/src/app/page.tsx` to use hooks
+### 12a. React Hooks — `@eggermarc/better-auth-usage/react` (`package/client/react.tsx`) — DONE
+- [x] `UsageProvider` — creates tracker + handle, holds referenceId, `setReference(refId, refType)` to switch
+- [x] `useUsage(feature)` — returns `{ usage, isAllowed, consume, check, canUse, useFeature }` via `useSyncExternalStore`
+- [x] `useSetReference()` — access `setReference` to change tracked referenceId (e.g. switch org→user)
+- [x] `useUsageEvent("threshold" | "blocked", handler)` — stable handler ref via `useRef`
+- [x] Build config: `react` entry in `tsup.config.ts`, `./react` export in `package.json`, `react ^18 || ^19` optional peer dep
+- [x] SSR-safe: server snapshot returns empty state, "use client" directive
+- [x] Update example: anonymous auth, `UsageProvider`, `useUsage` hooks, zero-config WS
 
-### 12b. Vue Composables — `@eggermarc/better-auth-usage/vue`
+### 12b. Vue Composables — `@eggermarc/better-auth-usage/vue` (`package/client/vue.ts`)
 - [ ] `useUsage`, `useFeatureUsage`, `useUsageActions`, `useUsageEvent` as Vue composables
 - [ ] Uses `ref()` / `watchEffect()` with `subscribe()`/`getSnapshot()`
 
-### 12c. Svelte Stores — `@eggermarc/better-auth-usage/svelte`
+### 12c. Svelte Stores — `@eggermarc/better-auth-usage/svelte` (`package/client/svelte.ts`)
 - [ ] Svelte store adapters wrapping `subscribe()`/`getSnapshot()`
 
-### 12d. Solid Signals — `@eggermarc/better-auth-usage/solid`
+### 12d. Solid Signals — `@eggermarc/better-auth-usage/solid` (`package/client/solid.ts`)
 - [ ] `createStore`-based integration
 
-### 12e. Angular Service — `@eggermarc/better-auth-usage/angular`
+### 12e. Angular Service — `@eggermarc/better-auth-usage/angular` (`package/client/angular.ts`)
 - [ ] Injectable service with RxJS Observable wrappers
 
 ---
@@ -215,7 +226,7 @@ package/
 ├── runtime.ts            runPipeline + WAL init + centralized error mapping
 ├── utils.ts              checkLimit, shouldReset, redactId
 ├── client.ts             BetterAuth client + reactive tracker (createUsageTracker)
-├── react.ts              React hooks (UsageProvider, useUsage, useFeatureUsage, useUsageActions, useUsageEvent)
+├── client/               Framework clients (react.ts, vue.ts, svelte.ts, solid.ts, angular.ts)
 ├── services/             RedisService, DbService, LoggerService
 ├── pipelines/            All business logic (Effect)
 ├── endpoints/            9 endpoints (thin wrappers, zero try-catch)

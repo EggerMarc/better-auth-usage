@@ -79,6 +79,7 @@ describe("feature overrides", () => {
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
             body: {},
+            headers,
         });
 
         expect(res).toBeDefined();
@@ -92,6 +93,7 @@ describe("feature overrides", () => {
             await instance.auth.api.getFeature({
                 params: { featureKey: "nonexistent" },
                 body: {},
+                headers,
             });
             // Should not reach here
             expect(true).toBe(false);
@@ -358,6 +360,7 @@ describe("feature details and overrideKey lookup", () => {
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
             body: { overrideKey: "pro-plan" },
+            headers,
         });
 
         expect(res.feature.maxLimit).toBe(10000);

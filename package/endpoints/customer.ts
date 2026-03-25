@@ -3,6 +3,7 @@ import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { z } from "zod"
 import type { UsageOptions } from "@/types"
 import { getCustomer } from "@/pipelines/get-customer"
+import { authorizeUser } from "@/pipelines/authorize"
 import { upsertCustomer } from "@/pipelines/customer"
 import { runPipeline } from "@/runtime"
 
@@ -11,7 +12,7 @@ export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
         "/usage/upsert-customer",
         {
             method: "POST",
-            middleware: [sessionMiddleware],
+            use: [sessionMiddleware],
             body: z.object({
                 referenceId: z.string(),
                 referenceType: z.string(),
@@ -21,15 +22,23 @@ export function getUpsertCustomerEndpoint(endpointOptions: UsageOptions) {
             }),
         },
         async (ctx) =>
-            runPipeline(ctx.context, endpointOptions, upsertCustomer({
-                customer: {
+            runPipeline(ctx.context, endpointOptions, Effect.gen(function* () {
+                yield* authorizeUser(endpointOptions, {
+                    userId: ctx.context.session.user.id,
                     referenceId: ctx.body.referenceId,
                     referenceType: ctx.body.referenceType,
-                    email: ctx.body.email,
-                    name: ctx.body.name,
-                    overrideKey: ctx.body.overrideKey,
-                },
-                features: endpointOptions.features,
+                    feature: "*",
+                })
+                return yield* upsertCustomer({
+                    customer: {
+                        referenceId: ctx.body.referenceId,
+                        referenceType: ctx.body.referenceType,
+                        email: ctx.body.email,
+                        name: ctx.body.name,
+                        overrideKey: ctx.body.overrideKey,
+                    },
+                    features: endpointOptions.features,
+                })
             }))
     )
 }
@@ -39,12 +48,20 @@ export function getCheckCustomerEndpoint(endpointOptions: UsageOptions) {
         "/usage/check-customer",
         {
             method: "POST",
-            middleware: [sessionMiddleware],
+            use: [sessionMiddleware],
             body: z.object({
                 referenceId: z.string(),
             }),
         },
         async (ctx) =>
-            runPipeline(ctx.context, endpointOptions, getCustomer(ctx.body.referenceId))
+            runPipeline(ctx.context, endpointOptions, Effect.gen(function* () {
+                yield* authorizeUser(endpointOptions, {
+                    userId: ctx.context.session.user.id,
+                    referenceId: ctx.body.referenceId,
+                    referenceType: "user",
+                    feature: "*",
+                })
+                return yield* getCustomer(ctx.body.referenceId)
+            }))
     )
 }

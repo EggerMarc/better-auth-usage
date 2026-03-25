@@ -9,7 +9,7 @@ export function getFeaturesEndpoint({ features }: UsageOptions) {
         "/usage/features",
         {
             method: "GET",
-            middleware: [sessionMiddleware],
+            use: [sessionMiddleware],
         },
         async () =>
             Object.values(features).map((f) => ({
@@ -24,7 +24,7 @@ export function getFeatureEndpoint({ features, overrides }: UsageOptions) {
         "/usage/features/:featureKey",
         {
             method: "GET",
-            middleware: [sessionMiddleware],
+            use: [sessionMiddleware],
             body: z.object({
                 overrideKey: z.string().optional(),
             }),

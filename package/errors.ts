@@ -34,3 +34,9 @@ export class PlanChangeError extends Data.TaggedError("PlanChangeError")<{
     toPlan: string
     cause: unknown
 }> {}
+
+export class NotAuthorized extends Data.TaggedError("NotAuthorized")<{
+    userId: string
+    referenceId: string
+    feature: string
+}> {}

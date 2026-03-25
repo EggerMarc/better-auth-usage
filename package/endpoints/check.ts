@@ -4,6 +4,7 @@ import { z } from "zod"
 import type { UsageOptions } from "@/types"
 import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
+import { authorizeUser } from "@/pipelines/authorize"
 import { checkUsage } from "@/pipelines/check"
 import { runPipeline } from "@/runtime"
 
@@ -12,7 +13,7 @@ export function getCheckEndpoint(endpointOptions: UsageOptions) {
         "/usage/check",
         {
             method: "POST",
-            middleware: [sessionMiddleware],
+            use: [sessionMiddleware],
             body: z.object({
                 referenceId: z.string(),
                 featureKey: z.string(),
@@ -22,6 +23,12 @@ export function getCheckEndpoint(endpointOptions: UsageOptions) {
         },
         async (ctx) =>
             runPipeline(ctx.context, endpointOptions, Effect.gen(function* () {
+                yield* authorizeUser(endpointOptions, {
+                    userId: ctx.context.session.user.id,
+                    referenceId: ctx.body.referenceId,
+                    referenceType: "user",
+                    feature: ctx.body.featureKey,
+                })
                 const overrideKey = yield* resolveOverrideKey({
                     overrideKey: ctx.body.overrideKey,
                     referenceId: ctx.body.referenceId,

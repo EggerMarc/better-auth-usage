@@ -1,9 +1,16 @@
 import { Effect, Layer } from "effect"
-import { Server as SocketServer } from "socket.io"
+import { Server as SocketServer, type Socket } from "socket.io"
+import type { AuthContext } from "better-auth"
 import type { UsageOptions } from "@/types"
-import { checkUsage } from "@/pipelines/check"
+import { checkUsage, canUse } from "@/pipelines/check"
+import { consumeUsage, useFeature } from "@/pipelines/consume"
+import { resolveFeature } from "@/pipelines/features"
+import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { RedisService, DbService, LoggerService } from "@/services"
 import { redactId } from "@/utils"
+import { validateSessionToken, liftAuthorizeUser, type SocketAuth } from "./auth"
+
+// ── Request types ──
 
 interface SubscribeRequest {
     subscriptions: Array<{
@@ -13,18 +20,193 @@ interface SubscribeRequest {
     }>
 }
 
-/**
- * Lift authorizeReference (sync or async) into an Effect.
- */
-const liftAuthorize = (fn: (...args: any[]) => boolean | Promise<boolean>, ...args: any[]) =>
-    Effect.tryPromise(() => Promise.resolve(fn(...args)))
+interface CheckRequest {
+    referenceId: string
+    featureKey: string
+    overrideKey?: string
+    amount?: number
+}
+
+interface ConsumeRequest {
+    referenceId: string
+    featureKey: string
+    amount: number
+    event?: string
+    overrideKey?: string
+}
+
+interface UseFeatureRequest {
+    referenceId: string
+    featureKey: string
+    amount?: number
+    event?: string
+    overrideKey?: string
+}
+
+// ── Error mapping ──
 
 /**
- * Set up Socket.IO connection handlers.
+ * Map Effect pipeline errors to socket error events.
+ * Mirrors the error mapping in `runPipeline` but emits via socket
+ * instead of throwing APIError.
+ */
+function mapErrorToSocket(
+    socket: Socket,
+    eventName: string,
+    cause: unknown,
+) {
+    const err = cause && typeof cause === "object" && "error" in cause
+        ? (cause as any).error
+        : null
+    const tag = err?._tag
+
+    const emit = (message: string) =>
+        socket.emit("error", { message, event: eventName })
+
+    if (tag === "NotAuthorized") {
+        return emit(`Not authorized: user "${err.userId}" cannot access "${err.feature}" for "${err.referenceId}"`)
+    }
+    if (tag === "FeatureNotFound") {
+        return emit(`Feature "${err.featureKey}" not found`)
+    }
+    if (tag === "CustomerNotFound") {
+        return emit(`Customer not found. Call upsert-customer first.`)
+    }
+    if (tag === "LimitExceeded") {
+        return emit(`Usage limit exceeded for "${err.featureKey}": ${err.current}/${err.limit}`)
+    }
+    if (tag === "ValidationError") {
+        return emit(`Validation error: ${err.message}`)
+    }
+    if (tag === "RedisError") {
+        return emit(`Redis error during ${err.operation}`)
+    }
+    if (tag === "DbError") {
+        return emit(`Database error during ${err.operation}`)
+    }
+
+    const message = err?.message ?? err?._tag ?? String(cause)
+    return emit(`Error: ${message}`)
+}
+
+// ── Auth middleware ──
+
+/**
+ * Register Socket.IO handshake authentication middleware.
  *
- * Accepts a `layer` that provides all services needed by pipelines.
- * This is the same layer used by `runPipeline` — passed in from runtime.ts
- * so the websocket handlers can run Effect pipelines with proper services.
+ * Validates the token from `socket.handshake.auth.token` against
+ * BetterAuth's session store. On success, attaches `socket.data.auth`
+ * with userId and sessionId. Rejects the connection on failure.
+ */
+export const registerAuthMiddleware = (
+    io: SocketServer,
+    authCtx: AuthContext,
+) =>
+    Effect.gen(function* () {
+        const logger = yield* LoggerService
+
+        io.use(async (socket, next) => {
+            const token = socket.handshake.auth?.token
+            if (!token || typeof token !== "string") {
+                logger.debug("WebSocket auth rejected: no token", { socketId: socket.id })
+                return next(new Error("Authentication required: provide token in handshake auth"))
+            }
+
+            const result = await Effect.runPromiseExit(
+                validateSessionToken(token, authCtx)
+            )
+
+            if (result._tag === "Failure") {
+                const message = result.cause && "error" in result.cause
+                    ? (result.cause as any).error?.message ?? "Authentication failed"
+                    : "Authentication failed"
+                logger.debug("WebSocket auth rejected", { socketId: socket.id, reason: message })
+                return next(new Error(message))
+            }
+
+            socket.data.auth = result.value as SocketAuth
+            logger.info("WebSocket authenticated", {
+                socketId: socket.id,
+                userId: result.value.userId,
+            })
+            next()
+        })
+
+        logger.info("WebSocket auth middleware registered")
+    })
+
+// ── Helpers ──
+
+/**
+ * Run an Effect pipeline and handle success/error uniformly.
+ * On success, emits `resultEvent` with the result.
+ * On error, emits `error` with mapped message.
+ */
+async function runWsPipeline<A>(
+    socket: Socket,
+    resultEvent: string,
+    effect: Effect.Effect<A, any, RedisService | DbService | LoggerService>,
+    layer: Layer.Layer<RedisService | DbService | LoggerService>,
+) {
+    const exit = await Effect.runPromiseExit(
+        effect.pipe(Effect.provide(layer))
+    )
+    if (exit._tag === "Success") {
+        socket.emit(resultEvent, exit.value)
+    } else {
+        mapErrorToSocket(socket, resultEvent, exit.cause)
+    }
+}
+
+/**
+ * Authorize + resolve feature for a WS request.
+ * Returns the resolved Feature or fails with NotAuthorized/FeatureNotFound.
+ */
+const authorizeAndResolve = (
+    options: UsageOptions,
+    auth: SocketAuth,
+    data: { referenceId: string; featureKey: string; overrideKey?: string },
+) =>
+    Effect.gen(function* () {
+        const authorized = yield* liftAuthorizeUser(options, {
+            userId: auth.userId,
+            referenceId: data.referenceId,
+            referenceType: "user",
+            feature: data.featureKey,
+        })
+
+        if (!authorized) {
+            return yield* Effect.die(
+                new Error(`Not authorized for ${data.featureKey}:${redactId(data.referenceId)}`)
+            )
+        }
+
+        const overrideKey = yield* resolveOverrideKey({
+            overrideKey: data.overrideKey,
+            referenceId: data.referenceId,
+        })
+
+        return yield* resolveFeature({
+            featureKey: data.featureKey,
+            overrideKey,
+            features: options.features,
+            overrides: options.overrides,
+        })
+    })
+
+// ── Connection handlers ──
+
+/**
+ * Set up Socket.IO connection handlers with full WS API.
+ *
+ * Supports:
+ *   subscribe:usage / unsubscribe:usage — room subscriptions
+ *   check         → check:result        — read-only usage check
+ *   can-use       → can-use:result      — entitlement check
+ *   consume       → consume:result      — consume usage
+ *   use-feature   → use-feature:result  — atomic check + consume
+ *
+ * All mutations broadcast `usage:updated` to the relevant room.
  */
 export const setupWebSocketHandlers = (
     io: SocketServer,
@@ -34,43 +216,56 @@ export const setupWebSocketHandlers = (
     Effect.gen(function* () {
         const logger = yield* LoggerService
 
+        const walEnabled = !!(options.cacheOptions?.redisUrl &&
+            options.cacheOptions.wal?.enabled !== false)
+
         io.on("connection", (socket) => {
-            logger.info("WebSocket connected", { socketId: socket.id })
+            const auth: SocketAuth = socket.data.auth
+            logger.info("WebSocket connected", {
+                socketId: socket.id,
+                userId: auth.userId,
+            })
+
+            // ── subscribe:usage ──
 
             socket.on("subscribe:usage", async (data: SubscribeRequest) => {
-                logger.info("WebSocket subscribe:usage", { socketId: socket.id, subscriptions: data.subscriptions.map(s => `${s.feature}:${s.referenceId}`) })
+                const subscribed: SubscribeRequest["subscriptions"] = []
+
                 for (const sub of data.subscriptions) {
                     const feature = options.features[sub.feature]
                     if (!feature) {
-                        socket.emit("error", { message: `Feature ${sub.feature} not found` })
+                        socket.emit("error", {
+                            message: `Feature ${sub.feature} not found`,
+                            event: "subscribe:usage",
+                        })
                         continue
                     }
 
-                    if (feature.authorizeReference) {
-                        const authorized = await Effect.runPromise(
-                            liftAuthorize(feature.authorizeReference, {
-                                referenceId: sub.referenceId,
-                                referenceType: sub.referenceType,
-                                feature: feature.key,
-                                incomingId: "",
-                            }).pipe(
-                                Effect.catchAll(() => Effect.succeed(false))
-                            )
-                        )
+                    const authorized = await Effect.runPromise(
+                        liftAuthorizeUser(options, {
+                            userId: auth.userId,
+                            referenceId: sub.referenceId,
+                            referenceType: sub.referenceType,
+                            feature: feature.key,
+                        })
+                    )
 
-                        if (!authorized) {
-                            socket.emit("error", {
-                                message: `Not authorized for ${sub.feature}:${redactId(sub.referenceId)}`
-                            })
-                            continue
-                        }
+                    if (!authorized) {
+                        socket.emit("error", {
+                            message: `Not authorized for ${sub.feature}:${redactId(sub.referenceId)}`,
+                            event: "subscribe:usage",
+                        })
+                        continue
                     }
 
                     socket.join(`usage:${sub.feature}:${sub.referenceId}`)
+                    subscribed.push(sub)
                 }
 
-                socket.emit("subscribed", { subscriptions: data.subscriptions })
+                socket.emit("subscribed", { subscriptions: subscribed })
             })
+
+            // ── unsubscribe:usage ──
 
             socket.on("unsubscribe:usage", (data: SubscribeRequest) => {
                 for (const sub of data.subscriptions) {
@@ -78,33 +273,105 @@ export const setupWebSocketHandlers = (
                 }
             })
 
-            socket.on("get:usage", async (data: { referenceId: string, feature: string }) => {
-                const feature = options.features[data.feature]
-                if (!feature) {
-                    socket.emit("usage:error", { error: `Feature ${data.feature} not found` })
-                    return
-                }
+            // ── check ──
 
-                await Effect.runPromise(
-                    checkUsage({
-                        referenceId: data.referenceId,
-                        feature,
-                    }).pipe(
-                        Effect.andThen((result) =>
-                            Effect.sync(() => socket.emit("usage:current", result))
-                        ),
-                        Effect.catchAll(() =>
-                            Effect.sync(() =>
-                                socket.emit("usage:error", { error: "Failed to fetch usage" })
-                            )
-                        ),
-                        Effect.provide(layer),
-                    )
+            socket.on("check", async (data: CheckRequest) => {
+                await runWsPipeline(
+                    socket,
+                    "check:result",
+                    Effect.gen(function* () {
+                        const feature = yield* authorizeAndResolve(options, auth, data)
+                        return yield* checkUsage({
+                            referenceId: data.referenceId,
+                            feature,
+                            amount: data.amount,
+                        })
+                    }),
+                    layer,
                 )
             })
 
+            // ── can-use ──
+
+            socket.on("can-use", async (data: CheckRequest) => {
+                await runWsPipeline(
+                    socket,
+                    "can-use:result",
+                    Effect.gen(function* () {
+                        const feature = yield* authorizeAndResolve(options, auth, data)
+                        return yield* canUse({
+                            referenceId: data.referenceId,
+                            feature,
+                            amount: data.amount,
+                        })
+                    }),
+                    layer,
+                )
+            })
+
+            // ── consume ──
+
+            socket.on("consume", async (data: ConsumeRequest) => {
+                await runWsPipeline(
+                    socket,
+                    "consume:result",
+                    Effect.gen(function* () {
+                        const feature = yield* authorizeAndResolve(options, auth, data)
+                        const result = yield* consumeUsage({
+                            referenceId: data.referenceId,
+                            amount: data.amount,
+                            event: data.event ?? "use",
+                            feature,
+                            walEnabled,
+                        })
+                        // Broadcast to all subscribers
+                        io.to(`usage:${data.featureKey}:${data.referenceId}`)
+                            .emit("usage:updated", {
+                                feature: data.featureKey,
+                                refId: data.referenceId,
+                                ...result,
+                            })
+                        return result
+                    }),
+                    layer,
+                )
+            })
+
+            // ── use-feature ──
+
+            socket.on("use-feature", async (data: UseFeatureRequest) => {
+                await runWsPipeline(
+                    socket,
+                    "use-feature:result",
+                    Effect.gen(function* () {
+                        const feature = yield* authorizeAndResolve(options, auth, data)
+                        const result = yield* useFeature({
+                            referenceId: data.referenceId,
+                            amount: data.amount ?? 1,
+                            event: data.event ?? "use",
+                            feature,
+                            walEnabled,
+                        })
+                        // Broadcast to all subscribers (even if blocked — state changed)
+                        io.to(`usage:${data.featureKey}:${data.referenceId}`)
+                            .emit("usage:updated", {
+                                feature: data.featureKey,
+                                refId: data.referenceId,
+                                ...result,
+                            })
+                        return result
+                    }),
+                    layer,
+                )
+            })
+
+            // ── disconnect ──
+
             socket.on("disconnect", () => {
-                logger.debug("WebSocket disconnected", { socketId: socket.id })
+                logger.debug("WebSocket disconnected", {
+                    socketId: socket.id,
+                    userId: auth.userId,
+                })
             })
         })
 

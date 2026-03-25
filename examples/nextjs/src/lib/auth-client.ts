@@ -1,10 +1,11 @@
 import { createAuthClient } from "better-auth/react"
-import { usageClient, createUsageTracker } from "package/client"
+import { anonymousClient } from "better-auth/client/plugins"
+import { usageClient } from "package/client"
+
 export const authClient = createAuthClient({
-    baseURL: process.env.BETTER_AUTH_URL!,
+    baseURL: "http://localhost:3002",
     plugins: [
-        usageClient()
+        anonymousClient(),
+        usageClient(),
     ]
 })
-
-export { createUsageTracker }
