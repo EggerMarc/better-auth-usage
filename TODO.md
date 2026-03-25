@@ -201,10 +201,36 @@ Replaced by BetterAuth's `anonymous()` plugin. Anonymous users get real sessions
 
 ---
 
+# Considerations
+
+## Socket.IO → Native WebSockets
+
+Socket.IO is the only dependency preventing the plugin from running on Cloudflare Workers (or any edge runtime). Cloudflare Workers support native WebSockets but not Socket.IO's protocol (HTTP long-polling upgrade, custom framing).
+
+Our WS protocol is simple — emit event, get result, room-based pub/sub. None of this needs Socket.IO's features (namespaces, binary, auto-reconnect protocol). Rooms are a simple in-memory `Map<string, Set<WebSocket>>`.
+
+**Migration path:**
+- Replace `socket.io` server with native `WebSocket` upgrade handling (works on Hono, Node, Bun, Deno, Cloudflare)
+- Replace `socket.io-client` with native `WebSocket` + thin wrapper for request-response pattern
+- Reconnection: implement exponential backoff in the client (currently delegated to Socket.IO)
+- Remove `socket.io` and `socket.io-client` from dependencies (~200KB saved)
+
+**Impact:** `realtime/websocket-server.ts`, `realtime/usage-tracker.ts`, `runtime.ts`, `client.ts`. Pipelines and endpoints unchanged.
+
+## Upstash Redis (HTTP) vs ioredis (TCP)
+
+For serverless/edge deployments (Cloudflare, Vercel Edge), ioredis (TCP) doesn't work. Upstash Redis provides an HTTP-compatible API. The plugin already has partial Upstash support. Full migration would mean:
+- Replace `ioredis` with `@upstash/redis` (HTTP client)
+- Lua scripts work on Upstash (they support EVAL)
+- Pub/sub works differently on Upstash — uses server-sent events or polling instead of persistent SUBSCRIBE
+- WAL drain strategy would need to use "poll" mode (no persistent SUBSCRIBE on HTTP)
+
+---
+
 # Test Commands
 
 ```bash
-bun run test          # 128 tests — e2e + unit (no Docker needed)
+bun run test          # 135 tests — e2e + unit (no Docker needed)
 bun run test:redis    # 11 tests — Redis integration (requires: docker run -d -p 6399:6379 redis:7-alpine)
 bun run test:perf     # 9 tests — performance benchmarks with [PERF] output
 ```
@@ -213,7 +239,7 @@ Note: `bun run test:redis` requires a running Redis on port 6399. These tests ve
 
 ---
 
-# Current State: 128 tests, 0 failures, 14 test files (+ 11 infra tests)
+# Current State: 135 tests, 0 failures, 14 test files (+ 11 infra tests)
 
 ## File Structure
 ```
@@ -225,12 +251,12 @@ package/
 ├── config.ts             Config validation at init
 ├── runtime.ts            runPipeline + WAL init + centralized error mapping
 ├── utils.ts              checkLimit, shouldReset, redactId
-├── client.ts             BetterAuth client + reactive tracker (createUsageTracker)
-├── client/               Framework clients (react.ts, vue.ts, svelte.ts, solid.ts, angular.ts)
+├── client.ts             BetterAuth client plugin + reactive tracker (createUsageTracker)
+├── client/react.tsx      React hooks (createUsageProvider, useFeature, useSetReference, useAllEvents)
 ├── services/             RedisService, DbService, LoggerService
-├── pipelines/            All business logic (Effect)
-├── endpoints/            9 endpoints (thin wrappers, zero try-catch)
+├── pipelines/            All business logic (Effect) + authorize.ts
+├── endpoints/            10 endpoints (thin wrappers, zero try-catch) + /usage/ws discovery
 ├── wal/                  WAL worker + recovery
 ├── adapters/lua/         increment.lua, set-meta.lua
-└── realtime/             Auth, pure subscriber, full WS API handlers (Effect)
+└── realtime/             auth.ts, pure subscriber, full WS API handlers (Effect)
 ```
