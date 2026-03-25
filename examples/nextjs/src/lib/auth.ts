@@ -63,11 +63,7 @@ export const usageOptions = {
 } satisfies UsageOptions
 
 export const auth = betterAuth({
-    trustedOrigins: (req) => {
-        const origin = req.headers.get("origin") ?? ""
-        if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return [origin]
-        return []
-    },
+    trustedOrigins: [process.env.BETTER_AUTH_URL ?? "http://localhost:3002"],
     database: drizzleAdapter(db, {
         provider: "pg",
     }),
