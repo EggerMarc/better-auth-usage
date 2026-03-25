@@ -12,7 +12,9 @@
     "homepage": "https://github.com/EggerMarc/better-auth-usage#readme",
     "scripts": {
         "build": "tsup",
+        "build:example": "tsup && cd examples/nextjs && bun install && bun run build",
         "dev": "tsup --watch",
+        "dev:example": "tsup && cd examples/nextjs && bun install && bun run dev",
         "test": "bun test tests/ package/",
         "test:watch": "bun test --watch",
         "test:coverage": "bun test --coverage",
