@@ -20,10 +20,10 @@ export const authorizeUser = (
     if (!options.authorizeUser) {
         return Effect.void
     }
-    return Effect.tryPromise(() =>
-        Promise.resolve(options.authorizeUser!(params))
-    ).pipe(
-        Effect.catchAll(() => Effect.succeed(false)),
+    return Effect.tryPromise({
+        try: () => Promise.resolve(options.authorizeUser!(params)),
+        catch: (cause) => cause,
+    }).pipe(
         Effect.andThen((allowed) =>
             allowed
                 ? Effect.void

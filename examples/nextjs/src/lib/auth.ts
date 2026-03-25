@@ -20,11 +20,9 @@ export const usageOptions = {
         "storage": {
             reset: "never",
             resetValue: 0,
-            maxLimit: 0,
             hooks: {
                 before: ({ usage, feature }) => {
                     if (usage.afterAmount > (feature.maxLimit ?? Infinity)) {
-                        console.log("Doing before hook")
                         throw new Error("Storage limit exceeded — upgrade your plan")
                     }
                 }

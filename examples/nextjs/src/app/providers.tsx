@@ -18,13 +18,12 @@ export function Providers({ children }: { children: ReactNode }) {
         authClient.signIn.anonymous().then((res) => {
             const userId = res.data?.user?.id
             if (!userId) return
-            // Assign starter plan to anonymous user
-            ;authClient.usage.upsertCustomer({
+            authClient.usage.upsertCustomer({
                 referenceId: userId,
                 referenceType: "user",
                 overrideKey: "starter",
             })
-        })
+        }).catch((err) => console.error("Anonymous sign-in failed:", err))
     }, [session.data, session.isPending])
 
     if (!session.data?.user?.id) {

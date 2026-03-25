@@ -223,16 +223,6 @@ const writeToDb = (
                 },
             })
         })
-    ).pipe(
-        Effect.catchAll((err) =>
-            Effect.sync(() =>
-                logger.error("DB write failed", {
-                    referenceId: params.referenceId,
-                    feature: params.feature,
-                    error: String(err),
-                })
-            )
-        ),
     )
 
 /**

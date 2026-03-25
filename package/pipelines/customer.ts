@@ -41,7 +41,7 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
             // Detect plan change
             const oldOverride = existing.overrideKey
             const newOverride = customer.overrideKey
-            if (features && oldOverride !== newOverride && newOverride) {
+            if (features && oldOverride !== newOverride) {
                 yield* handlePlanChange({
                     referenceId: customer.referenceId,
                     fromOverride: oldOverride,
@@ -94,14 +94,14 @@ const handlePlanChange = ({
 }: {
     referenceId: string
     fromOverride: string | undefined
-    toOverride: string
+    toOverride: string | undefined
     features: Record<string, Feature>
     redis: RedisService
     db: DbService
     logger: LoggerService
 }) =>
     Effect.gen(function* () {
-        logger.info("Plan change detected", { referenceId, from: fromOverride, to: toOverride })
+        logger.info("Plan change detected", { referenceId, from: fromOverride, to: toOverride ?? "base" })
 
         const now = new Date()
 
@@ -123,7 +123,7 @@ const handleFeaturePlanChange = ({
     referenceId, toOverride, feature, now, redis, db, logger,
 }: {
     referenceId: string
-    toOverride: string
+    toOverride: string | undefined
     feature: Feature
     now: Date
     redis: RedisService

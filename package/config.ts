@@ -40,6 +40,10 @@ export function validateConfig(options: UsageOptions): void {
     // Validate overrides reference existing features
     if (options.overrides) {
         for (const [overrideKey, override] of Object.entries(options.overrides)) {
+            if (!override.features || typeof override.features !== "object") {
+                errors.push(`overrides["${overrideKey}"] must include a features object`)
+                continue
+            }
             if (override.features) {
                 for (const featureKey of Object.keys(override.features)) {
                     if (!options.features[featureKey]) {

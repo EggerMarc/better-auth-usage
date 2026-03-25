@@ -68,7 +68,7 @@ export interface UseFeatureResult {
 
 export function createUsageProvider<Auth = any>() {
     type FeatureKey = Auth extends { options: { plugins: readonly (infer P)[] } }
-        ? P extends { id: "usage"; _featureKeys: infer K }
+        ? Extract<P, { id: "usage"; _featureKeys: any }> extends { _featureKeys: infer K }
             ? K & string
             : string
         : string

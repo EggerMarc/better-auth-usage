@@ -74,11 +74,9 @@ describe("feature overrides", () => {
     });
 
     test("get single feature via API returns config without hooks", async () => {
-        // Use the auth.api directly since the GET endpoint has a body schema
-        // which doesn't work well with $fetch for GET requests
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
-            body: {},
+            query: {},
             headers,
         });
 
@@ -92,7 +90,7 @@ describe("feature overrides", () => {
         try {
             await instance.auth.api.getFeature({
                 params: { featureKey: "nonexistent" },
-                body: {},
+                query: {},
                 headers,
             });
             // Should not reach here
@@ -355,7 +353,7 @@ describe("feature details and overrideKey lookup", () => {
     test("get single feature with overrideKey returns merged config", async () => {
         const res = await instance.auth.api.getFeature({
             params: { featureKey: "api-calls" },
-            body: { overrideKey: "pro-plan" },
+            query: { overrideKey: "pro-plan" },
             headers,
         });
 

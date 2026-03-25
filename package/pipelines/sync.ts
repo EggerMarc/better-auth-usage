@@ -28,26 +28,25 @@ export const syncUsage = ({
 
         const usage = yield* getUsage({ referenceId, feature })
         const reset = shouldReset(usage.lastResetAt, feature.reset)
-
-        // Always update metadata with next reset time
         const metaKey = `meta:${feature.key}:${referenceId}`
-        yield* redis.hset(metaKey, {
-            referenceId,
-            feature: feature.key,
-            lastResetAt: String(usage.lastResetAt.getTime()),
-            ...(reset.nextReset && { resetAt: String(reset.nextReset.getTime()) }),
-            ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
-            ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
-            ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
-        }).pipe(
-            Effect.catchAll((err) =>
-                Effect.sync(() =>
-                    logger.warn("Failed to update metadata", { referenceId, feature: feature.key, error: err })
-                )
-            )
-        )
 
         if (!reset.shouldReset) {
+            // No reset — write metadata with current timestamps
+            yield* redis.hset(metaKey, {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: String(usage.lastResetAt.getTime()),
+                ...(reset.nextReset && { resetAt: String(reset.nextReset.getTime()) }),
+                ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
+                ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
+                ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
+            }).pipe(
+                Effect.catchAll((err) =>
+                    Effect.sync(() =>
+                        logger.warn("Failed to update metadata", { referenceId, feature: feature.key, error: err })
+                    )
+                )
+            )
             return { reset: false, message: "No reset required", feature: feature.key }
         }
 
@@ -84,12 +83,24 @@ export const syncUsage = ({
             },
         })
 
-        // Reset Redis counter
+        // Reset Redis counter + update metadata with post-reset timestamps
         const usageKey = `usage:${feature.key}:${referenceId}`
-        yield* redis.set(usageKey, feature.resetValue ?? 0).pipe(
+        const postResetReset = shouldReset(now, feature.reset)
+        yield* Effect.all([
+            redis.set(usageKey, feature.resetValue ?? 0),
+            redis.hset(metaKey, {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: String(now.getTime()),
+                ...(postResetReset.nextReset && { resetAt: String(postResetReset.nextReset.getTime()) }),
+                ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
+                ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
+                ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
+            }),
+        ]).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
-                    logger.warn("Failed to reset Redis counter", { referenceId, feature: feature.key, error: err })
+                    logger.warn("Failed to update Redis after reset", { referenceId, feature: feature.key, error: err })
                 )
             )
         )

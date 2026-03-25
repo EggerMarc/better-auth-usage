@@ -51,6 +51,7 @@ export function getCheckCustomerEndpoint(endpointOptions: ResolvedUsageOptions) 
             use: [sessionMiddleware],
             body: z.object({
                 referenceId: z.string(),
+                referenceType: z.string().default("user"),
             }),
         },
         async (ctx) =>
@@ -58,7 +59,7 @@ export function getCheckCustomerEndpoint(endpointOptions: ResolvedUsageOptions) 
                 yield* authorizeUser(endpointOptions, {
                     userId: ctx.context.session.user.id,
                     referenceId: ctx.body.referenceId,
-                    referenceType: "user",
+                    referenceType: ctx.body.referenceType,
                     feature: "*",
                 })
                 return yield* getCustomer(ctx.body.referenceId)

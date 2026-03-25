@@ -25,7 +25,7 @@ export function getFeatureEndpoint({ features, overrides }: ResolvedUsageOptions
         {
             method: "GET",
             use: [sessionMiddleware],
-            body: z.object({
+            query: z.object({
                 overrideKey: z.string().optional(),
             }),
         },
@@ -33,7 +33,7 @@ export function getFeatureEndpoint({ features, overrides }: ResolvedUsageOptions
             const exit = Effect.runSyncExit(
                 resolveFeature({
                     featureKey: ctx.params.featureKey,
-                    overrideKey: ctx.body.overrideKey,
+                    overrideKey: ctx.query.overrideKey,
                     features,
                     overrides,
                 })

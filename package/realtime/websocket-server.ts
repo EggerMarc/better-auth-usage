@@ -7,6 +7,7 @@ import { consumeUsage, useFeature } from "@/pipelines/consume"
 import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { RedisService, DbService, LoggerService } from "@/services"
+import { NotAuthorized } from "@/errors"
 import { redactId } from "@/utils"
 import { validateSessionToken, liftAuthorizeUser, type SocketAuth } from "./auth"
 
@@ -180,8 +181,8 @@ const authorizeAndResolve = (
         })
 
         if (!authorized) {
-            return yield* Effect.die(
-                new Error(`Not authorized for ${data.featureKey}:${redactId(data.referenceId)}`)
+            return yield* Effect.fail(
+                new NotAuthorized({ userId: auth.userId, referenceId: data.referenceId, feature: data.featureKey })
             )
         }
 

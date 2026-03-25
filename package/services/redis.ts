@@ -102,10 +102,16 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
             // Suppress unhandled error events — errors are caught per-operation via wrapRedis
             client.on("error", () => {})
 
-            // Register cleanup: quit on layer teardown
+            // Track subscriber clients for cleanup
+            const subscriberClients: RedisClient[] = []
+
+            // Register cleanup: quit all clients on layer teardown
             yield* Effect.addFinalizer(() =>
                 Effect.tryPromise({
-                    try: () => client.quit().then(() => undefined),
+                    try: async () => {
+                        await Promise.allSettled(subscriberClients.map(sub => sub.quit()))
+                        await client.quit()
+                    },
                     catch: () => new RedisError({ cause: "quit failed", operation: "quit" }),
                 }).pipe(Effect.orDie)
             )
@@ -138,7 +144,9 @@ export const makeRedisServiceLive = (redisUrl: string): Layer.Layer<RedisService
                 psubscribe: (pattern, onMessage) =>
                     wrapRedis("psubscribe", async () => {
                         // Create a dedicated subscriber client (ioredis requires separate client for sub)
-                        const sub = client.duplicate()
+                        const sub = client.duplicate() as RedisClient
+                        sub.on("error", () => {})
+                        subscriberClients.push(sub)
                         await sub.psubscribe(pattern)
                         sub.on("pmessage", (_pattern, channel, message) => onMessage(channel, message))
                     }),

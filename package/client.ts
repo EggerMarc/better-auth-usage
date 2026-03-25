@@ -28,7 +28,7 @@ import { io, type Socket } from "socket.io-client";
  */
 export type InferFeatures<Auth> =
     Auth extends { options: { plugins: readonly (infer P)[] } }
-        ? P extends { id: "usage"; _featureKeys: infer K }
+        ? Extract<P, { id: "usage"; _featureKeys: any }> extends { _featureKeys: infer K }
             ? K & string
             : string
         : string

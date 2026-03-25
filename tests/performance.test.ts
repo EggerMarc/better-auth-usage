@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { createTestInstance, signInWithTestUser, createCustomer, shutdownUsage } from "./test-helper";
 
 describe("performance", () => {
@@ -18,6 +18,7 @@ describe("performance", () => {
             headers,
         });
     });
+    afterAll(async () => { await shutdownUsage(); });
 
     test("consume endpoint responds in under 50ms (DB-only, no Redis)", async () => {
         const times: number[] = [];

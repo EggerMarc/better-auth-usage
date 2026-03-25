@@ -4,7 +4,7 @@ import type { RedisError } from "@/errors"
 
 const STREAM = "wal:usage"
 const GROUP = "wal-drain"
-const CONSUMER = `consumer-${process.pid}`
+const CONSUMER = `consumer-${process.pid}-${Math.random().toString(36).slice(2, 10)}`
 const BATCH_SIZE = 100
 const BACKPRESSURE_THRESHOLD = 10_000
 
