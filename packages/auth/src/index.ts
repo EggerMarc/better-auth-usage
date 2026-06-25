@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
+import { anonymous } from "better-auth/plugins"
 import { usage } from "@eggermarc/better-auth-usage"
 import { durableObjectDriver } from "@eggermarc/better-auth-usage/cloudflare"
 import { createDb } from "@repo/db"
@@ -23,10 +24,16 @@ export function createAuth() {
             defaultCookieAttributes: { sameSite: "none", secure: true, httpOnly: true },
         },
         plugins: [
+            anonymous(),
             usage({
                 features: {
                     "api-calls": { maxLimit: 1000, reset: "monthly", resetValue: 0 },
-                    "credits": { reset: "never", resetValue: 0 },
+                    "storage": { maxLimit: 500, reset: "never", resetValue: 0 },
+                    "credits": { maxLimit: 1000, minLimit: -500, reset: "never", resetValue: 0 },
+                },
+                overrides: {
+                    "starter": { features: { "api-calls": { maxLimit: 1000 }, "storage": { maxLimit: 500 }, "credits": { maxLimit: 1000 } } },
+                    "pro": { features: { "api-calls": { maxLimit: 100000 }, "storage": { maxLimit: 50000 }, "credits": { maxLimit: 100000 } } },
                 },
                 driver: durableObjectDriver({ namespace: env.USAGE_DO }),
             }),
