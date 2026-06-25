@@ -31,7 +31,7 @@ export function memoryDriver(): UsageDriver {
             let resetOccurred = false
             let lastResetAt = meta?.lastResetAt?.getTime() ?? args.nowMs
 
-            // Reset boundary crossed — mirror adapters/lua/increment.lua
+            // Reset boundary crossed — mirror drivers/lua/increment.lua
             if (meta?.resetAt && args.nowMs >= meta.resetAt.getTime()) {
                 current = resetValue
                 lastResetAt = args.nowMs

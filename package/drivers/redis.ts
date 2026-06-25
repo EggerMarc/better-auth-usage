@@ -1,5 +1,5 @@
 import type RedisType from "ioredis"
-import incrementScript from "@/adapters/lua/increment.lua"
+import incrementScript from "./lua/increment.lua"
 import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
 import type { UsageDriver, WalEntry, UsageEventMessage } from "./types"
 
@@ -69,7 +69,7 @@ function parseEntries(raw: Array<[string, string[]]>): WalEntry[] {
  * dedicated subscriber clients for pub/sub) created at construction and torn
  * down via `close()`.
  *
- * - `consume` runs `adapters/lua/increment.lua` atomically (increment + reset +
+ * - `consume` runs `drivers/lua/increment.lua` atomically (increment + reset +
  *   WAL append + publish).
  * - `wal` exposes the `wal:usage` stream for the drain worker.
  * - `realtime` bridges the `usage:events:*` pub/sub channel.

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import Redis from "ioredis";
-import incrementScript from "../package/adapters/lua/increment.lua";
+import incrementScript from "../package/drivers/lua/increment.lua";
 
 /**
  * Integration tests with real Redis.

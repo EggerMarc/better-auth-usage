@@ -1,5 +1,5 @@
 import { Redis } from "@upstash/redis"
-import incrementSimple from "@/adapters/lua/increment-simple.lua"
+import incrementSimple from "./lua/increment-simple.lua"
 import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
 import type { UsageDriver } from "./types"
 

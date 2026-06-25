@@ -78,7 +78,7 @@ export interface WalCapability {
  * Invariants:
  * - `consume` MUST be atomic per (referenceId, feature): load meta → apply
  *   reset-boundary → increment → persist → (if realtime) broadcast → (if wal)
- *   append. It mirrors `adapters/lua/increment.lua` and returns its contract.
+ *   append. It mirrors `drivers/lua/increment.lua` and returns its contract.
  * - `getUsage` returns counter + limits in ONE read, or `null` on a cache miss
  *   (the caller then falls back to the database).
  */
