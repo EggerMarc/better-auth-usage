@@ -31,6 +31,7 @@ export function durableObjectDriver(config: DurableObjectDriverConfig): UsageDri
             body: JSON.stringify(payload),
             headers: { "content-type": "application/json" },
         })
+        if (!res.ok) throw new Error(`DO ${path} failed: ${res.status}`)
         return res.json() as Promise<T>
     }
 
