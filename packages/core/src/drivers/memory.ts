@@ -1,5 +1,14 @@
 import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
-import type { UsageDriver } from "./types"
+import type { UsageDriver, UsageEventMessage } from "./types"
+
+export interface MemoryDriverConfig {
+    /**
+     * Enable in-process realtime + the Node WebSocket server on this port.
+     * Single process only (perfect for `bun` dev: every tab hits the same
+     * driver, so consumes broadcast live). Omit for polling-only.
+     */
+    realtime?: { port: number }
+}
 
 /**
  * In-memory driver — `Map`-backed counters + limits + customers.
@@ -12,10 +21,11 @@ import type { UsageDriver } from "./types"
  *
  * `consume` is atomic by virtue of JavaScript's single-threaded execution.
  */
-export function memoryDriver(): UsageDriver {
+export function memoryDriver(config: MemoryDriverConfig = {}): UsageDriver {
     const counters = new Map<string, number>()
     const limits = new Map<string, CachedLimits>()
     const customers = new Map<string, Customer>()
+    const subscribers = new Set<(e: UsageEventMessage) => void>()
 
     const key = (referenceId: string, feature: string) => `${feature}::${referenceId}`
 
@@ -41,6 +51,15 @@ export function memoryDriver(): UsageDriver {
 
             const newTotal = current + args.amount
             counters.set(k, newTotal)
+
+            // Fan out to in-process subscribers (the Node ws server bridges them).
+            if (subscribers.size > 0) {
+                const evt: UsageEventMessage = {
+                    refId: args.referenceId, feature: args.feature,
+                    amount: args.amount, newTotal, event: args.event, ts: args.nowMs,
+                }
+                for (const cb of subscribers) cb(evt)
+            }
 
             return { newTotal, resetOccurred, lastResetAt }
         },
@@ -84,7 +103,22 @@ export function memoryDriver(): UsageDriver {
             customers.delete(referenceId)
         },
 
+        realtime: config.realtime
+            ? {
+                onUsageEvent(cb: (event: UsageEventMessage) => void): () => void {
+                    subscribers.add(cb)
+                    return () => { subscribers.delete(cb) }
+                },
+                endpointInfo(baseURL: string): { enabled: boolean; url: string | null } {
+                    const origin = new URL(baseURL).origin.replace(/^http/, "ws").replace(/:\d+$/, "")
+                    return { enabled: true, url: `${origin}:${config.realtime!.port}` }
+                },
+                port: config.realtime.port,
+            }
+            : undefined,
+
         async close(): Promise<void> {
+            subscribers.clear()
             counters.clear()
             limits.clear()
             customers.clear()

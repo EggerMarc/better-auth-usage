@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react"
 import { authClient, baseURL, createUsageProvider } from "@repo/auth/client"
+import { DEFAULT_ROOM, REFERENCE_TYPE } from "./demo"
 
 export const { UsageProvider, useFeature, useSetReference, useAllEvents } = createUsageProvider()
 
@@ -20,8 +21,9 @@ export function Providers({ children }: { children: ReactNode }) {
         )
     }
 
+    // Start in the default room — every visitor in a room shares its counters.
     return (
-        <UsageProvider referenceId={session.data.user.id} baseURL={baseURL}>
+        <UsageProvider referenceId={DEFAULT_ROOM} referenceType={REFERENCE_TYPE} baseURL={baseURL}>
             {children}
         </UsageProvider>
     )

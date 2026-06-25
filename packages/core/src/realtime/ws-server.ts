@@ -66,6 +66,16 @@ export async function startWsServer(opts: {
 
     const wss = new WebSocketServer({ port: opts.port })
 
+    // Don't crash on listen errors — under bun --hot the prior instance may
+    // still hold the port; the existing server keeps serving.
+    wss.on("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE") {
+            logger.warn("WebSocket server port in use — reusing existing", { port: opts.port })
+        } else {
+            logger.error("WebSocket server error", { error: String(err) })
+        }
+    })
+
     wss.on("connection", (ws: WSocket, req: IncomingMessage) => {
         const conn = new NodeConn(ws)
 

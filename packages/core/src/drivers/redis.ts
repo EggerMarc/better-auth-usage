@@ -237,10 +237,10 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
             },
             endpointInfo(baseURL: string): { enabled: boolean; url: string | null } {
                 if (!config.enableRealtime || !config.port) return { enabled: false, url: null }
-                const origin = new URL(baseURL).origin
-                const wsOrigin = origin.replace(/:\d+$/, "") + ":" + config.port
-                return { enabled: true, url: wsOrigin }
+                const origin = new URL(baseURL).origin.replace(/^http/, "ws").replace(/:\d+$/, "")
+                return { enabled: true, url: `${origin}:${config.port}` }
             },
+            port: config.enableRealtime ? config.port : undefined,
         },
 
         async close(): Promise<void> {

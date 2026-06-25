@@ -39,7 +39,9 @@ async function ensureWalStarted(options: ResolvedUsageOptions) {
     if (walStarted) return
 
     const hasWal = !!options.driver.wal
-    const hasRealtime = !!(options.driver.realtime && options.cacheOptions?.enableRealtime && options.cacheOptions?.port)
+    // The driver supplies its own Node-WS port (redis/memory). DO has no port.
+    const wsPort = options.driver.realtime?.port
+    const hasRealtime = !!(options.driver.realtime && wsPort)
     if (!hasWal && !hasRealtime) return
 
     // Need the DB adapter (captured per-request) for both the WAL drain and
@@ -73,7 +75,7 @@ async function ensureWalStarted(options: ResolvedUsageOptions) {
     // Start the native WebSocket realtime server (independent of WAL).
     if (hasRealtime) {
         wsServer = await startWsServer({
-            port: options.cacheOptions!.port!,
+            port: wsPort!,
             options,
             layer: fullLayer,
             authCtx: capturedAdapter,

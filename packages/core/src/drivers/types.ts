@@ -46,6 +46,12 @@ export interface RealtimeCapability {
 
     /** What the `/usage/ws` discovery endpoint returns for this driver. */
     endpointInfo(baseURL: string): { enabled: boolean; url: string | null }
+
+    /**
+     * Port for the Node WebSocket server (redis / in-memory transports). Absent
+     * for the Durable Object (it serves WS itself, no Node server).
+     */
+    readonly port?: number
 }
 
 /**

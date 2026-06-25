@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { useState, useRef, useEffect } from "react"
 import { authClient } from "@repo/auth/client"
 import { useFeature, useAllEvents, useSetReference } from "../providers"
+import { ROOMS, DEFAULT_ROOM, REFERENCE_TYPE, type Room } from "../demo"
 
 export const Route = createFileRoute("/")({ component: Home })
 
@@ -136,59 +137,35 @@ function EventLog() {
     )
 }
 
-function AuthBar() {
+function RoomBar() {
     const session = authClient.useSession()
     const setReference = useSetReference()
-    const [selectedPlan, setSelectedPlan] = useState<string | null>()
-    const [switching, setSwitching] = useState(false)
+    const [room, setRoom] = useState<Room>(DEFAULT_ROOM)
 
     const user = session.data?.user
-    const isAnonymous = (user as { isAnonymous?: boolean } | undefined)?.isAnonymous
 
-    const handleSignOut = () => {
-        authClient.signOut().then(() => window.location.reload())
-    }
-
-    const handlePlanSwitch = async (plan: string) => {
-        if (!user?.id || switching) return
-        setSwitching(true)
-        setSelectedPlan(plan)
-        try {
-            await authClient.usage.upsertCustomer({ referenceId: user.id, referenceType: "user", overrideKey: plan })
-            setReference(user.id, "user")
-        } catch (e) {
-            console.error("Plan switch failed:", e)
-        } finally {
-            setSwitching(false)
-        }
+    // Switching room = joining a different shared reference. Counters are
+    // isolated per room; everyone in the same room sees each other live.
+    const join = (next: Room) => {
+        setRoom(next)
+        setReference(next, REFERENCE_TYPE)
     }
 
     return (
         <div className="flex items-center gap-3">
-            {isAnonymous ? (
-                <span className="text-xs text-zinc-400">Anonymous session</span>
-            ) : (
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">{user?.name ?? user?.email}</span>
-                    <button onClick={handleSignOut} className="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-                        Sign out
-                    </button>
-                </div>
-            )}
-
+            <span className="text-xs text-zinc-400">{user ? "anon" : "…"}</span>
             <div className="ml-2 flex items-center gap-1.5">
-                <span className="text-[10px] text-zinc-400">Plan:</span>
-                {["starter", "pro"].map((plan) => (
+                <span className="text-[10px] text-zinc-400">Room:</span>
+                {ROOMS.map((r) => (
                     <button
-                        key={plan}
-                        onClick={() => handlePlanSwitch(plan)}
-                        disabled={switching}
-                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${selectedPlan === plan
+                        key={r}
+                        onClick={() => join(r)}
+                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${room === r
                             ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                             : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
                             }`}
                     >
-                        {plan}
+                        {r}
                     </button>
                 ))}
             </div>
@@ -203,9 +180,11 @@ function Home() {
                 <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
                     <div>
                         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">better-auth-usage</h1>
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">Feature usage tracking, entitlements &amp; realtime state</p>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                            Usage scoped by <span className="font-medium text-zinc-700 dark:text-zinc-300">room</span> — everyone in the same room shares live counters; rooms are isolated.
+                        </p>
                     </div>
-                    <AuthBar />
+                    <RoomBar />
                 </div>
             </header>
 
@@ -221,10 +200,10 @@ function Home() {
                     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
                         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">How it works</h2>
                         <ul className="space-y-1 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                            <li>Anonymous session (auto)</li>
-                            <li>Realtime state via WebSocket → Durable Object</li>
-                            <li>Operations route through WS, REST fallback</li>
-                            <li>Switch plans to see limits change instantly</li>
+                            <li><code>referenceId</code> = the room — same room shares counters</li>
+                            <li>Open two tabs in <strong>lobby</strong> → consume in one, both update live</li>
+                            <li>Switch a tab to <strong>alpha</strong> → isolated, its own counters</li>
+                            <li>Realtime via WebSocket (Durable Object in prod), REST fallback</li>
                             <li>Round-trip timing on every consume event</li>
                         </ul>
                     </div>
