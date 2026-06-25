@@ -28,9 +28,12 @@ export const applyWalEntries = (db: DbService, logger: LoggerService, entries: W
                         createdAt: new Date(entry.ts),
                     },
                 }).pipe(
-                    Effect.catchAll((err) =>
+                    // Log but DO NOT swallow — a failed history insert must fail the
+                    // batch so `drain` skips ACK/trim and the entries are retried
+                    // (at-least-once; usageEvent is append-only with no dedup key).
+                    Effect.tapError((err) =>
                         Effect.sync(() =>
-                            logger.warn("WAL: failed to insert usage event", { entry: entry.id, error: err })
+                            logger.warn("WAL: usage event insert failed — batch will retry", { entry: entry.id, error: err })
                         )
                     )
                 )

@@ -89,6 +89,7 @@ export async function startWsServer(opts: {
 
     // Bridge driver usage events → room broadcast.
     let unsubscribe: (() => void) | undefined
+    let closed = false
     Promise.resolve(
         driver.realtime?.onUsageEvent((evt) => {
             const room = roomFor(evt.feature, evt.refId)
@@ -97,16 +98,31 @@ export async function startWsServer(opts: {
             const frame: ServerMsg = { t: "event", room, data: evt }
             for (const c of set) c.send(frame)
         })
-    ).then((unsub) => { unsubscribe = unsub })
+    ).then((unsub) => {
+        unsubscribe = unsub
+        // If close() already ran before the subscription resolved, unsubscribe
+        // now so the listener can't leak.
+        if (closed) unsubscribe?.()
+    }).catch((err) => {
+        logger.warn("Realtime bridge failed to subscribe", { error: String(err) })
+    })
 
     logger.info("WebSocket server listening", { port: opts.port })
 
     return {
         close: () =>
             new Promise<void>((resolve) => {
+                closed = true
                 unsubscribe?.()
                 for (const ws of wss.clients) ws.terminate()
-                wss.close(() => resolve())
+                // Resolve on the close callback, but cap the wait: under some
+                // runtimes (bun) `wss.close`'s callback may not fire even though
+                // the listener is released — never hang the caller's shutdown.
+                let done = false
+                const finish = () => { if (!done) { done = true; resolve() } }
+                wss.close(() => finish())
+                const t = setTimeout(finish, 500)
+                t.unref?.()
             }),
     }
 }

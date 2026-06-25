@@ -168,14 +168,13 @@ export function resetRuntime(): Promise<void> {
         Effect.runSync(Fiber.interrupt(walFiber))
         walFiber = null
     }
-    if (wsServer) {
-        void wsServer.close()
-        wsServer = null
-    }
-    const closing = capturedDriver?.close() ?? Promise.resolve()
+    // Await the WS server close so the port is released before the next start.
+    const closingWs = wsServer?.close() ?? Promise.resolve()
+    wsServer = null
+    const closingDriver = capturedDriver?.close() ?? Promise.resolve()
     sharedLayer = null
     capturedAdapter = null
     capturedDriver = null
     walStarted = false
-    return Promise.resolve(closing).catch(() => {})
+    return Promise.allSettled([closingWs, closingDriver]).then(() => {})
 }

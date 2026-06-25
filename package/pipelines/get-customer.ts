@@ -18,7 +18,16 @@ export const getCustomer = (referenceId: string) =>
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        const cached = yield* driver.getCustomer(referenceId)
+        // A cache read failure must not abort the lookup — treat it as a miss
+        // and fall through to the DB.
+        const cached = yield* driver.getCustomer(referenceId).pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() => {
+                    logger.warn("Driver getCustomer failed, falling back to DB", { referenceId, error: err })
+                    return null
+                })
+            )
+        )
         if (cached) {
             return cached
         }

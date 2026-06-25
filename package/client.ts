@@ -381,12 +381,14 @@ export class UsageTrackerHandle {
     }
 
     private connectWebSocket(wsUrl: string, token?: string) {
+        // Keep the BASE url — reconnect reuses it, so the query param is added
+        // exactly once per attempt (not compounded across reconnects).
+        this.wsUrl = wsUrl
+        this.token = token
         // Append referenceId so a sharded transport (Cloudflare DO) can route
         // the upgrade to the right object. Harmless for the single-node server.
         const sep = wsUrl.includes("?") ? "&" : "?"
         const fullUrl = `${wsUrl}${sep}referenceId=${encodeURIComponent(this.params.referenceId)}`
-        this.wsUrl = fullUrl
-        this.token = token
         try {
             const ws = new WebSocket(fullUrl)
             this.ws = ws

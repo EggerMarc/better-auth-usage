@@ -14,29 +14,34 @@ export const roomFor = (feature: string, referenceId: string) => `usage:${featur
 
 // ── Client → Server (validated) ──
 
+// Bounds on user-controlled fields so abusive/oversized frames are rejected
+// before dispatch.
+const ID = z.string().max(256)
+const SUBS_MAX = 200
+
 const subscriptionSchema = z.object({
-    referenceId: z.string(),
-    feature: z.string(),
-    referenceType: z.string().default("user"),
+    referenceId: ID,
+    feature: ID,
+    referenceType: z.string().max(64).default("user"),
 })
 
 export const clientMsgSchema = z.discriminatedUnion("t", [
-    z.object({ t: z.literal("auth"), token: z.string() }),
-    z.object({ t: z.literal("subscribe"), subscriptions: z.array(subscriptionSchema) }),
+    z.object({ t: z.literal("auth"), token: z.string().max(4096) }),
+    z.object({ t: z.literal("subscribe"), subscriptions: z.array(subscriptionSchema).max(SUBS_MAX) }),
     z.object({
         t: z.literal("unsubscribe"),
-        subscriptions: z.array(z.object({ referenceId: z.string(), feature: z.string() })),
+        subscriptions: z.array(z.object({ referenceId: ID, feature: ID })).max(SUBS_MAX),
     }),
     z.object({
         t: z.literal("rpc"),
-        id: z.string(),
+        id: z.string().max(128),
         method: z.enum(["check", "can-use", "consume", "use-feature"]),
         data: z.object({
-            referenceId: z.string(),
-            featureKey: z.string(),
-            overrideKey: z.string().optional(),
+            referenceId: ID,
+            featureKey: ID,
+            overrideKey: z.string().max(256).optional(),
             amount: z.number().optional(),
-            event: z.string().optional(),
+            event: z.string().max(128).optional(),
         }),
     }),
 ])

@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { DriverService, DbService, LoggerService } from "@/services"
-import type { Customer, Feature } from "@/types"
+import type { Customer, Feature, CachedLimits } from "@/types"
+import { shouldReset } from "@/utils"
 
 interface UpsertCustomerParams {
     customer: Customer
@@ -162,9 +163,23 @@ const handleFeaturePlanChange = ({
                 )
             )
 
+            // Full limit metadata so the driver counter reflects the new plan
+            // (resetValue/resetAt drive the next auto-reset) — same shape as syncUsage.
+            const meta: CachedLimits = {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: now,
+                maxLimit: feature.maxLimit,
+                minLimit: feature.minLimit,
+                resetValue: feature.resetValue,
+                ...(feature.reset && feature.reset !== "never"
+                    ? { resetAt: shouldReset(now, feature.reset).nextReset }
+                    : {}),
+            }
+
             // Reset cache counter + update DB — concurrent
             yield* Effect.all([
-                driver.reset(`${referenceId}`, feature.key, resetValue, { lastResetAt: now }).pipe(
+                driver.reset(referenceId, feature.key, resetValue, meta).pipe(
                     Effect.catchAll((err) =>
                         Effect.sync(() =>
                             logger.warn("Failed to reset cache counter", {

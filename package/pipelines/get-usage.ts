@@ -23,8 +23,15 @@ export const getUsage = ({ referenceId, feature }: GetUsageParams) =>
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        // 1. Try the driver cache
-        const cached = yield* driver.getUsage(referenceId, feature.key)
+        // 1. Try the driver cache — a read failure falls back to the DB, never aborts.
+        const cached = yield* driver.getUsage(referenceId, feature.key).pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() => {
+                    logger.debug("Driver getUsage failed, falling back to DB", { referenceId, feature: feature.key, error: err })
+                    return null
+                })
+            )
+        )
         if (cached) {
             return {
                 referenceId,
