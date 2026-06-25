@@ -1,6 +1,5 @@
 import type { usage } from "./index.ts";
 import type { BetterAuthClientPlugin } from "better-auth/types";
-import { io, type Socket } from "socket.io-client";
 
 // ── BetterAuth Client Plugin ──
 
@@ -149,10 +148,18 @@ export class UsageTrackerHandle {
     private snapshot: Snapshot = { state: {}, events: {} }
     private updateHandlers: UpdateHandler[] = []
     private pollHandle: ReturnType<typeof setInterval> | null = null
-    private socket: Socket | null = null
+    private ws: WebSocket | null = null
+    private wsReady = false
     private disposed = false
-    /** Pending request IDs per feature — skip matching usage:updated events */
+    /** In-flight RPCs, keyed by request id → resolver/rejecter. */
+    private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: ReturnType<typeof setTimeout> }>()
+    /** Request IDs currently in flight — skip matching broadcast events. */
     private pendingRequests: Set<string> = new Set()
+    // Reconnect state
+    private wsUrl: string | null = null
+    private token: string | undefined
+    private reconnectAttempts = 0
+    private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
     constructor(
         private baseURL: string,
@@ -222,9 +229,9 @@ export class UsageTrackerHandle {
 
         let result: ConsumeResult
 
-        if (this.socket?.connected) {
-            result = await this.emitAndWait("use-feature", "use-feature:result", {
-                referenceId: this.params.referenceId, featureKey, amount, event, requestId,
+        if (this.wsReady && this.ws?.readyState === WebSocket.OPEN) {
+            result = await this.rpc<ConsumeResult>(requestId, "use-feature", {
+                referenceId: this.params.referenceId, featureKey, amount, event,
             })
         } else {
             result = await this.restPost<ConsumeResult>("/usage/use-feature", {
@@ -257,10 +264,21 @@ export class UsageTrackerHandle {
             clearInterval(this.pollHandle)
             this.pollHandle = null
         }
-        if (this.socket) {
-            this.socket.disconnect()
-            this.socket = null
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer)
+            this.reconnectTimer = null
         }
+        for (const { reject, timer } of this.pending.values()) {
+            clearTimeout(timer)
+            reject(new Error("disposed"))
+        }
+        this.pending.clear()
+        if (this.ws) {
+            this.ws.onclose = null
+            this.ws.close()
+            this.ws = null
+        }
+        this.wsReady = false
         this.updateHandlers = []
     }
 
@@ -346,84 +364,96 @@ export class UsageTrackerHandle {
         }
     }
 
-    private emitAndWait<T>(emitEvent: string, resultEvent: string, data: Record<string, unknown>): Promise<T> {
-        const requestId = data.requestId as string | undefined
-
+    /** Send an RPC over the socket and await the id-correlated reply. */
+    private rpc<T>(requestId: string, method: string, data: Record<string, unknown>): Promise<T> {
         return new Promise<T>((resolve, reject) => {
-            const socket = this.socket
-            if (!socket) return reject(new Error("WebSocket not connected"))
+            const ws = this.ws
+            if (!ws || ws.readyState !== WebSocket.OPEN) return reject(new Error("WebSocket not connected"))
 
-            const timeout = setTimeout(() => {
-                socket.off(resultEvent, onResult)
-                socket.off("error", onError)
-                reject(new Error(`${emitEvent} timed out`))
+            const timer = setTimeout(() => {
+                this.pending.delete(requestId)
+                reject(new Error(`${method} timed out`))
             }, 10000)
 
-            const onResult = (result: any) => {
-                // If requestId was sent, only resolve on matching response
-                if (requestId && result?.requestId !== requestId) return
-
-                clearTimeout(timeout)
-                socket.off(resultEvent, onResult)
-                socket.off("error", onError)
-                resolve(result as T)
-            }
-
-            const onError = (err: { message: string; event?: string; requestId?: string }) => {
-                if (requestId && err.requestId !== requestId) return
-                if (err.event === resultEvent || err.event === emitEvent) {
-                    clearTimeout(timeout)
-                    socket.off(resultEvent, onResult)
-                    socket.off("error", onError)
-                    reject(new Error(err.message))
-                }
-            }
-
-            socket.on(resultEvent, onResult)
-            socket.on("error", onError)
-            socket.emit(emitEvent, data)
+            this.pending.set(requestId, { resolve, reject, timer })
+            ws.send(JSON.stringify({ t: "rpc", id: requestId, method, data }))
         })
     }
 
     private connectWebSocket(wsUrl: string, token?: string) {
+        this.wsUrl = wsUrl
+        this.token = token
         try {
-            const socket = io(wsUrl, {
-                transports: ["websocket"],
-                auth: token ? { token } : undefined,
-                reconnection: true,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 10000,
-                reconnectionAttempts: Infinity,
-            })
-            this.socket = socket
+            const ws = new WebSocket(wsUrl)
+            this.ws = ws
+            this.wsReady = false
 
-            socket.on("connect", () => {
+            ws.onopen = () => {
+                // Authenticate first; the server replies with { t: "ready" }.
+                ws.send(JSON.stringify({ t: "auth", token: token ?? "" }))
+            }
+            ws.onmessage = (ev: MessageEvent) => this.onWsMessage(typeof ev.data === "string" ? ev.data : String(ev.data))
+            ws.onclose = () => this.onWsClosed()
+            ws.onerror = () => { /* close fires next; handled there */ }
+        } catch {
+            this.startPolling()
+        }
+    }
+
+    private onWsMessage(raw: string) {
+        let msg: any
+        try { msg = JSON.parse(raw) } catch { return }
+
+        switch (msg.t) {
+            case "ready": {
+                this.wsReady = true
+                this.reconnectAttempts = 0
                 if (this.pollHandle) {
                     clearInterval(this.pollHandle)
                     this.pollHandle = null
                 }
-                socket.emit("subscribe:usage", {
+                this.ws?.send(JSON.stringify({
+                    t: "subscribe",
                     subscriptions: this.params.features.map(feature => ({
                         referenceId: this.params.referenceId,
                         feature,
                         referenceType: this.params.referenceType ?? "user",
-                    }))
-                })
-            })
-
-            socket.on("subscribed", () => {
+                    })),
+                }))
+                return
+            }
+            case "subscribed": {
                 this.fetchAll()
-            })
-
-            socket.on("usage:updated", (data: any) => {
+                return
+            }
+            case "result": {
+                const entry = this.pending.get(msg.id)
+                if (entry) {
+                    clearTimeout(entry.timer)
+                    this.pending.delete(msg.id)
+                    entry.resolve(msg.data)
+                }
+                return
+            }
+            case "error": {
+                if (msg.id) {
+                    const entry = this.pending.get(msg.id)
+                    if (entry) {
+                        clearTimeout(entry.timer)
+                        this.pending.delete(msg.id)
+                        entry.reject(new Error(msg.message))
+                    }
+                }
+                return
+            }
+            case "event": {
+                const data = msg.data ?? {}
                 const feature = data.feature
                 if (!feature || !this.params.features.includes(feature)) return
 
-                // Skip duplicate from Lua PUBLISH while we have a pending consume for this feature
-                // The consume:result already updated state — the Lua broadcast is redundant
-                if (this.pendingRequests.size > 0) {
-                    return
-                }
+                // Skip the redundant broadcast while our own consume is in flight —
+                // the rpc result already updated state.
+                if (this.pendingRequests.size > 0) return
 
                 this.addEvent(feature, "update", data)
                 if (data.current !== undefined && data.status !== undefined) {
@@ -431,18 +461,29 @@ export class UsageTrackerHandle {
                 } else {
                     this.fetchOne(feature)
                 }
-            })
-
-            socket.on("disconnect", () => {
-                if (!this.disposed && !this.pollHandle) this.startPolling()
-            })
-
-            socket.on("connect_error", () => {
-                if (!this.disposed && !this.pollHandle) this.startPolling()
-            })
-        } catch {
-            this.startPolling()
+                return
+            }
         }
+    }
+
+    private onWsClosed() {
+        this.wsReady = false
+        this.ws = null
+        if (this.disposed) return
+        // Fall back to polling immediately, then try to reconnect with backoff.
+        if (!this.pollHandle) this.startPolling()
+        this.scheduleReconnect()
+    }
+
+    private scheduleReconnect() {
+        if (this.disposed || this.reconnectTimer || !this.wsUrl) return
+        const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 10000)
+        this.reconnectAttempts++
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null
+            if (this.disposed) return
+            this.connectWebSocket(this.wsUrl!, this.token)
+        }, delay)
     }
 
     // ── Internal: State ──
