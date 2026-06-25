@@ -90,7 +90,7 @@ export async function mountUsage(
 ): Promise<Response | null> {
     const url = new URL(request.url)
     const wsPath = opts.wsPath ?? "/usage/ws"
-    if (request.headers.get("Upgrade") !== "websocket" || !url.pathname.endsWith(wsPath)) {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket" || !url.pathname.endsWith(wsPath)) {
         return null
     }
     const session = await opts.auth.api.getSession({ headers: request.headers }).catch(() => null)
