@@ -58,6 +58,14 @@ export function postgresDriver(config: PostgresDriverConfig): UsageDriver {
             const c = await pool.connect()
             try {
                 await c.query("BEGIN")
+                // A FOR UPDATE on a missing row locks nothing, so concurrent
+                // first consumes would race. Ensure the row exists first.
+                await c.query(
+                    `INSERT INTO bau_usage_cache (reference_id, feature, current)
+                     VALUES ($1, $2, 0)
+                     ON CONFLICT (reference_id, feature) DO NOTHING`,
+                    [args.referenceId, args.feature],
+                )
                 const r = await c.query(
                     `SELECT current, reset_at, reset_value, last_reset_at FROM bau_usage_cache
                      WHERE reference_id = $1 AND feature = $2 FOR UPDATE`,

@@ -214,7 +214,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
                     subscribers.push(sub)
                     void sub.psubscribe("usage:events:*")
                     sub.on("pmessage", () => cb())
-                    return () => { void sub.unsubscribe() }
+                    return () => { void sub.punsubscribe() }
                 },
             }
             : undefined,
@@ -233,7 +233,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
                         // ignore malformed payloads
                     }
                 })
-                return () => { void sub.unsubscribe() }
+                return () => { void sub.punsubscribe() }
             },
             endpointInfo(baseURL: string): { enabled: boolean; url: string | null } {
                 if (!config.enableRealtime || !config.port) return { enabled: false, url: null }
