@@ -1,11 +1,31 @@
 import { Schema } from "@effect/schema"
-import { UsageSchema, UsageEventSchema, CustomerSchema } from "./schema.ts"
+import {
+    UsageSchema,
+    UsageEventSchema,
+    CustomerSchema,
+    CachedUsageSchema,
+    CachedLimitsSchema,
+    ConsumeArgsSchema,
+    ConsumeOutcomeSchema,
+} from "./schema.ts"
 
 /**
  * Usage snapshot — one row per (referenceId, feature).
  */
 export type Usage = Schema.Schema.Type<typeof UsageSchema>;
 export type UsageEvent = Schema.Schema.Type<typeof UsageEventSchema>;
+
+/**
+ * Driver-facing shapes (see `package/drivers`).
+ *
+ * - `CachedUsage`: counter + limits a driver returns from `getUsage`.
+ * - `CachedLimits`: the metadata a driver persists (reset boundaries, limits).
+ * - `ConsumeArgs` / `ConsumeOutcome`: the atomic consume contract.
+ */
+export type CachedUsage = Schema.Schema.Type<typeof CachedUsageSchema>;
+export type CachedLimits = Schema.Schema.Type<typeof CachedLimitsSchema>;
+export type ConsumeArgs = Schema.Schema.Type<typeof ConsumeArgsSchema>;
+export type ConsumeOutcome = Schema.Schema.Type<typeof ConsumeOutcomeSchema>;
 
 /**
  * Generic key/value store for extending base types
@@ -225,6 +245,8 @@ export interface ResolvedUsageOptions {
     features: Record<string, Feature>;
     overrides?: Overrides;
     authorizeUser?: UsageOptions["authorizeUser"];
+    /** Always resolved — defaults to `memoryDriver()`, or `redisDriver(cacheOptions)`. */
+    driver: import("./drivers/types").UsageDriver;
     cacheOptions?: UsageOptions["cacheOptions"];
     logger?: UsageOptions["logger"];
 }
@@ -246,14 +268,17 @@ export interface UsageOptions {
         referenceType: string;
         feature: string;
     }) => Promise<boolean> | boolean;
+    /**
+     * Bring-your-own storage/realtime backend. Pass `redisDriver(...)`,
+     * `memoryDriver()`, or a custom `UsageDriver`. When omitted, falls back to
+     * `cacheOptions` (deprecated) or an in-memory driver.
+     */
+    driver?: import("./drivers/types").UsageDriver;
+    /** @deprecated Use `driver: redisDriver({ redisUrl, ... })` instead. */
     cacheOptions?: {
         enableRealtime?: boolean,
         redisUrl: string;
         port?: number;
-        cors?: {
-            origin: string | string[];
-            credentials?: boolean;
-        };
         wal?: {
             /** Enable WAL for durable Redis→DB sync. Default: true */
             enabled?: boolean;

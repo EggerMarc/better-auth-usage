@@ -50,7 +50,7 @@ const wrapDb = <T>(operation: string, fn: () => Promise<T>): Effect.Effect<T, Db
  * Create a DbService from a BetterAuth AuthContext.
  *
  * Called per-request since BetterAuth provides the adapter via context.
- * Unlike RedisService (long-lived), this is created fresh per endpoint call.
+ * Unlike the driver (long-lived), this is created fresh per endpoint call.
  */
 const makeDbServiceFromAdapter = (adapter: any): DbService => ({
     findOne: (params) =>

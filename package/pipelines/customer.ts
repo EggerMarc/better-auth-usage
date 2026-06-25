@@ -1,6 +1,7 @@
 import { Effect } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
-import type { Customer, Feature } from "@/types"
+import { DriverService, DbService, LoggerService } from "@/services"
+import type { Customer, Feature, CachedLimits } from "@/types"
+import { shouldReset } from "@/utils"
 
 interface UpsertCustomerParams {
     customer: Customer
@@ -12,14 +13,14 @@ interface UpsertCustomerParams {
  *
  * If the customer's overrideKey changes (plan transition), handles
  * per-feature onPlanChange behavior:
- * - "carry-over" (default): usage stays, only Redis metadata (limits) updated
+ * - "carry-over" (default): usage stays, only metadata (limits) updated
  * - "reset": usage counter reset to resetValue, reset event logged
  *
  * Pass `features` to enable plan transition handling.
  */
 export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
     Effect.gen(function* () {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
 
@@ -47,7 +48,7 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
                     fromOverride: oldOverride,
                     toOverride: newOverride,
                     features,
-                    redis,
+                    driver,
                     db,
                     logger,
                 })
@@ -59,18 +60,8 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
             })
         }
 
-        // Sync to cache — delete first to clear stale optional fields, then re-set
-        const customerKey = `customer:${result.referenceId}`
-        const hash: Record<string, string> = {
-            referenceId: result.referenceId,
-            referenceType: result.referenceType,
-        }
-        if (result.email) hash.email = result.email
-        if (result.name) hash.name = result.name
-        if (result.overrideKey) hash.overrideKey = result.overrideKey
-
-        yield* redis.del(customerKey).pipe(Effect.catchAll(() => Effect.void))
-        yield* redis.hset(customerKey, hash).pipe(
+        // Sync to cache — the driver clears stale optional fields internally.
+        yield* driver.setCustomer(result).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
                     logger.warn("Failed to cache customer", { referenceId: result.referenceId, error: err })
@@ -90,7 +81,7 @@ const handlePlanChange = ({
     fromOverride,
     toOverride,
     features,
-    redis,
+    driver,
     db,
     logger,
 }: {
@@ -98,7 +89,7 @@ const handlePlanChange = ({
     fromOverride: string | undefined
     toOverride: string | undefined
     features: Record<string, Feature>
-    redis: RedisService
+    driver: DriverService
     db: DbService
     logger: LoggerService
 }) =>
@@ -111,7 +102,7 @@ const handlePlanChange = ({
         yield* Effect.all(
             Object.values(features).map((feature) =>
                 handleFeaturePlanChange({
-                    referenceId, toOverride, feature, now, redis, db, logger,
+                    referenceId, toOverride, feature, now, driver, db, logger,
                 })
             ),
             { concurrency: "unbounded" }
@@ -122,13 +113,13 @@ const handlePlanChange = ({
  * Handle plan change for a single feature.
  */
 const handleFeaturePlanChange = ({
-    referenceId, toOverride, feature, now, redis, db, logger,
+    referenceId, toOverride, feature, now, driver, db, logger,
 }: {
     referenceId: string
     toOverride: string | undefined
     feature: Feature
     now: Date
-    redis: RedisService
+    driver: DriverService
     db: DbService
     logger: LoggerService
 }) =>
@@ -172,12 +163,26 @@ const handleFeaturePlanChange = ({
                 )
             )
 
-            // Reset Redis counter + update DB — concurrent
+            // Full limit metadata so the driver counter reflects the new plan
+            // (resetValue/resetAt drive the next auto-reset) — same shape as syncUsage.
+            const meta: CachedLimits = {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: now,
+                maxLimit: feature.maxLimit,
+                minLimit: feature.minLimit,
+                resetValue: feature.resetValue,
+                ...(feature.reset && feature.reset !== "never"
+                    ? { resetAt: shouldReset(now, feature.reset).nextReset }
+                    : {}),
+            }
+
+            // Reset cache counter + update DB — concurrent
             yield* Effect.all([
-                redis.set(`usage:${feature.key}:${referenceId}`, resetValue).pipe(
+                driver.reset(referenceId, feature.key, resetValue, meta).pipe(
                     Effect.catchAll((err) =>
                         Effect.sync(() =>
-                            logger.warn("Failed to reset Redis counter", {
+                            logger.warn("Failed to reset cache counter", {
                                 referenceId, feature: feature.key, error: err,
                             })
                         )

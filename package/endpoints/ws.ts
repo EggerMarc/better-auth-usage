@@ -9,19 +9,9 @@ export function getWsEndpoint(endpointOptions: ResolvedUsageOptions) {
             use: [sessionMiddleware],
         },
         async (ctx) => {
-            const port = endpointOptions.cacheOptions?.port
-            const enabled = endpointOptions.cacheOptions?.enableRealtime
-
-            if (!enabled || !port) {
-                return { enabled: false, url: null }
-            }
-
-            // Derive WS URL from the server's baseURL + configured port
-            const baseURL = ctx.context.baseURL
-            const origin = new URL(baseURL).origin
-            const wsOrigin = origin.replace(/:\d+$/, "") + ":" + port
-
-            return { enabled: true, url: wsOrigin }
+            // The driver decides whether realtime is reachable and at what URL.
+            return endpointOptions.driver.realtime?.endpointInfo(ctx.context.baseURL)
+                ?? { enabled: false, url: null }
         }
     )
 }

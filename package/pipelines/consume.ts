@@ -1,11 +1,10 @@
 import { Effect } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
+import { DriverService, DbService, LoggerService } from "@/services"
 import { ValidationError } from "@/errors"
-import type { Feature, Customer, Usage } from "@/types"
+import type { Feature } from "@/types"
 import { getUsage } from "./get-usage"
 import { getCustomerOptional } from "./get-customer"
 import { checkLimit } from "@/utils"
-import incrementScript from "@/adapters/lua/increment.lua"
 
 /**
  * Lift a user-provided callback (sync or async) into an Effect.
@@ -26,7 +25,6 @@ interface ConsumeParams {
     amount: number
     event: string
     feature: Feature
-    walEnabled?: boolean
 }
 
 interface ConsumeResult {
@@ -45,17 +43,17 @@ interface ConsumeResult {
  * Pipeline:
  *   1. Fetch current usage + customer in parallel
  *   2. Run before hook (if defined)
- *   3. Write to Redis via Lua (atomic increment)
- *   4. Fallback: write to DB if no Redis
+ *   3. Atomic increment via the driver (counter + reset + WAL + fan-out)
+ *   4. Fallback: write to DB if the driver has no WAL (or the driver failed)
  *   5. Run after hook (if defined)
  *
- * Returns: Effect<ConsumeResult, RedisError | DbError, RedisService | DbService | LoggerService>
+ * Returns: Effect<ConsumeResult, DriverError | DbError, DriverService | DbService | LoggerService>
  */
-export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }: ConsumeParams) =>
+export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumeParams) =>
     Effect.gen(function* () {
         yield* validateAmount(amount)
 
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
 
@@ -79,27 +77,16 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
             )
         }
 
-        // 3. Write — Redis (Lua) if available, DB fallback
-        const usageKey = `usage:${feature.key}:${referenceId}`
-        const metaKey = `meta:${feature.key}:${referenceId}`
-        const walKey = "wal:usage"
-
-        // Try Redis Lua first (atomic: increment + WAL append + publish)
-        const luaResult = yield* redis.eval(
-            incrementScript,
-            3,              // 3 KEYS
-            usageKey,
-            metaKey,
-            walKey,
-            amount,         // ARGV[1]
-            Date.now(),     // ARGV[2]
-            referenceId,    // ARGV[3]
-            feature.key,    // ARGV[4]
-            event,          // ARGV[5]
-        ).pipe(
-            Effect.catchTag("RedisError", (err) => {
-                // Redis unavailable — fall back to DB
-                logger.warn("Redis write failed, falling back to DB", {
+        // 3. Atomic increment via the driver. On driver failure, fall back to DB.
+        const outcome = yield* driver.consume({
+            referenceId,
+            feature: feature.key,
+            amount,
+            nowMs: Date.now(),
+            event,
+        }).pipe(
+            Effect.catchTag("DriverError", (err) => {
+                logger.warn("Driver consume failed, falling back to DB", {
                     referenceId,
                     feature: feature.key,
                     error: err,
@@ -109,25 +96,21 @@ export const consumeUsage = ({ referenceId, amount, event, feature, walEnabled }
         )
 
         let newTotal: number
-
-        let luaResetOccurred = false
         let effectiveLastResetAt = currentUsage.lastResetAt
 
-        if (luaResult) {
-            // Redis succeeded — unpack all Lua return values
-            const [total, resetFlag, luaLastResetAt] = luaResult as [number, number, number]
-            newTotal = total
-            luaResetOccurred = resetFlag === 1
-            if (luaResetOccurred) {
-                effectiveLastResetAt = new Date(luaLastResetAt)
+        if (outcome) {
+            newTotal = outcome.newTotal
+            if (outcome.resetOccurred) {
+                effectiveLastResetAt = new Date(outcome.lastResetAt)
             }
         } else {
             // DB-only path — calculate newTotal locally
             newTotal = afterAmount
         }
 
-        // Write to DB
-        if (luaResult && walEnabled) {
+        // 4. Write to DB. When the driver buffers via WAL, the drain worker
+        // handles the DB sync; otherwise (no WAL, or driver failed) write here.
+        if (outcome && driver.wal) {
             // WAL worker will drain stream → DB. No direct write needed.
         } else {
             const now = new Date()

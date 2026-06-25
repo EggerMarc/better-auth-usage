@@ -1,24 +1,33 @@
 import { Effect } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
+import { DriverService, DbService, LoggerService } from "@/services"
 import { CustomerNotFound } from "@/errors"
 import type { Customer } from "@/types"
 
 /**
  * Cache-first customer lookup.
  *
- * 1. Try Redis hash → return if found
+ * 1. Try the driver cache → return if found
  * 2. Fallback to DB → return if found, hydrate cache
  * 3. Not found → fail with CustomerNotFound
  *
- * Returns: Effect<Customer, CustomerNotFound | RedisError | DbError, RedisService | DbService | LoggerService>
+ * Returns: Effect<Customer, CustomerNotFound | DriverError | DbError, DriverService | DbService | LoggerService>
  */
 export const getCustomer = (referenceId: string) =>
     Effect.gen(function*() {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        const cached = yield* tryGetFromCache(redis, referenceId)
+        // A cache read failure must not abort the lookup — treat it as a miss
+        // and fall through to the DB.
+        const cached = yield* driver.getCustomer(referenceId).pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() => {
+                    logger.warn("Driver getCustomer failed, falling back to DB", { referenceId, error: err })
+                    return null
+                })
+            )
+        )
         if (cached) {
             return cached
         }
@@ -32,7 +41,7 @@ export const getCustomer = (referenceId: string) =>
             return yield* new CustomerNotFound({ referenceId })
         }
 
-        yield* redis.hset(`customer:${referenceId}`, customerToHash(customer)).pipe(
+        yield* driver.setCustomer(customer).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
                     logger.warn("Failed to cache customer", { referenceId, error: err })
@@ -52,37 +61,3 @@ export const getCustomerOptional = (referenceId: string) =>
     getCustomer(referenceId).pipe(
         Effect.catchTag("CustomerNotFound", () => Effect.succeed(null))
     )
-
-/**
- * Try to read customer from Redis hash.
- */
-const tryGetFromCache = (redis: RedisService, referenceId: string) =>
-    Effect.gen(function*() {
-        const data = yield* redis.hgetall(`customer:${referenceId}`)
-
-        if (!data.referenceId) {
-            return null
-        }
-
-        return {
-            referenceId: data.referenceId,
-            referenceType: data.referenceType,
-            email: data.email || undefined,
-            name: data.name || undefined,
-            overrideKey: data.overrideKey || undefined,
-        } as Customer
-    })
-
-/**
- * Convert a Customer object to a flat hash for Redis HSET.
- */
-const customerToHash = (customer: Customer): Record<string, string> => {
-    const hash: Record<string, string> = {
-        referenceId: customer.referenceId,
-        referenceType: customer.referenceType,
-    }
-    if (customer.email) hash.email = customer.email
-    if (customer.name) hash.name = customer.name
-    if (customer.overrideKey) hash.overrideKey = customer.overrideKey
-    return hash
-}

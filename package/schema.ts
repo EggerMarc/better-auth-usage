@@ -57,3 +57,21 @@ export const CachedUsageEventSchema = Schema.Struct({
     amount: Schema.Number,
     event: Schema.optional(Schema.String),
 })
+
+// ── Driver schemas ──
+
+/** Args handed to a driver's atomic `consume` op (rules already resolved upstream). */
+export const ConsumeArgsSchema = Schema.Struct({
+    referenceId: Schema.String,
+    feature: Schema.String,
+    amount: Schema.Number,
+    nowMs: Schema.Number,
+    event: Schema.String,
+})
+
+/** A driver `consume` return — mirrors the increment.lua contract. */
+export const ConsumeOutcomeSchema = Schema.Struct({
+    newTotal: Schema.Number,
+    resetOccurred: Schema.Boolean,
+    lastResetAt: Schema.Number,
+})

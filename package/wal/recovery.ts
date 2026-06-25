@@ -1,25 +1,23 @@
 import { Effect } from "effect"
-import { RedisService, LoggerService } from "@/services"
+import { DriverService, LoggerService, wrapDriver } from "@/services"
 import { drain } from "./worker"
 
-const STREAM = "wal:usage"
-const GROUP = "wal-drain"
-
 /**
- * Initialize the consumer group and reclaim any pending entries
- * from a previous crashed consumer.
+ * Initialize the driver's WAL and reclaim any pending entries from a previous
+ * crashed run. No-op if the driver has no WAL capability.
  *
- * Safe to call multiple times — XGROUP CREATE is idempotent.
+ * Safe to call multiple times — `recover()` is idempotent.
  */
 export const recover = Effect.gen(function* () {
-    const redis = yield* RedisService
+    const driver = yield* DriverService
     const logger = yield* LoggerService
 
-    // 1. Create consumer group (idempotent)
-    yield* redis.xgroupCreate(STREAM, GROUP, "0")
+    if (!driver.wal) return
 
-    // 2. Drain any pending entries (from before crash)
-    //    Using "0" as ID reads pending entries instead of ">" (new only)
+    // 1. Prepare the log / consumer group (idempotent)
+    yield* wrapDriver("walRecover", () => driver.wal!.recover())
+
+    // 2. Drain any pending entries (from before a crash)
     logger.info("WAL: recovery — checking for pending entries")
 
     let total = 0

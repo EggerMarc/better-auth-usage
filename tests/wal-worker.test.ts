@@ -1,14 +1,15 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Effect, Layer } from "effect";
-import { RedisService, DbService, LoggerService, makeLoggerServiceLive } from "../package/services";
+import { DriverService, DbService, LoggerService, makeLoggerServiceLive } from "../package/services";
 import { drain } from "../package/wal/worker";
+import type { WalEntry } from "../package/drivers";
 
 /**
- * In-memory stream mock for testing WAL drain logic without real Redis.
- * Simulates XADD/XREADGROUP/XACK/XLEN/XTRIM behavior.
+ * In-memory WAL mock for testing drain logic without a real backend.
+ * Mirrors the driver's WAL capability (read/ack/trim/len/recover/subscribe).
  */
 function createMockStream() {
-    const entries: Array<{ id: string; fields: Record<string, string> }> = [];
+    const entries: WalEntry[] = [];
     const acked = new Set<string>();
     let idCounter = 0;
 
@@ -16,23 +17,26 @@ function createMockStream() {
         entries,
         acked,
 
-        add(fields: Record<string, string>) {
+        add(fields: Record<string, string>): string {
             const id = `${Date.now()}-${idCounter++}`;
-            entries.push({ id, fields });
+            entries.push({
+                id,
+                refId: fields.refId,
+                feature: fields.feature,
+                amount: Number(fields.amount),
+                event: fields.event ?? "use",
+                ts: Number(fields.ts),
+                resetOccurred: Number(fields.resetOccurred ?? 0),
+                newTotal: Number(fields.newTotal),
+                lastResetAt: Number(fields.lastResetAt),
+            });
             return id;
         },
 
-        /** Get unacknowledged entries (simulates XREADGROUP with ">") */
-        readPending(count: number) {
+        /** Unacknowledged entries (simulates XREADGROUP with ">") */
+        readPending(count: number): WalEntry[] | null {
             const pending = entries.filter(e => !acked.has(e.id)).slice(0, count);
-            if (pending.length === 0) return null;
-            return pending.map(e => {
-                const flat: string[] = [];
-                for (const [k, v] of Object.entries(e.fields)) {
-                    flat.push(k, v);
-                }
-                return [e.id, flat] as [string, string[]];
-            });
+            return pending.length === 0 ? null : pending;
         },
 
         ack(...ids: string[]) {
@@ -42,26 +46,26 @@ function createMockStream() {
 }
 
 /**
- * Create a mock RedisService backed by the in-memory stream.
+ * Create a mock DriverService backed by the in-memory WAL. Store ops are
+ * stubbed — the drain worker only touches the `wal` capability.
  */
-function createMockRedisLayer(stream: ReturnType<typeof createMockStream>) {
-    return Layer.succeed(RedisService, {
-        eval: () => Effect.succeed(null),
-        get: () => Effect.succeed(null),
-        set: () => Effect.void,
-        del: () => Effect.void,
-        hset: () => Effect.void,
-        hgetall: () => Effect.succeed({}),
-        publish: () => Effect.void,
-        psubscribe: () => Effect.void,
-        quit: () => Effect.void,
-        xgroupCreate: () => Effect.void,
-        xreadgroup: (_group, _consumer, _stream, _id, count) =>
-            Effect.succeed(stream.readPending(count)),
-        xack: (_stream, _group, ...ids) =>
-            Effect.sync(() => stream.ack(...ids)),
-        xlen: () => Effect.succeed(stream.entries.length),
-        xtrim: () => Effect.void,
+function createMockDriverLayer(stream: ReturnType<typeof createMockStream>) {
+    return Layer.succeed(DriverService, {
+        consume: () => Effect.succeed({ newTotal: 0, resetOccurred: false, lastResetAt: 0 }),
+        getUsage: () => Effect.succeed(null),
+        hydrate: () => Effect.void,
+        reset: () => Effect.void,
+        getCustomer: () => Effect.succeed(null),
+        setCustomer: () => Effect.void,
+        delCustomer: () => Effect.void,
+        wal: {
+            recover: async () => {},
+            read: async (count: number) => stream.readPending(count),
+            ack: async (ids: string[]) => { stream.ack(...ids); },
+            trim: async () => {},
+            len: async () => stream.entries.length,
+            subscribe: () => () => {},
+        },
     });
 }
 
@@ -112,7 +116,7 @@ describe("WAL worker drain logic", () => {
 
     function runDrain() {
         const layer = Layer.merge(
-            Layer.merge(createMockRedisLayer(stream), db.layer),
+            Layer.merge(createMockDriverLayer(stream), db.layer),
             makeLoggerServiceLive()
         );
         return Effect.runPromise(drain.pipe(Effect.provide(layer)));

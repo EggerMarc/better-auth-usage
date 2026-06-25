@@ -3,6 +3,19 @@ import type { UsageOptions } from "./types";
 
 export type { UsageOptions, InferFeatureKeys, InferOverrideKeys } from "./types";
 export type { Feature, Customer, Usage, UsageEvent } from "./types";
+// Only the dependency-free memory driver is re-exported from the root, so
+// importing the plugin never pulls Node-only deps (ioredis/pg) — keeps the
+// Cloudflare bundle clean. Import the others from "…/drivers" (Node) or
+// "…/cloudflare" (Durable Object).
+export { memoryDriver } from "./drivers/memory";
+export type {
+    UsageDriver,
+    RealtimeCapability,
+    WalCapability,
+    RedisDriverConfig,
+    UpstashDriverConfig,
+    PostgresDriverConfig,
+} from "./drivers";
 import {
     getConsumeEndpoint,
     getCheckEndpoint,
@@ -16,6 +29,8 @@ import {
     getWsEndpoint,
 } from "./endpoints";
 import { validateConfig } from "./config";
+import { memoryDriver } from "./drivers/memory";
+import { redisDriver } from "./drivers/redis";
 
 /**
  * Creates a usage plugin configured with the provided options.
@@ -32,7 +47,21 @@ export function usage<const O extends UsageOptions>(options: O) {
     for (const [key, config] of Object.entries(options.features)) {
         resolvedFeatures[key] = { ...config, key }
     }
-    const resolved = { ...options, features: resolvedFeatures }
+
+    // Resolve the storage/realtime driver: explicit `driver` wins, else the
+    // deprecated `cacheOptions` builds a Redis driver, else in-memory.
+    const driver = options.driver ?? (
+        options.cacheOptions?.redisUrl
+            ? redisDriver({
+                redisUrl: options.cacheOptions.redisUrl,
+                enableRealtime: options.cacheOptions.enableRealtime,
+                port: options.cacheOptions.port,
+                walEnabled: options.cacheOptions.wal?.enabled,
+            })
+            : memoryDriver()
+    )
+
+    const resolved = { ...options, features: resolvedFeatures, driver }
 
     const plugin = {
         id: "usage",

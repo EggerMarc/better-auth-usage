@@ -1,120 +1,84 @@
 import { Effect, Layer, Fiber } from "effect"
 import { APIError } from "better-auth/api"
-import { RedisService, makeRedisServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "@/services"
+import { DriverService, makeDriverServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "@/services"
 import { recover, startSubscribeWorker, startPollWorker } from "@/wal"
-import { startRealtimeSubscriber } from "@/realtime/usage-tracker"
-import { setupWebSocketHandlers, registerAuthMiddleware } from "@/realtime/websocket-server"
-import { Server as SocketServer } from "socket.io"
+import { startWsServer, type WsServerHandle } from "@/realtime/ws-server"
 import type { ResolvedUsageOptions } from "@/types"
+import type { UsageDriver } from "@/drivers/types"
 import type { AuthContext } from "better-auth"
 
 /**
  * Shared state — initialized once, reused across requests.
  */
-let sharedLayer: Layer.Layer<RedisService | LoggerService> | null = null
+let sharedLayer: Layer.Layer<DriverService | LoggerService> | null = null
 let capturedAdapter: any = null
+let capturedDriver: UsageDriver | null = null
 let walFiber: Fiber.RuntimeFiber<any, any> | null = null
 let walStarted = false
-let ioServer: SocketServer | null = null
+let wsServer: WsServerHandle | null = null
 
 /**
  * Initialize the shared layer from plugin options.
  */
-function getSharedLayer(options: ResolvedUsageOptions): Layer.Layer<RedisService | LoggerService> {
+function getSharedLayer(options: ResolvedUsageOptions): Layer.Layer<DriverService | LoggerService> {
     if (sharedLayer) return sharedLayer
 
+    capturedDriver = options.driver
     const loggerLayer = makeLoggerServiceLive(options.logger)
-
-    if (options.cacheOptions?.redisUrl) {
-        const redisLayer = makeRedisServiceLive(options.cacheOptions.redisUrl)
-        sharedLayer = Layer.merge(redisLayer, loggerLayer)
-    } else {
-        const noopRedis = Layer.succeed(RedisService, {
-            eval: () => Effect.succeed(null),
-            get: () => Effect.succeed(null),
-            set: () => Effect.void,
-            del: () => Effect.void,
-            hset: () => Effect.void,
-            hgetall: () => Effect.succeed({}),
-            publish: () => Effect.void,
-            psubscribe: () => Effect.void,
-            xgroupCreate: () => Effect.void,
-            xreadgroup: () => Effect.succeed(null),
-            xack: () => Effect.void,
-            xlen: () => Effect.succeed(0),
-            xtrim: () => Effect.void,
-            quit: () => Effect.void,
-        })
-        sharedLayer = Layer.merge(noopRedis, loggerLayer)
-    }
+    const driverLayer = makeDriverServiceLive(options.driver)
+    sharedLayer = Layer.merge(driverLayer, loggerLayer)
 
     return sharedLayer
 }
 
 /**
- * Start the WAL worker if Redis is configured and WAL is enabled.
+ * Start the WAL worker if the driver has a WAL capability.
  * Called once on first request.
  */
 async function ensureWalStarted(options: ResolvedUsageOptions) {
     if (walStarted) return
-    walStarted = true
 
-    if (!options.cacheOptions?.redisUrl) return
+    const hasWal = !!options.driver.wal
+    const hasRealtime = !!(options.driver.realtime && options.cacheOptions?.enableRealtime && options.cacheOptions?.port)
+    if (!hasWal && !hasRealtime) return
 
-    const walConfig = options.cacheOptions.wal ?? {}
-    if (walConfig.enabled === false) return
-
-    // Need both Redis and DB layers for the WAL worker
+    // Need the DB adapter (captured per-request) for both the WAL drain and
+    // the realtime RPC pipelines.
     if (!capturedAdapter) return
+
+    walStarted = true
 
     const shared = getSharedLayer(options)
     const dbLayer = Layer.succeed(DbService, makeDbService(capturedAdapter))
     const fullLayer = Layer.merge(shared, dbLayer)
 
-    const strategy = walConfig.drainStrategy ?? "subscribe"
-    const pollInterval = walConfig.pollInterval ?? 1000
+    // Start the WAL drain worker (independent of realtime).
+    if (hasWal) {
+        const walConfig = options.cacheOptions?.wal ?? {}
+        const strategy = walConfig.drainStrategy ?? "subscribe"
+        const pollInterval = walConfig.pollInterval ?? 1000
 
-    const walPipeline = Effect.gen(function*() {
-        // Recovery first — reclaim pending entries from previous run
-        yield* recover
+        const walPipeline = Effect.gen(function*() {
+            yield* recover
+            if (strategy === "subscribe") {
+                yield* startSubscribeWorker(fullLayer)
+            } else {
+                yield* startPollWorker(pollInterval)
+            }
+        })
 
-        // Start worker based on strategy
-        if (strategy === "subscribe") {
-            yield* startSubscribeWorker(fullLayer)
-        } else {
-            yield* startPollWorker(pollInterval)
-        }
-    })
+        walFiber = Effect.runFork(walPipeline.pipe(Effect.provide(fullLayer)))
+    }
 
-    // Run WAL worker in a background fiber
-    walFiber = Effect.runFork(
-        walPipeline.pipe(Effect.provide(fullLayer))
-    )
-
-    // Start realtime WebSocket server if configured
-    if (options.cacheOptions?.enableRealtime && options.cacheOptions?.port) {
-        const port = options.cacheOptions.port
-        const cors = options.cacheOptions.cors ?? { origin: "*", credentials: true }
-
-        ioServer = new SocketServer({ cors })
-        ioServer.listen(port)
-
-        // Register handshake auth middleware (validates token → attaches userId)
-        Effect.runFork(
-            registerAuthMiddleware(ioServer, capturedAdapter).pipe(Effect.provide(fullLayer))
-        )
-
-        // Start realtime subscriber (forwards Redis pub/sub → Socket.IO)
-        Effect.runFork(
-            startRealtimeSubscriber(ioServer).pipe(Effect.provide(fullLayer))
-        )
-
-        // Register WebSocket connection handlers
-        Effect.runFork(
-            setupWebSocketHandlers(ioServer, options, fullLayer).pipe(Effect.provide(fullLayer))
-        )
-
-        console.log(`[better-auth-usage] WebSocket server listening on port ${port}`)
+    // Start the native WebSocket realtime server (independent of WAL).
+    if (hasRealtime) {
+        wsServer = await startWsServer({
+            port: options.cacheOptions!.port!,
+            options,
+            layer: fullLayer,
+            authCtx: capturedAdapter,
+            logger: options.logger,
+        })
     }
 }
 
@@ -127,7 +91,7 @@ async function ensureWalStarted(options: ResolvedUsageOptions) {
 export async function runPipeline<A, E>(
     authCtx: AuthContext,
     options: ResolvedUsageOptions,
-    effect: Effect.Effect<A, E, RedisService | DbService | LoggerService>
+    effect: Effect.Effect<A, E, DriverService | DbService | LoggerService>
 ): Promise<A> {
     if (!capturedAdapter) {
         capturedAdapter = authCtx
@@ -177,9 +141,9 @@ export async function runPipeline<A, E>(
             message: `Validation error: ${err.message}`
         })
     }
-    if (tag === "RedisError") {
+    if (tag === "DriverError") {
         throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: `Redis error during ${err.operation}: ${err.cause instanceof Error ? err.cause.message : String(err.cause)}`
+            message: `Driver error during ${err.operation}: ${err.cause instanceof Error ? err.cause.message : String(err.cause)}`
         })
     }
     if (tag === "DbError") {
@@ -196,28 +160,21 @@ export async function runPipeline<A, E>(
 }
 
 /**
- * Check if WAL is enabled and active.
- * Used by consume pipeline to decide whether to skip direct DB writes.
+ * Reset the runtime (for testing). Returns a promise that resolves once the
+ * driver has been closed.
  */
-export function isWalActive(options: ResolvedUsageOptions): boolean {
-    if (!options.cacheOptions?.redisUrl) return false
-    const walConfig = options.cacheOptions.wal ?? {}
-    return walConfig.enabled !== false
-}
-
-/**
- * Reset the runtime (for testing).
- */
-export function resetRuntime() {
+export function resetRuntime(): Promise<void> {
     if (walFiber) {
         Effect.runSync(Fiber.interrupt(walFiber))
         walFiber = null
     }
-    if (ioServer) {
-        ioServer.close()
-        ioServer = null
-    }
+    // Await the WS server close so the port is released before the next start.
+    const closingWs = wsServer?.close() ?? Promise.resolve()
+    wsServer = null
+    const closingDriver = capturedDriver?.close() ?? Promise.resolve()
     sharedLayer = null
     capturedAdapter = null
+    capturedDriver = null
     walStarted = false
+    return Promise.allSettled([closingWs, closingDriver]).then(() => {})
 }

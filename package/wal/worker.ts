@@ -1,180 +1,52 @@
 import { Effect, Schedule, Duration, Layer } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
-import type { RedisError } from "@/errors"
+import { DriverService, DbService, LoggerService, wrapDriver } from "@/services"
+import { applyWalEntries } from "./apply"
 
-const STREAM = "wal:usage"
-const GROUP = "wal-drain"
-const CONSUMER = `consumer-${process.pid}-${Math.random().toString(36).slice(2, 10)}`
 const BATCH_SIZE = 100
 const BACKPRESSURE_THRESHOLD = 10_000
 
-export interface WalEntry {
-    id: string
-    refId: string
-    feature: string
-    amount: number
-    event: string
-    ts: number
-    resetOccurred: number
-    newTotal: number
-    lastResetAt: number
-}
+export type { WalEntry } from "@/drivers/types"
 
 /**
- * Parse raw Redis stream entries into typed WalEntries.
- * ioredis returns: [[entryId, [field1, value1, field2, value2, ...]]]
- */
-function parseEntries(raw: Array<[string, string[]]>): WalEntry[] {
-    return raw.map(([id, fields]) => {
-        const obj: Record<string, string> = {}
-        for (let i = 0; i < fields.length; i += 2) {
-            obj[fields[i]] = fields[i + 1]
-        }
-        return {
-            id,
-            refId: obj.refId,
-            feature: obj.feature,
-            amount: Number(obj.amount),
-            event: obj.event ?? "use",
-            ts: Number(obj.ts),
-            resetOccurred: Number(obj.resetOccurred ?? 0),
-            newTotal: Number(obj.newTotal),
-            lastResetAt: Number(obj.lastResetAt),
-        }
-    })
-}
-
-/**
- * Single drain cycle — read from stream, write to DB, ACK.
- * Shared by both subscribe and poll strategies.
+ * Single drain cycle — read from the driver's WAL, apply to DB, ACK, trim.
+ * Shared by both the subscribe and poll strategies. No-op if the driver has
+ * no WAL capability.
  */
 export const drain = Effect.gen(function* () {
-    const redis = yield* RedisService
+    const driver = yield* DriverService
     const db = yield* DbService
     const logger = yield* LoggerService
 
-    // Read batch from stream
-    const raw = yield* redis.xreadgroup(GROUP, CONSUMER, STREAM, ">", BATCH_SIZE)
-    if (!raw || raw.length === 0) return 0
+    const wal = driver.wal
+    if (!wal) return 0
 
-    const entries = parseEntries(raw)
+    // Read batch from the log
+    const entries = yield* wrapDriver("walRead", () => wal.read(BATCH_SIZE))
+    if (!entries || entries.length === 0) return 0
 
-    // 1. Insert all events into usageEvent (history) — concurrent, order doesn't matter
-    yield* Effect.all(
-        entries.map((entry) =>
-            db.create({
-                model: "usageEvent",
-                data: {
-                    referenceId: entry.refId,
-                    feature: entry.feature,
-                    amount: entry.amount,
-                    event: entry.event,
-                    lastResetAt: new Date(entry.lastResetAt),
-                    createdAt: new Date(entry.ts),
-                },
-            }).pipe(
-                Effect.catchAll((err) =>
-                    Effect.sync(() =>
-                        logger.warn("WAL: failed to insert usage event", { entry: entry.id, error: err })
-                    )
-                )
-            )
-        ),
-        { concurrency: "unbounded" }
-    )
+    // Apply to the database (events + coalesced usage upserts)
+    yield* applyWalEntries(db, logger, entries)
 
-    // 2. Coalesce by (refId, feature) — take the LAST entry's newTotal
-    const coalesced = new Map<string, WalEntry>()
-    for (const entry of entries) {
-        coalesced.set(`${entry.refId}:${entry.feature}`, entry)
-    }
-
-    // 3. Upsert usage for each coalesced entry — concurrent, independent per ref+feature
-    yield* Effect.all(
-        Array.from(coalesced.values()).map((entry) =>
-            upsertUsageRow(db, entry)
-        ),
-        { concurrency: "unbounded" }
-    )
-
-    // 4. ACK all processed entries
+    // ACK all processed entries
     const ids = entries.map((e) => e.id)
-    yield* redis.xack(STREAM, GROUP, ...ids)
+    yield* wrapDriver("walAck", () => wal.ack(ids))
 
-    // 5. Trim stream — only remove entries older than the oldest ACKed ID
-    // Using MINID ensures pending/unread entries are never dropped
-    const oldestAckedId = ids[0]
-    yield* redis.xtrim(STREAM, oldestAckedId)
+    // Trim — only remove entries older than the oldest ACKed id (never drops pending)
+    yield* wrapDriver("walTrim", () => wal.trim(ids[0]))
 
-    logger.debug("WAL: drained", { count: entries.length, coalesced: coalesced.size })
+    logger.debug("WAL: drained", { count: entries.length })
     return entries.length
 })
 
 /**
- * Upsert a single usage row from a WAL entry.
- *
- * Uses the stream entry ID as a monotonic guard — only updates if the
- * incoming entry ID is newer than the last applied one. This prevents
- * stale writes from out-of-order replays or recovery scenarios.
- *
- * Stream IDs are `{timestamp}-{seq}` and sort lexicographically.
- */
-const upsertUsageRow = (db: DbService, entry: WalEntry) =>
-    Effect.gen(function* () {
-        const now = new Date()
-        const existing = yield* db.findOne<any>({
-            model: "usage",
-            where: [
-                { field: "referenceId", value: entry.refId },
-                { field: "feature", value: entry.feature },
-            ],
-        })
-
-        if (existing) {
-            // Monotonic guard: skip if this entry is older than what's already applied
-            if (existing.walStreamId && existing.walStreamId >= entry.id) {
-                return
-            }
-
-            yield* db.update({
-                model: "usage",
-                where: [
-                    { field: "referenceId", value: entry.refId },
-                    { field: "feature", value: entry.feature },
-                ],
-                update: {
-                    amount: entry.newTotal,
-                    event: entry.event,
-                    lastResetAt: new Date(entry.lastResetAt),
-                    updatedAt: now,
-                    walStreamId: entry.id,
-                },
-            })
-        } else {
-            yield* db.create({
-                model: "usage",
-                data: {
-                    referenceId: entry.refId,
-                    feature: entry.feature,
-                    amount: entry.newTotal,
-                    event: entry.event,
-                    lastResetAt: new Date(entry.lastResetAt),
-                    createdAt: now,
-                    updatedAt: now,
-                    walStreamId: entry.id,
-                },
-            })
-        }
-    })
-
-/**
- * Check stream length and warn if it exceeds threshold.
+ * Check backlog length and warn if it exceeds threshold.
  */
 const checkBackpressure = Effect.gen(function* () {
-    const redis = yield* RedisService
+    const driver = yield* DriverService
     const logger = yield* LoggerService
 
-    const len = yield* redis.xlen(STREAM)
+    if (!driver.wal) return
+    const len = yield* wrapDriver("walLen", () => driver.wal!.len())
     if (len > BACKPRESSURE_THRESHOLD) {
         logger.warn("WAL: stream backpressure", { length: len, threshold: BACKPRESSURE_THRESHOLD })
     }
@@ -182,16 +54,16 @@ const checkBackpressure = Effect.gen(function* () {
 
 /**
  * Start the WAL worker with the "subscribe" strategy.
- * Listens to pub/sub events and drains on each event.
- * Zero idle cost.
+ * Drains whenever the driver signals new entries. Zero idle cost.
  *
- * Accepts a `layer` so the drain can be run inside the callback
- * with full service access.
+ * Accepts a `layer` so the drain runs inside the callback with full services.
  */
-export const startSubscribeWorker = (layer: Layer.Layer<RedisService | DbService | LoggerService>) =>
+export const startSubscribeWorker = (layer: Layer.Layer<DriverService | DbService | LoggerService>) =>
     Effect.gen(function* () {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const logger = yield* LoggerService
+
+        if (!driver.wal) return
 
         logger.info("WAL: starting subscribe worker")
 
@@ -222,15 +94,13 @@ export const startSubscribeWorker = (layer: Layer.Layer<RedisService | DbService
             }
         }
 
-        yield* redis.psubscribe("usage:events:*", () => {
-            runDrain()
-        })
+        yield* wrapDriver("walSubscribe", async () => driver.wal!.subscribe(() => runDrain()))
     })
 
 /**
  * Start the WAL worker with the "poll" strategy.
  * Drains every `intervalMs` milliseconds.
- * ⚠️ Sends ~4 Redis commands/sec when idle.
+ * ⚠️ Sends periodic commands when idle.
  */
 export const startPollWorker = (intervalMs: number) =>
     Effect.gen(function* () {

@@ -1,7 +1,6 @@
 import { Effect } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
-import { RedisError, DbError } from "@/errors"
-import type { Feature, Usage } from "@/types"
+import { DriverService, DbService, LoggerService } from "@/services"
+import type { Feature, Usage, CachedUsage, CachedLimits } from "@/types"
 import { shouldReset } from "@/utils"
 
 interface GetUsageParams {
@@ -12,34 +11,43 @@ interface GetUsageParams {
 /**
  * Cache-first usage lookup.
  *
- * 1. Try Redis counter → return if found
+ * 1. Try the driver (counter + limits in one read) → return if found
  * 2. Fallback to DB → return if found
- * 3. On DB hit, hydrate Redis cache (non-blocking, errors logged not swallowed silently)
+ * 3. On DB hit, hydrate the driver cache (non-blocking, errors logged)
  *
- * Returns: Effect<Usage, RedisError | DbError, RedisService | DbService | LoggerService>
- *
- * The type signature tells you everything:
- * - Produces: Usage
- * - Can fail with: RedisError or DbError
- * - Needs: RedisService, DbService, and LoggerService to run
+ * Returns: Effect<Usage, DriverError | DbError, DriverService | DbService | LoggerService>
  */
 export const getUsage = ({ referenceId, feature }: GetUsageParams) =>
     Effect.gen(function* () {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        // 1. Try Redis
-        const cached = yield* tryGetFromCache(redis, referenceId, feature)
+        // 1. Try the driver cache — a read failure falls back to the DB, never aborts.
+        const cached = yield* driver.getUsage(referenceId, feature.key).pipe(
+            Effect.catchAll((err) =>
+                Effect.sync(() => {
+                    logger.debug("Driver getUsage failed, falling back to DB", { referenceId, feature: feature.key, error: err })
+                    return null
+                })
+            )
+        )
         if (cached) {
-            return cached
+            return {
+                referenceId,
+                feature: feature.key,
+                amount: cached.current,
+                lastResetAt: cached.lastResetAt ?? new Date(),
+                createdAt: new Date(),
+                event: "cache",
+            } satisfies Usage
         }
 
         // 2. Fallback to DB
         const dbUsage = yield* getFromDb(db, referenceId, feature)
 
         // 3. Hydrate cache in background (log errors, don't fail the request)
-        yield* hydrateCache(redis, logger, referenceId, feature, dbUsage).pipe(
+        yield* hydrateCache(referenceId, feature, dbUsage).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
                     logger.debug("Failed to hydrate cache from DB", {
@@ -53,40 +61,6 @@ export const getUsage = ({ referenceId, feature }: GetUsageParams) =>
         )
 
         return dbUsage
-    })
-
-/**
- * Try to read usage from Redis counter + metadata hash.
- * Returns null if the key doesn't exist (cache miss).
- */
-const tryGetFromCache = (
-    redis: RedisService,
-    referenceId: string,
-    feature: Omit<Feature, "hooks">
-) =>
-    Effect.gen(function* () {
-        const usageKey = `usage:${feature.key}:${referenceId}`
-        const metaKey = `meta:${feature.key}:${referenceId}`
-
-        const rawCounter = yield* redis.get(usageKey)
-
-        if (rawCounter === null) {
-            return null  // cache miss
-        }
-
-        const amount = Number(rawCounter)
-        const meta = yield* redis.hgetall(metaKey)
-
-        return {
-            referenceId,
-            feature: feature.key,
-            amount,
-            lastResetAt: meta.lastResetAt
-                ? new Date(Number(meta.lastResetAt))
-                : new Date(),
-            createdAt: new Date(),
-            event: "cache",
-        } satisfies Usage
     })
 
 /**
@@ -127,37 +101,42 @@ const getFromDb = (
     })
 
 /**
- * After a DB hit, hydrate the Redis cache with the current state.
- * This runs in a background fiber — errors are logged, not propagated.
+ * After a DB hit, hydrate the driver cache with the current state.
+ * Runs in a background fiber — errors are logged, not propagated.
  */
 const hydrateCache = (
-    redis: RedisService,
-    logger: LoggerService,
     referenceId: string,
     feature: Omit<Feature, "hooks">,
     usage: Usage
 ) =>
     Effect.gen(function* () {
-        const usageKey = `usage:${feature.key}:${referenceId}`
-        const metaKey = `meta:${feature.key}:${referenceId}`
+        const driver = yield* DriverService
 
-        // Set the counter
-        yield* redis.set(usageKey, usage.amount)
-
-        // Set metadata if feature has reset rules
-        if (feature.reset) {
-            const reset = shouldReset(usage.lastResetAt, feature.reset)
-
-            yield* redis.hset(metaKey, {
-                referenceId,
-                feature: feature.key,
-                lastResetAt: String(usage.lastResetAt.getTime()),
-                ...(reset.nextReset && { resetAt: String(reset.nextReset.getTime()) }),
-                ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
-                ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
-                ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
-            })
+        const cachedUsage: CachedUsage = {
+            referenceId,
+            feature: feature.key,
+            current: usage.amount,
+            lastResetAt: usage.lastResetAt,
+            maxLimit: feature.maxLimit,
+            minLimit: feature.minLimit,
         }
 
-        logger.debug("Hydrated cache from DB", { referenceId, feature: feature.key })
+        // Mirror the original behavior: only persist reset metadata (limits +
+        // boundaries) when the feature actually has reset rules. Without it, the
+        // meta stays empty so a cache hit reports `lastResetAt` as "now".
+        const meta: CachedLimits = feature.reset
+            ? {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: usage.lastResetAt,
+                maxLimit: feature.maxLimit,
+                minLimit: feature.minLimit,
+                resetValue: feature.resetValue,
+                ...(shouldReset(usage.lastResetAt, feature.reset).nextReset
+                    ? { resetAt: shouldReset(usage.lastResetAt, feature.reset).nextReset }
+                    : {}),
+            }
+            : { referenceId, feature: feature.key }
+
+        yield* driver.hydrate(referenceId, feature.key, cachedUsage, meta)
     })
