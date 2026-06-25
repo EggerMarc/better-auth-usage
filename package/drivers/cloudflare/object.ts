@@ -124,7 +124,7 @@ export class UsageDurableObject {
 
         const { pathname } = new URL(request.url)
         const body = (await request.json().catch(() => ({}))) as any
-        const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } })
+        const json = (data: unknown) => new Response(JSON.stringify(data ?? {}), { headers: { "content-type": "application/json" } })
 
         switch (pathname) {
             case "/consume": {
