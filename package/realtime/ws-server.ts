@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { WebSocketServer, WebSocket } from "ws"
+import type { WebSocket as WSocket } from "ws"
 import type { IncomingMessage } from "http"
 import type { AuthContext } from "better-auth"
 import type { ResolvedUsageOptions } from "@/types"
@@ -19,13 +19,16 @@ export interface WsServerHandle {
  * connections, a room registry, and bridges driver usage events to rooms.
  * Speaks the native protocol in `protocol.ts`; no socket.io.
  */
-export function startWsServer(opts: {
+export async function startWsServer(opts: {
     port: number
     options: ResolvedUsageOptions
     layer: WsLayer
     authCtx: AuthContext
     logger?: Partial<LoggerService>
-}): WsServerHandle {
+}): Promise<WsServerHandle> {
+    // Lazy-load `ws` (Node-only) so importing the plugin stays Cloudflare-safe;
+    // this runs only when a Node realtime server is actually started.
+    const { WebSocketServer, WebSocket } = await import("ws")
     const logger: LoggerService = { ...defaultLogger, ...opts.logger }
     const driver = opts.options.driver
 
@@ -35,7 +38,7 @@ export function startWsServer(opts: {
     class NodeConn implements WsConnection {
         auth: WsConnection["auth"] = null
         private joined = new Set<string>()
-        constructor(private ws: WebSocket) {}
+        constructor(private ws: WSocket) {}
 
         send(msg: ServerMsg): void {
             if (this.ws.readyState === WebSocket.OPEN) this.ws.send(encode(msg))
@@ -63,7 +66,7 @@ export function startWsServer(opts: {
 
     const wss = new WebSocketServer({ port: opts.port })
 
-    wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
+    wss.on("connection", (ws: WSocket, req: IncomingMessage) => {
         const conn = new NodeConn(ws)
 
         // Convenience: accept the token as a query param (browsers can't set WS

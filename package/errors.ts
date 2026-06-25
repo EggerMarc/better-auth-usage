@@ -8,11 +8,6 @@ export class CustomerNotFound extends Data.TaggedError("CustomerNotFound")<{
     referenceId: string
 }> {}
 
-export class RedisError extends Data.TaggedError("RedisError")<{
-    cause: unknown
-    operation: string
-}> {}
-
 export class DbError extends Data.TaggedError("DbError")<{
     cause: unknown
     operation: string

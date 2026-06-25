@@ -72,7 +72,7 @@ async function ensureWalStarted(options: ResolvedUsageOptions) {
 
     // Start the native WebSocket realtime server (independent of WAL).
     if (hasRealtime) {
-        wsServer = startWsServer({
+        wsServer = await startWsServer({
             port: options.cacheOptions!.port!,
             options,
             layer: fullLayer,
@@ -157,14 +157,6 @@ export async function runPipeline<A, E>(
     throw new APIError("INTERNAL_SERVER_ERROR", {
         message: `Usage plugin error: ${message}`
     })
-}
-
-/**
- * Check if WAL is enabled and active.
- * Used by consume pipeline to decide whether to skip direct DB writes.
- */
-export function isWalActive(options: ResolvedUsageOptions): boolean {
-    return !!options.driver.wal
 }
 
 /**

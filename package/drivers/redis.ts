@@ -1,4 +1,4 @@
-import Redis from "ioredis"
+import type RedisType from "ioredis"
 import incrementScript from "@/adapters/lua/increment.lua"
 import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
 import type { UsageDriver, WalEntry, UsageEventMessage } from "./types"
@@ -75,15 +75,22 @@ function parseEntries(raw: Array<[string, string[]]>): WalEntry[] {
  * - `realtime` bridges the `usage:events:*` pub/sub channel.
  */
 export function redisDriver(config: RedisDriverConfig): UsageDriver {
-    const client = new Redis(config.redisUrl, {
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: false, // managed Redis (Upstash, etc.) may not allow INFO
-        retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 2000)),
-        lazyConnect: false,
-    })
-    client.on("error", () => {}) // errors surface per-operation
+    // Lazy-load `ioredis` (Node TCP) on first use so importing this driver stays
+    // safe in non-Node bundles; the client is only created when a method runs.
+    let clientP: Promise<RedisType> | null = null
+    const C = (): Promise<RedisType> =>
+        (clientP ??= import("ioredis").then(({ default: Redis }) => {
+            const c = new Redis(config.redisUrl, {
+                maxRetriesPerRequest: 3,
+                enableReadyCheck: false, // managed Redis (Upstash, etc.) may not allow INFO
+                retryStrategy: (times: number) => (times > 3 ? null : Math.min(times * 200, 2000)),
+                lazyConnect: false,
+            })
+            c.on("error", () => {}) // errors surface per-operation
+            return c
+        }))
 
-    const subscribers: Redis[] = []
+    const subscribers: RedisType[] = []
 
     const usageKey = (referenceId: string, feature: string) => `usage:${feature}:${referenceId}`
     const metaKey = (referenceId: string, feature: string) => `meta:${feature}:${referenceId}`
@@ -95,6 +102,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         name: "redis",
 
         async consume(args: ConsumeArgs): Promise<ConsumeOutcome> {
+            const client = await C()
             const result = (await client.eval(
                 incrementScript,
                 3,
@@ -111,6 +119,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         },
 
         async getUsage(referenceId: string, feature: string): Promise<CachedUsage | null> {
+            const client = await C()
             const raw = await client.get(usageKey(referenceId, feature))
             if (raw === null) return null
             const meta = await client.hgetall(metaKey(referenceId, feature))
@@ -125,11 +134,13 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         },
 
         async hydrate(referenceId: string, feature: string, usage: CachedUsage, meta: CachedLimits): Promise<void> {
+            const client = await C()
             await client.set(usageKey(referenceId, feature), String(usage.current))
             await client.hset(metaKey(referenceId, feature), metaToHash(referenceId, feature, meta))
         },
 
         async reset(referenceId: string, feature: string, value: number, meta: Partial<CachedLimits>): Promise<void> {
+            const client = await C()
             await Promise.all([
                 client.set(usageKey(referenceId, feature), String(value)),
                 client.hset(metaKey(referenceId, feature), metaToHash(referenceId, feature, meta)),
@@ -137,6 +148,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         },
 
         async getCustomer(referenceId: string): Promise<Customer | null> {
+            const client = await C()
             const data = await client.hgetall(customerKey(referenceId))
             if (!data.referenceId) return null
             return {
@@ -149,6 +161,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         },
 
         async setCustomer(customer: Customer): Promise<void> {
+            const client = await C()
             const k = customerKey(customer.referenceId)
             // Delete first to clear stale optional fields, then re-set.
             await client.del(k)
@@ -156,12 +169,14 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
         },
 
         async delCustomer(referenceId: string): Promise<void> {
+            const client = await C()
             await client.del(customerKey(referenceId))
         },
 
         wal: walEnabled
             ? {
                 async recover(): Promise<void> {
+                    const client = await C()
                     try {
                         await client.xgroup("CREATE", STREAM, GROUP, "0", "MKSTREAM")
                     } catch (err) {
@@ -170,6 +185,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
                     }
                 },
                 async read(count: number): Promise<WalEntry[] | null> {
+                    const client = await C()
                     const result = (await client.xreadgroup(
                         "GROUP", GROUP, CONSUMER,
                         "COUNT", count,
@@ -180,15 +196,19 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
                 },
                 async ack(ids: string[]): Promise<void> {
                     if (ids.length === 0) return
+                    const client = await C()
                     await client.xack(STREAM, GROUP, ...ids)
                 },
                 async trim(minId: string): Promise<void> {
+                    const client = await C()
                     await client.xtrim(STREAM, "MINID", "~", minId)
                 },
                 async len(): Promise<number> {
+                    const client = await C()
                     return await client.xlen(STREAM)
                 },
-                subscribe(cb: () => void): () => void {
+                async subscribe(cb: () => void): Promise<() => void> {
+                    const client = await C()
                     const sub = client.duplicate()
                     sub.on("error", () => {})
                     subscribers.push(sub)
@@ -200,7 +220,8 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
             : undefined,
 
         realtime: {
-            onUsageEvent(cb: (event: UsageEventMessage) => void): () => void {
+            async onUsageEvent(cb: (event: UsageEventMessage) => void): Promise<() => void> {
+                const client = await C()
                 const sub = client.duplicate()
                 sub.on("error", () => {})
                 subscribers.push(sub)
@@ -224,7 +245,7 @@ export function redisDriver(config: RedisDriverConfig): UsageDriver {
 
         async close(): Promise<void> {
             await Promise.allSettled(subscribers.map((s) => s.quit()))
-            await client.quit()
+            if (clientP) await (await clientP).quit()
         },
     }
 }

@@ -3,7 +3,11 @@ import type { UsageOptions } from "./types";
 
 export type { UsageOptions, InferFeatureKeys, InferOverrideKeys } from "./types";
 export type { Feature, Customer, Usage, UsageEvent } from "./types";
-export { memoryDriver, redisDriver, upstashDriver, postgresDriver } from "./drivers";
+// Only the dependency-free memory driver is re-exported from the root, so
+// importing the plugin never pulls Node-only deps (ioredis/pg) — keeps the
+// Cloudflare bundle clean. Import the others from "…/drivers" (Node) or
+// "…/cloudflare" (Durable Object).
+export { memoryDriver } from "./drivers/memory";
 export type {
     UsageDriver,
     RealtimeCapability,
@@ -25,7 +29,8 @@ import {
     getWsEndpoint,
 } from "./endpoints";
 import { validateConfig } from "./config";
-import { memoryDriver, redisDriver } from "./drivers";
+import { memoryDriver } from "./drivers/memory";
+import { redisDriver } from "./drivers/redis";
 
 /**
  * Creates a usage plugin configured with the provided options.

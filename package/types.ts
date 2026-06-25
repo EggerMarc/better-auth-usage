@@ -279,10 +279,6 @@ export interface UsageOptions {
         enableRealtime?: boolean,
         redisUrl: string;
         port?: number;
-        cors?: {
-            origin: string | string[];
-            credentials?: boolean;
-        };
         wal?: {
             /** Enable WAL for durable Redis→DB sync. Default: true */
             enabled?: boolean;
