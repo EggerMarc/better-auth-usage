@@ -381,10 +381,14 @@ export class UsageTrackerHandle {
     }
 
     private connectWebSocket(wsUrl: string, token?: string) {
-        this.wsUrl = wsUrl
+        // Append referenceId so a sharded transport (Cloudflare DO) can route
+        // the upgrade to the right object. Harmless for the single-node server.
+        const sep = wsUrl.includes("?") ? "&" : "?"
+        const fullUrl = `${wsUrl}${sep}referenceId=${encodeURIComponent(this.params.referenceId)}`
+        this.wsUrl = fullUrl
         this.token = token
         try {
-            const ws = new WebSocket(wsUrl)
+            const ws = new WebSocket(fullUrl)
             this.ws = ws
             this.wsReady = false
 

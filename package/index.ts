@@ -3,8 +3,15 @@ import type { UsageOptions } from "./types";
 
 export type { UsageOptions, InferFeatureKeys, InferOverrideKeys } from "./types";
 export type { Feature, Customer, Usage, UsageEvent } from "./types";
-export { memoryDriver, redisDriver } from "./drivers";
-export type { UsageDriver, RealtimeCapability, WalCapability, RedisDriverConfig } from "./drivers";
+export { memoryDriver, redisDriver, upstashDriver, postgresDriver } from "./drivers";
+export type {
+    UsageDriver,
+    RealtimeCapability,
+    WalCapability,
+    RedisDriverConfig,
+    UpstashDriverConfig,
+    PostgresDriverConfig,
+} from "./drivers";
 import {
     getConsumeEndpoint,
     getCheckEndpoint,
