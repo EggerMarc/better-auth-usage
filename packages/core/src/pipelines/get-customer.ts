@@ -1,7 +1,7 @@
 import { Effect } from "effect"
-import { DriverService, DbService, LoggerService } from "@/services"
-import { CustomerNotFound } from "@/errors"
-import type { Customer } from "@/types"
+import { DriverService, DbService, LoggerService } from "../services"
+import { CustomerNotFound } from "../errors"
+import type { Customer } from "../types"
 
 /**
  * Cache-first customer lookup.

@@ -1,4 +1,4 @@
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
 
 /**
  * A single write-ahead-log entry — one consume operation captured durably for

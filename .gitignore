@@ -1,6 +1,19 @@
 node_modules
 dist
 .next
+.turbo
+*.tsbuildinfo
+
+# env + local db (keep .env.example tracked)
+.env
+.dev.vars
+*.local
+*.db
+*.db-shm
+*.db-wal
+.source
+.wrangler
+.alchemy
 
 *.lock
 package-lock.json

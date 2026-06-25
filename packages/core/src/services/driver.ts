@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
-import { DriverError } from "@/errors"
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
-import type { UsageDriver, RealtimeCapability, WalCapability } from "@/drivers/types"
+import { DriverError } from "../errors"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
+import type { UsageDriver, RealtimeCapability, WalCapability } from "../drivers/types"
 
 /**
  * DriverService — the Effect-facing view of a plain-async `UsageDriver`.

@@ -1,10 +1,10 @@
 import { Effect } from "effect"
-import { DriverService, DbService, LoggerService } from "@/services"
-import { ValidationError } from "@/errors"
-import type { Feature } from "@/types"
+import { DriverService, DbService, LoggerService } from "../services"
+import { ValidationError } from "../errors"
+import type { Feature } from "../types"
 import { getUsage } from "./get-usage"
 import { getCustomerOptional } from "./get-customer"
-import { checkLimit } from "@/utils"
+import { checkLimit } from "../utils"
 
 /**
  * Lift a user-provided callback (sync or async) into an Effect.

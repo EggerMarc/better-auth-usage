@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import { DbError } from "@/errors"
+import { DbError } from "../errors"
 import type { AuthContext } from "better-auth"
 
 /**

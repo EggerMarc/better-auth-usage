@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import { DbService, LoggerService } from "@/services"
-import type { WalEntry } from "@/drivers/types"
+import { DbService, LoggerService } from "../services"
+import type { WalEntry } from "../drivers/types"
 
 /**
  * Apply a batch of WAL entries to the database.

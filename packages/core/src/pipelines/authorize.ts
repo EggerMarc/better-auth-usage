@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import type { ResolvedUsageOptions } from "@/types"
-import { NotAuthorized } from "@/errors"
+import type { ResolvedUsageOptions } from "../types"
+import { NotAuthorized } from "../errors"
 
 /**
  * Authorization pipeline step.

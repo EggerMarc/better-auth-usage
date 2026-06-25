@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { checkLimit, shouldReset } from "@/utils";
+import { checkLimit, shouldReset } from "../utils";
 
 describe("checkLimit", () => {
     it("should return 'in-limit' when within bounds", () => {

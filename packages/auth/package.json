@@ -8,7 +8,7 @@
     "./client": "./src/client.ts"
   },
   "dependencies": {
-    "@eggermarc/better-auth-usage": "workspace:*",
+    "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
     "@repo/env": "workspace:*",
     "better-auth": "catalog:",

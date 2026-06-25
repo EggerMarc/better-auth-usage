@@ -1,8 +1,8 @@
 import { Effect } from "effect"
-import { DriverService, DbService, LoggerService } from "@/services"
-import type { Feature, CachedUsage, CachedLimits } from "@/types"
+import { DriverService, DbService, LoggerService } from "../services"
+import type { Feature, CachedUsage, CachedLimits } from "../types"
 import { getUsage } from "./get-usage"
-import { shouldReset } from "@/utils"
+import { shouldReset } from "../utils"
 
 /**
  * Sync/reset usage for a feature.

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import { FeatureNotFound } from "@/errors"
-import type { Feature } from "@/types"
+import { FeatureNotFound } from "../errors"
+import type { Feature } from "../types"
 
 /**
  * Resolve a Feature by key, applying optional override fields.

@@ -1,11 +1,11 @@
 import { Effect, Schedule, Duration, Layer } from "effect"
-import { DriverService, DbService, LoggerService, wrapDriver } from "@/services"
+import { DriverService, DbService, LoggerService, wrapDriver } from "../services"
 import { applyWalEntries } from "./apply"
 
 const BATCH_SIZE = 100
 const BACKPRESSURE_THRESHOLD = 10_000
 
-export type { WalEntry } from "@/drivers/types"
+export type { WalEntry } from "../drivers/types"
 
 /**
  * Single drain cycle — read from the driver's WAL, apply to DB, ACK, trim.

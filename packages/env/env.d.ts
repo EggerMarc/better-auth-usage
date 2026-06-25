@@ -1,14 +1,9 @@
 /// <reference types="@cloudflare/workers-types" />
 
-// Worker bindings — mirror packages/infra/alchemy.run.ts. The DO namespace
-// holds the usage counters + realtime WebSocket connections.
-declare module "cloudflare:workers" {
+// Worker object bindings. String config (CORS_ORIGIN, BETTER_AUTH_*, DATABASE_URL)
+// is read via process.env (see src/server.ts); only object bindings live here.
+declare namespace Cloudflare {
     interface Env {
-        DB: D1Database
         USAGE_DO: DurableObjectNamespace
-        CORS_ORIGIN: string
-        BETTER_AUTH_SECRET: string
-        BETTER_AUTH_URL: string
     }
-    export const env: Env
 }

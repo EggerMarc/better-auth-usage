@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "better-auth-usage-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-01",
+  // nodejs_compat + populate so @repo/env (t3 over process.env) can read
+  // the .dev.vars values at runtime.
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "durable_objects": {
+    "bindings": [{ "name": "USAGE_DO", "class_name": "UsageDurableObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UsageDurableObject"] }],
+  "dev": { "port": 3000 }
+}

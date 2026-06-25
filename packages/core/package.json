@@ -1,5 +1,5 @@
 {
-    "name": "@eggermarc/better-auth-usage",
+    "name": "@repo/core",
     "version": "0.2.0",
     "repository": {
         "type": "git",
@@ -67,26 +67,12 @@
         }
     },
     "exports": {
-        ".": {
-            "import": "./dist/index.js",
-            "types": "./dist/index.d.ts"
-        },
-        "./client": {
-            "import": "./dist/client.js",
-            "types": "./dist/client.d.ts"
-        },
-        "./cloudflare": {
-            "import": "./dist/cloudflare.js",
-            "types": "./dist/cloudflare.d.ts"
-        },
-        "./drivers": {
-            "import": "./dist/drivers.js",
-            "types": "./dist/drivers.d.ts"
-        },
-        "./react": {
-            "import": "./dist/react.js",
-            "types": "./dist/react.d.ts"
-        },
+        ".": { "default": "./src/index.ts" },
+        "./client": { "default": "./src/client.ts" },
+        "./react": { "default": "./src/client/react.tsx" },
+        "./drivers": { "default": "./src/drivers/index.ts" },
+        "./drivers/memory": { "default": "./src/drivers/memory.ts" },
+        "./cloudflare": { "default": "./src/drivers/cloudflare/index.ts" },
         "./package.json": "./package.json"
     },
     "bugs": {

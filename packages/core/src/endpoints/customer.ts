@@ -1,11 +1,11 @@
 import { Effect } from "effect"
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { z } from "zod"
-import type { ResolvedUsageOptions } from "@/types"
-import { getCustomer } from "@/pipelines/get-customer"
-import { authorizeUser } from "@/pipelines/authorize"
-import { upsertCustomer } from "@/pipelines/customer"
-import { runPipeline } from "@/runtime"
+import type { ResolvedUsageOptions } from "../types"
+import { getCustomer } from "../pipelines/get-customer"
+import { authorizeUser } from "../pipelines/authorize"
+import { upsertCustomer } from "../pipelines/customer"
+import { runPipeline } from "../runtime"
 
 export function getUpsertCustomerEndpoint(endpointOptions: ResolvedUsageOptions) {
     return createAuthEndpoint(

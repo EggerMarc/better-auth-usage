@@ -1,21 +1,20 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { anonymous } from "better-auth/plugins"
-import { usage } from "@eggermarc/better-auth-usage"
-import { durableObjectDriver } from "@eggermarc/better-auth-usage/cloudflare"
-import { createDb } from "@repo/db"
+import { usage } from "@repo/core"
+import type { UsageDriver } from "@repo/core"
+import { db } from "@repo/db"
+import * as schema from "@repo/db/schema/auth"
 import { env } from "@repo/env/server"
 
 /**
- * The better-auth config that powers the homepage example — a ~1:1 illustration
- * of how you'd wire the usage plugin on Cloudflare. The counter + realtime live
- * in a Durable Object (one per `referenceId`); D1 is the durable source of truth.
+ * Build the better-auth instance for a given usage driver. The driver is
+ * injected so the runtime decides: a Durable Object in the deployed Worker, an
+ * in-memory driver under `bun` dev. Everything else is identical.
  */
-export function createAuth() {
-    const db = createDb()
-
+export function makeAuth(driver: UsageDriver) {
     return betterAuth({
-        database: drizzleAdapter(db, { provider: "sqlite" }),
+        database: drizzleAdapter(db, { provider: "sqlite", schema }),
         trustedOrigins: [env.CORS_ORIGIN],
         emailAndPassword: { enabled: true },
         secret: env.BETTER_AUTH_SECRET,
@@ -35,10 +34,10 @@ export function createAuth() {
                     "starter": { features: { "api-calls": { maxLimit: 1000 }, "storage": { maxLimit: 500 }, "credits": { maxLimit: 1000 } } },
                     "pro": { features: { "api-calls": { maxLimit: 100000 }, "storage": { maxLimit: 50000 }, "credits": { maxLimit: 100000 } } },
                 },
-                driver: durableObjectDriver({ namespace: env.USAGE_DO }),
+                driver,
             }),
         ],
     })
 }
 
-export type Auth = ReturnType<typeof createAuth>
+export type Auth = ReturnType<typeof makeAuth>

@@ -1,12 +1,12 @@
 import { Effect } from "effect"
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
 import { z } from "zod"
-import type { ResolvedUsageOptions } from "@/types"
-import { resolveFeature } from "@/pipelines/features"
-import { resolveOverrideKey } from "@/pipelines/resolve-override"
-import { authorizeUser } from "@/pipelines/authorize"
-import { syncUsage } from "@/pipelines/sync"
-import { runPipeline } from "@/runtime"
+import type { ResolvedUsageOptions } from "../types"
+import { resolveFeature } from "../pipelines/features"
+import { resolveOverrideKey } from "../pipelines/resolve-override"
+import { authorizeUser } from "../pipelines/authorize"
+import { syncUsage } from "../pipelines/sync"
+import { runPipeline } from "../runtime"
 
 export function getSyncEndpoint(endpointOptions: ResolvedUsageOptions) {
     return createAuthEndpoint(

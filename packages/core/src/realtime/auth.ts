@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import type { AuthContext } from "better-auth"
-import type { ResolvedUsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "../types"
 
 /**
  * Validated session result attached to socket.data after handshake.

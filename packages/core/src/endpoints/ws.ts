@@ -1,5 +1,5 @@
 import { createAuthEndpoint, sessionMiddleware } from "better-auth/api"
-import type { ResolvedUsageOptions } from "@/types"
+import type { ResolvedUsageOptions } from "../types"
 
 export function getWsEndpoint(endpointOptions: ResolvedUsageOptions) {
     return createAuthEndpoint(

@@ -1,5 +1,5 @@
 import { Pool, Client } from "pg"
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
 import type { UsageDriver, UsageEventMessage } from "./types"
 
 const CHANNEL = "bau_usage_events"

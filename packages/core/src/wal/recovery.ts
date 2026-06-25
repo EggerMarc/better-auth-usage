@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { DriverService, LoggerService, wrapDriver } from "@/services"
+import { DriverService, LoggerService, wrapDriver } from "../services"
 import { drain } from "./worker"
 
 /**

@@ -1,6 +1,6 @@
 import { APIError, createAuthEndpoint, sessionMiddleware } from "better-auth/api"
-import { resolveFeature } from "@/pipelines/features"
-import type { ResolvedUsageOptions } from "@/types"
+import { resolveFeature } from "../pipelines/features"
+import type { ResolvedUsageOptions } from "../types"
 import { z } from "zod"
 import { Effect, Exit } from "effect"
 

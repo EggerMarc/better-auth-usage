@@ -1,5 +1,5 @@
 /// <reference types="@cloudflare/workers-types" />
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../../types"
 import type { UsageDriver } from "../types"
 
 export { UsageDurableObject } from "./object"

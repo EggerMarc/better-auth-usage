@@ -1,7 +1,7 @@
 import { Effect } from "effect"
-import type { Feature } from "@/types"
+import type { Feature } from "../types"
 import { getUsage } from "./get-usage"
-import { checkLimit } from "@/utils"
+import { checkLimit } from "../utils"
 
 interface CheckResult {
     allowed: boolean

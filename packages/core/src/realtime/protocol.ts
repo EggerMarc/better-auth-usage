@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { UsageEventMessage } from "@/drivers/types"
+import type { UsageEventMessage } from "../drivers/types"
 
 /**
  * Native-WebSocket wire protocol — one JSON envelope per message, both

@@ -26,6 +26,9 @@
     "test": "turbo test",
     "check-types": "turbo check-types",
     "dev": "turbo dev",
+    "db:generate": "cd apps/server && bunx @better-auth/cli generate --config ../../packages/auth/src/cli.ts --output ../../packages/db/src/schema/auth.ts -y",
+    "db:push": "cd packages/db && bunx drizzle-kit push",
+    "db:setup": "bun run db:generate && bun run db:push",
     "deploy": "turbo -F @repo/infra deploy",
     "destroy": "turbo -F @repo/infra destroy"
   },

@@ -1,7 +1,7 @@
 import { Effect } from "effect"
-import { DriverService, DbService, LoggerService } from "@/services"
-import type { Feature, Usage, CachedUsage, CachedLimits } from "@/types"
-import { shouldReset } from "@/utils"
+import { DriverService, DbService, LoggerService } from "../services"
+import type { Feature, Usage, CachedUsage, CachedLimits } from "../types"
+import { shouldReset } from "../utils"
 
 interface GetUsageParams {
     referenceId: string

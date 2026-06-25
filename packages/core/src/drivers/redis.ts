@@ -1,6 +1,6 @@
 import type RedisType from "ioredis"
-import incrementScript from "./lua/increment.lua"
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
+import { incrementScript } from "./lua"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
 import type { UsageDriver, WalEntry, UsageEventMessage } from "./types"
 
 const STREAM = "wal:usage"

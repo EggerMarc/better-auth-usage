@@ -40,12 +40,12 @@ interface UsageContextValue {
  * ```ts
  * // providers.tsx
  * import { createUsageProvider } from "@eggermarc/better-auth-usage/react"
- * import type { auth } from "@/lib/auth"
+ * import type { auth } from "../lib/auth"
  *
  * export const { UsageProvider, useFeature, useSetReference } = createUsageProvider<typeof auth>()
  *
  * // component.tsx
- * import { useFeature } from "@/providers"
+ * import { useFeature } from "../providers"
  * const { usage, consume } = useFeature("api-calls") // autocomplete works
  * ```
  */

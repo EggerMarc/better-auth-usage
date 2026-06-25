@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis"
-import incrementSimple from "./lua/increment-simple.lua"
-import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "@/types"
+import { incrementSimpleScript as incrementSimple } from "./lua"
+import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
 import type { UsageDriver } from "./types"
 
 export interface UpstashDriverConfig {
