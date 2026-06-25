@@ -3,6 +3,8 @@ import type { UsageOptions } from "./types";
 
 export type { UsageOptions, InferFeatureKeys, InferOverrideKeys } from "./types";
 export type { Feature, Customer, Usage, UsageEvent } from "./types";
+export { memoryDriver, redisDriver } from "./drivers";
+export type { UsageDriver, RealtimeCapability, WalCapability, RedisDriverConfig } from "./drivers";
 import {
     getConsumeEndpoint,
     getCheckEndpoint,
@@ -16,6 +18,7 @@ import {
     getWsEndpoint,
 } from "./endpoints";
 import { validateConfig } from "./config";
+import { memoryDriver, redisDriver } from "./drivers";
 
 /**
  * Creates a usage plugin configured with the provided options.
@@ -32,7 +35,21 @@ export function usage<const O extends UsageOptions>(options: O) {
     for (const [key, config] of Object.entries(options.features)) {
         resolvedFeatures[key] = { ...config, key }
     }
-    const resolved = { ...options, features: resolvedFeatures }
+
+    // Resolve the storage/realtime driver: explicit `driver` wins, else the
+    // deprecated `cacheOptions` builds a Redis driver, else in-memory.
+    const driver = options.driver ?? (
+        options.cacheOptions?.redisUrl
+            ? redisDriver({
+                redisUrl: options.cacheOptions.redisUrl,
+                enableRealtime: options.cacheOptions.enableRealtime,
+                port: options.cacheOptions.port,
+                walEnabled: options.cacheOptions.wal?.enabled,
+            })
+            : memoryDriver()
+    )
+
+    const resolved = { ...options, features: resolvedFeatures, driver }
 
     const plugin = {
         id: "usage",

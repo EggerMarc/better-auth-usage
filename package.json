@@ -57,6 +57,10 @@
             "import": "./dist/client.js",
             "types": "./dist/client.d.ts"
         },
+        "./drivers": {
+            "import": "./dist/drivers.js",
+            "types": "./dist/drivers.d.ts"
+        },
         "./react": {
             "import": "./dist/react.js",
             "types": "./dist/react.d.ts"

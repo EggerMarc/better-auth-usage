@@ -6,7 +6,7 @@ import { checkUsage, canUse } from "@/pipelines/check"
 import { consumeUsage, useFeature } from "@/pipelines/consume"
 import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
-import { RedisService, DbService, LoggerService } from "@/services"
+import { DriverService, DbService, LoggerService } from "@/services"
 import { NotAuthorized } from "@/errors"
 import { redactId } from "@/utils"
 import { validateSessionToken, liftAuthorizeUser, type SocketAuth } from "./auth"
@@ -82,8 +82,8 @@ function mapErrorToSocket(
     if (tag === "ValidationError") {
         return emit(`Validation error: ${err.message}`)
     }
-    if (tag === "RedisError") {
-        return emit(`Redis error during ${err.operation}`)
+    if (tag === "DriverError") {
+        return emit(`Driver error during ${err.operation}`)
     }
     if (tag === "DbError") {
         return emit(`Database error during ${err.operation}`)
@@ -149,8 +149,8 @@ export const registerAuthMiddleware = (
 async function runWsPipeline<A>(
     socket: Socket,
     resultEvent: string,
-    effect: Effect.Effect<A, any, RedisService | DbService | LoggerService>,
-    layer: Layer.Layer<RedisService | DbService | LoggerService>,
+    effect: Effect.Effect<A, any, DriverService | DbService | LoggerService>,
+    layer: Layer.Layer<DriverService | DbService | LoggerService>,
     requestId?: string,
 ) {
     const exit = await Effect.runPromiseExit(
@@ -216,13 +216,10 @@ const authorizeAndResolve = (
 export const setupWebSocketHandlers = (
     io: SocketServer,
     options: ResolvedUsageOptions,
-    layer: Layer.Layer<RedisService | DbService | LoggerService>,
+    layer: Layer.Layer<DriverService | DbService | LoggerService>,
 ) =>
     Effect.gen(function* () {
         const logger = yield* LoggerService
-
-        const walEnabled = !!(options.cacheOptions?.redisUrl &&
-            options.cacheOptions.wal?.enabled !== false)
 
         io.on("connection", (socket) => {
             const auth: SocketAuth = socket.data.auth
@@ -327,7 +324,6 @@ export const setupWebSocketHandlers = (
                             amount: data.amount,
                             event: data.event ?? "use",
                             feature,
-                            walEnabled,
                         })
                     }),
                     layer,
@@ -348,7 +344,6 @@ export const setupWebSocketHandlers = (
                             amount: data.amount ?? 1,
                             event: data.event ?? "use",
                             feature,
-                            walEnabled,
                         })
                     }),
                     layer,

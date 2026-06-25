@@ -7,6 +7,7 @@ export default defineConfig(({ watch = false }) => ({
         index: "package/index.ts",
         client: "package/client.ts",
         react: "package/client/react.tsx",
+        drivers: "package/drivers/index.ts",
     },
     format: "esm",
     splitting: false,

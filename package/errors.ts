@@ -18,6 +18,11 @@ export class DbError extends Data.TaggedError("DbError")<{
     operation: string
 }> {}
 
+export class DriverError extends Data.TaggedError("DriverError")<{
+    cause: unknown
+    operation: string
+}> {}
+
 export class LimitExceeded extends Data.TaggedError("LimitExceeded")<{
     featureKey: string
     current: number

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import { RedisService, DbService, LoggerService } from "@/services"
-import type { Feature } from "@/types"
+import { DriverService, DbService, LoggerService } from "@/services"
+import type { Feature, CachedUsage, CachedLimits } from "@/types"
 import { getUsage } from "./get-usage"
 import { shouldReset } from "@/utils"
 
@@ -8,7 +8,7 @@ import { shouldReset } from "@/utils"
  * Sync/reset usage for a feature.
  *
  * Checks if a reset boundary has been crossed and performs the reset if needed.
- * Updates Redis metadata with next reset time.
+ * Updates driver metadata with the next reset time.
  */
 export const syncUsage = ({
     referenceId,
@@ -18,7 +18,7 @@ export const syncUsage = ({
     feature: Omit<Feature, "hooks">
 }) =>
     Effect.gen(function* () {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
 
@@ -28,19 +28,27 @@ export const syncUsage = ({
 
         const usage = yield* getUsage({ referenceId, feature })
         const reset = shouldReset(usage.lastResetAt, feature.reset)
-        const metaKey = `meta:${feature.key}:${referenceId}`
 
         if (!reset.shouldReset) {
-            // No reset — write metadata with current timestamps
-            yield* redis.hset(metaKey, {
+            // No reset — refresh metadata (limits + next boundary), counter unchanged
+            const cachedUsage: CachedUsage = {
                 referenceId,
                 feature: feature.key,
-                lastResetAt: String(usage.lastResetAt.getTime()),
-                ...(reset.nextReset && { resetAt: String(reset.nextReset.getTime()) }),
-                ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
-                ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
-                ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
-            }).pipe(
+                current: usage.amount,
+                lastResetAt: usage.lastResetAt,
+                maxLimit: feature.maxLimit,
+                minLimit: feature.minLimit,
+            }
+            const meta: CachedLimits = {
+                referenceId,
+                feature: feature.key,
+                lastResetAt: usage.lastResetAt,
+                maxLimit: feature.maxLimit,
+                minLimit: feature.minLimit,
+                resetValue: feature.resetValue,
+                ...(reset.nextReset ? { resetAt: reset.nextReset } : {}),
+            }
+            yield* driver.hydrate(referenceId, feature.key, cachedUsage, meta).pipe(
                 Effect.catchAll((err) =>
                     Effect.sync(() =>
                         logger.warn("Failed to update metadata", { referenceId, feature: feature.key, error: err })
@@ -85,24 +93,21 @@ export const syncUsage = ({
             })
         )
 
-        // Reset Redis counter + update metadata with post-reset timestamps
-        const usageKey = `usage:${feature.key}:${referenceId}`
+        // Reset driver counter + update metadata with post-reset timestamps
         const postResetReset = shouldReset(now, feature.reset)
-        yield* Effect.all([
-            redis.set(usageKey, feature.resetValue ?? 0),
-            redis.hset(metaKey, {
-                referenceId,
-                feature: feature.key,
-                lastResetAt: String(now.getTime()),
-                ...(postResetReset.nextReset && { resetAt: String(postResetReset.nextReset.getTime()) }),
-                ...(feature.maxLimit != null && { maxLimit: String(feature.maxLimit) }),
-                ...(feature.minLimit != null && { minLimit: String(feature.minLimit) }),
-                ...(feature.resetValue != null && { resetValue: String(feature.resetValue) }),
-            }),
-        ]).pipe(
+        const postMeta: CachedLimits = {
+            referenceId,
+            feature: feature.key,
+            lastResetAt: now,
+            maxLimit: feature.maxLimit,
+            minLimit: feature.minLimit,
+            resetValue: feature.resetValue,
+            ...(postResetReset.nextReset ? { resetAt: postResetReset.nextReset } : {}),
+        }
+        yield* driver.reset(referenceId, feature.key, resetValue, postMeta).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
-                    logger.warn("Failed to update Redis after reset", { referenceId, feature: feature.key, error: err })
+                    logger.warn("Failed to update driver after reset", { referenceId, feature: feature.key, error: err })
                 )
             )
         )

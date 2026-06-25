@@ -6,7 +6,7 @@ import { resolveFeature } from "@/pipelines/features"
 import { resolveOverrideKey } from "@/pipelines/resolve-override"
 import { authorizeUser } from "@/pipelines/authorize"
 import { useFeature } from "@/pipelines/consume"
-import { runPipeline, isWalActive } from "@/runtime"
+import { runPipeline } from "@/runtime"
 
 export function getUseFeatureEndpoint(endpointOptions: ResolvedUsageOptions) {
     return createAuthEndpoint(
@@ -45,7 +45,6 @@ export function getUseFeatureEndpoint(endpointOptions: ResolvedUsageOptions) {
                     amount: ctx.body.amount,
                     event: ctx.body.event,
                     feature,
-                    walEnabled: isWalActive(endpointOptions),
                 })
             }))
     )

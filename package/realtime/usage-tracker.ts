@@ -1,43 +1,30 @@
 import { Effect } from "effect"
 import { Server as SocketServer } from "socket.io"
-import { RedisService, LoggerService } from "@/services"
+import { DriverService, LoggerService, wrapDriver } from "@/services"
 
 /**
- * UsageTracker — pure subscriber.
+ * UsageTracker — bridges driver usage events to Socket.IO rooms.
  *
- * Subscribes to Redis pub/sub events (published atomically by the Lua script)
- * and forwards them to Socket.IO rooms. No Redis writes, no cache dependency,
- * no own Redis connections.
+ * Subscribes to the driver's realtime event stream (Redis pub/sub, in-memory
+ * emitter, …) and forwards each event to its room. No store writes, no cache
+ * dependency. No-op when the driver has no realtime capability.
  */
 export const startRealtimeSubscriber = (io: SocketServer) =>
     Effect.gen(function* () {
-        const redis = yield* RedisService
+        const driver = yield* DriverService
         const logger = yield* LoggerService
+
+        if (!driver.realtime) return
 
         logger.info("Realtime: subscribing to usage events")
 
-        yield* redis.psubscribe("usage:events:*", (channel, message) => {
-            const parsed = Effect.try(() => JSON.parse(message) as {
-                feature: string
-                refId: string
-                [key: string]: unknown
+        yield* wrapDriver("realtimeSubscribe", async () =>
+            driver.realtime!.onUsageEvent((update) => {
+                const room = `usage:${update.feature}:${update.refId}`
+                logger.info("Realtime: broadcasting", { room, feature: update.feature, refId: update.refId })
+                io.to(room).emit("usage:updated", update)
             })
-
-            Effect.runSync(
-                parsed.pipe(
-                    Effect.andThen((update) =>
-                        Effect.sync(() => {
-                            const room = `usage:${update.feature}:${update.refId}`
-                            logger.info("Realtime: broadcasting", { channel, room, feature: update.feature, refId: update.refId })
-                            io.to(room).emit("usage:updated", update)
-                        })
-                    ),
-                    Effect.catchAll((err) =>
-                        Effect.sync(() => logger.warn("Realtime: failed to parse/broadcast", { channel, error: String(err) }))
-                    )
-                )
-            )
-        })
+        )
 
         logger.info("Realtime: subscriber active")
     })
