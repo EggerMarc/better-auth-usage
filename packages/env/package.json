@@ -1,0 +1,20 @@
+{
+  "name": "@repo/env",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./infra": "./src/infra.ts"
+  },
+  "dependencies": {
+    "@t3-oss/env-core": "^0.13.1",
+    "dotenv": "^17.2.2",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@repo/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

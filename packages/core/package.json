@@ -1,0 +1,110 @@
+{
+    "name": "@eggermarc/better-auth-usage",
+    "version": "0.2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/EggerMarc/better-auth-usage.git"
+    },
+    "description": "better auth usage plugin",
+    "main": "./dist/index.js",
+    "author": "Marc Egger",
+    "license": "MIT",
+    "homepage": "https://github.com/EggerMarc/better-auth-usage#readme",
+    "scripts": {
+        "build": "tsup",
+        "build:example": "tsup && cd examples/nextjs && bun install && bun run build",
+        "dev": "tsup --watch",
+        "dev:example": "tsup && cd examples/nextjs && bun install && bun run dev",
+        "test": "bun test tests/ src/",
+        "test:watch": "bun test --watch",
+        "test:coverage": "bun test --coverage",
+        "test:redis": "bun test tests-infra/redis.test.ts",
+        "test:perf": "bun test tests/performance.test.ts tests/performance-comparison.test.ts"
+    },
+    "type": "module",
+    "types": "./dist/index.d.ts",
+    "dependencies": {
+        "@effect/schema": "^0.75.5",
+        "effect": "^3.21.0",
+        "zod": "^4.1.12"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260625.1",
+        "@types/bun": "^1.3.1",
+        "@types/pg": "^8.20.0",
+        "@types/ws": "^8.18.1",
+        "@upstash/redis": "^1.38.0",
+        "ioredis": "^5.8.2",
+        "ioredis-mock": "^8.13.1",
+        "pg": "^8.22.0",
+        "tsup": "^8.5.0",
+        "typescript": "^5.9.3",
+        "ws": "^8.21.0"
+    },
+    "peerDependencies": {
+        "@upstash/redis": "^1.34.0",
+        "better-auth": "^1.3.12",
+        "ioredis": "^5.8.0",
+        "pg": "^8.11.0",
+        "react": "^18.0.0 || ^19.0.0",
+        "ws": "^8.0.0"
+    },
+    "peerDependenciesMeta": {
+        "react": {
+            "optional": true
+        },
+        "@upstash/redis": {
+            "optional": true
+        },
+        "ioredis": {
+            "optional": true
+        },
+        "pg": {
+            "optional": true
+        },
+        "ws": {
+            "optional": true
+        }
+    },
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./client": {
+            "import": "./dist/client.js",
+            "types": "./dist/client.d.ts"
+        },
+        "./cloudflare": {
+            "import": "./dist/cloudflare.js",
+            "types": "./dist/cloudflare.d.ts"
+        },
+        "./drivers": {
+            "import": "./dist/drivers.js",
+            "types": "./dist/drivers.d.ts"
+        },
+        "./react": {
+            "import": "./dist/react.js",
+            "types": "./dist/react.d.ts"
+        },
+        "./package.json": "./package.json"
+    },
+    "bugs": {
+        "url": "https://github.com/EggerMarc/better-auth-plugin/issues"
+    },
+    "files": [
+        "dist"
+    ],
+    "keywords": [
+        "better-auth",
+        "plugin",
+        "auth",
+        "better",
+        "usage",
+        "consumption",
+        "consumption-tracking",
+        "credits",
+        "better-auth-plugin",
+        "credits-tracking"
+    ]
+}

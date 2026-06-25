@@ -1,0 +1,24 @@
+{
+  "name": "server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@eggermarc/better-auth-usage": "workspace:*",
+    "@orpc/server": "^1.0.0",
+    "@repo/auth": "workspace:*",
+    "@repo/env": "workspace:*",
+    "better-auth": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "@repo/config": "workspace:*",
+    "alchemy": "catalog:",
+    "typescript": "catalog:",
+    "wrangler": "^4.0.0"
+  }
+}
