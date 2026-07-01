@@ -1,8 +1,0 @@
-{
-  // nitro's cloudflare_module preset merges this into .output/server/wrangler.json.
-  // Sets the worker name + binds the docs.better-auth-usage.com custom domain.
-  "name": "better-auth-usage-docs",
-  "routes": [
-    { "pattern": "docs.better-auth-usage.com", "custom_domain": true }
-  ]
-}

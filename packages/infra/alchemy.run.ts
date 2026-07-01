@@ -2,6 +2,7 @@ import alchemy from "alchemy";
 import {
   Worker,
   Vite,
+  TanStackStart,
   D1Database,
   DurableObjectNamespace,
 } from "alchemy/cloudflare";
@@ -29,6 +30,13 @@ export const web = await Vite("web", {
   bindings: {
     VITE_SERVER_URL: "https://api.better-auth-usage.com",
   },
+});
+
+export const docs = await TanStackStart("docs", {
+  name: "better-auth-usage-docs",
+  adopt: true,
+  cwd: "../../apps/docs",
+  domains: ["docs.better-auth-usage.com"],
 });
 
 const db = await D1Database("database", {
@@ -60,5 +68,6 @@ export const server = await Worker("server", {
 });
 console.log(`API  -> ${server.url}`);
 console.log(`Web  -> ${web.url}`);
+console.log(`Docs -> ${docs.url}`);
 
 await app.finalize();

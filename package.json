@@ -33,8 +33,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "turbo build --filter=@eggermarc/better-auth-usage && changeset publish",
-    "deploy": "turbo -F @repo/infra deploy && bun --filter=docs run deploy",
-    "deploy:docs": "bun --filter=docs run deploy",
+    "deploy": "turbo -F @repo/infra deploy",
     "destroy": "turbo -F @repo/infra destroy"
   },
   "devDependencies": {
