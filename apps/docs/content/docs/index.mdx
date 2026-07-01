@@ -1,0 +1,23 @@
+---
+title: Introduction
+description: Cloudflare-native usage metering & entitlements for better-auth
+icon: Rocket
+---
+
+`@eggermarc/better-auth-usage` is a better-auth plugin for feature usage
+tracking, entitlements, and realtime usage state.
+
+## Highlights
+
+- **Bring-your-own driver** — Redis, Upstash (REST), Postgres, in-memory, or a
+  Cloudflare **Durable Object**. Pick your backend, the plugin stays the same.
+- **Cloudflare-native realtime** — the Durable Object holds the atomic counter
+  *and* the WebSocket connections, so a consume broadcasts with zero extra hops.
+- **Atomic everywhere** — Lua on Redis, single-threaded JS in the DO,
+  `SELECT … FOR UPDATE` on Postgres.
+- **Reactive client** — `createUsageProvider()` React hooks with WS + polling
+  fallback.
+
+## Next
+
+- [Getting started](/docs/getting-started) — install and wire the plugin.

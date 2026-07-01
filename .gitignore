@@ -1,6 +1,23 @@
 node_modules
 dist
 .next
+.turbo
+*.tsbuildinfo
+
+# env + local db (keep .env.example tracked)
+.env
+.dev.vars
+*.local
+*.db
+*.db-shm
+*.db-wal
+.source
+.output
+.nitro
+.tanstack
+.open-next
+.wrangler
+.alchemy
 
 *.lock
 package-lock.json
@@ -9,3 +26,6 @@ bun.lockb
 **.DS_Store
 
 **.claude
+
+**ref
+**tmp

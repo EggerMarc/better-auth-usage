@@ -1,0 +1,21 @@
+{
+  "name": "@repo/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
+  },
+  "dependencies": {
+    "@eggermarc/better-auth-usage": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/env": "workspace:*",
+    "better-auth": "catalog:",
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@repo/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}
