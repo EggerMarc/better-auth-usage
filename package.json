@@ -27,12 +27,18 @@
     "check-types": "turbo check-types",
     "dev": "turbo dev",
     "db:generate": "cd apps/server && bunx @better-auth/cli generate --config ../../packages/auth/src/cli.ts --output ../../packages/db/src/schema/auth.ts -y",
-    "db:push": "cd packages/db && bunx drizzle-kit push",
-    "db:setup": "bun run db:generate && bun run db:push",
-    "deploy": "turbo -F @repo/infra deploy",
+    "db:migrate": "cd packages/db && bunx drizzle-kit generate",
+    "db:apply": "cd apps/server && bunx wrangler d1 migrations apply DB --local",
+    "db:setup": "bun run db:generate && bun run db:migrate && bun run db:apply",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "turbo build --filter=@eggermarc/better-auth-usage && changeset publish",
+    "deploy": "turbo -F @repo/infra deploy && bun --filter=docs run deploy",
+    "deploy:docs": "bun --filter=docs run deploy",
     "destroy": "turbo -F @repo/infra destroy"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@repo/config": "workspace:*",
     "turbo": "^2.9.16",
     "typescript": "catalog:"

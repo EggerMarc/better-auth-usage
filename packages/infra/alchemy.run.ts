@@ -1,42 +1,64 @@
-import alchemy from "alchemy"
-import { Worker, Vite, DurableObjectNamespace } from "alchemy/cloudflare"
-import { env } from "@repo/env/infra"
+import alchemy from "alchemy";
+import {
+  Worker,
+  Vite,
+  D1Database,
+  DurableObjectNamespace,
+} from "alchemy/cloudflare";
+import { env } from "@repo/env/infra";
+import { CloudflareStateStore } from "alchemy/state";
+import { config } from "dotenv";
 
-const app = await alchemy("better-auth-usage")
+config({ path: "./.env" });
 
-// One Durable Object per referenceId — holds the usage counter + realtime
-// WebSocket connections. `className` matches the export in apps/server.
-const usageDO = DurableObjectNamespace("usage", {
-    className: "UsageDurableObject",
-    sqlite: true,
-})
-
-export const server = await Worker("server", {
-    cwd: "../../apps/server",
-    entrypoint: "src/index.ts",
-    compatibility: "node",
-    // Populate process.env from text bindings so @repo/env (t3) can read them.
-    compatibilityFlags: ["nodejs_compat_populate_process_env"],
-    url: true,
-    bindings: {
-        USAGE_DO: usageDO,
-        DATABASE_URL: env.DATABASE_URL,
-        CORS_ORIGIN: env.CORS_ORIGIN,
-        BETTER_AUTH_SECRET: alchemy.secret(env.BETTER_AUTH_SECRET),
-        BETTER_AUTH_URL: env.BETTER_AUTH_URL,
-    },
-    dev: { port: 3000 },
-})
+const app = await alchemy("better-auth-usage", {
+  password: env.ALCHEMY_PASSWORD,
+  stateStore: (scope) =>
+    new CloudflareStateStore(scope, {
+      stateToken: alchemy.secret(env.ALCHEMY_STATE_TOKEN),
+      forceUpdate: true,
+    }),
+});
 
 export const web = await Vite("web", {
-    cwd: "../../apps/web",
-    assets: "dist",
-    bindings: {
-        VITE_SERVER_URL: server.url!,
-    },
-})
+  name: "better-auth-usage-web",
+  adopt: true,
+  cwd: "../../apps/web",
+  assets: "dist",
+  domains: ["better-auth-usage.com"],
+  bindings: {
+    VITE_SERVER_URL: "https://api.better-auth-usage.com",
+  },
+});
 
-console.log(`Server -> ${server.url}`)
-console.log(`Web    -> ${web.url}`)
+const db = await D1Database("database", {
+  migrationsDir: "../../packages/db/src/migrations",
+  adopt: true,
+});
 
-await app.finalize()
+const usageDO = DurableObjectNamespace("usage", {
+  className: "UsageDurableObject",
+  sqlite: true,
+});
+
+export const server = await Worker("server", {
+  name: "better-auth-usage-api",
+  cwd: "../../apps/server",
+  adopt: true,
+  entrypoint: "src/index.ts",
+  compatibilityDate: "2025-06-01",
+  compatibilityFlags: ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  domains: ["api.better-auth-usage.com"],
+  bindings: {
+    DB: db,
+    USAGE_DO: usageDO,
+    BETTER_AUTH_SECRET: alchemy.secret(env.BETTER_AUTH_SECRET),
+    BETTER_AUTH_URL: "https://api.better-auth-usage.com",
+    CORS_ORIGIN: "https://better-auth-usage.com",
+    NODE_ENV: "production",
+  },
+});
+console.log(`API  -> ${server.url}`);
+console.log(`Web  -> ${web.url}`);
+
+await app.finalize();

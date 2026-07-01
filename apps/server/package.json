@@ -5,13 +5,12 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "bun run --hot src/dev.ts",
-    "dev:wrangler": "wrangler dev",
+    "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@repo/core": "workspace:*",
+    "@eggermarc/better-auth-usage": "workspace:*",
     "@orpc/server": "^1.0.0",
     "@repo/auth": "workspace:*",
     "@repo/env": "workspace:*",

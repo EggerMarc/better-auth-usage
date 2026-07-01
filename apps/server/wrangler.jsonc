@@ -10,5 +10,15 @@
     "bindings": [{ "name": "USAGE_DO", "class_name": "UsageDurableObject" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UsageDurableObject"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "better-auth-usage",
+      // Local dev uses a local sqlite under .wrangler; replace with the real id
+      // for remote, or let alchemy provision it on deploy.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../packages/db/src/migrations"
+    }
+  ],
   "dev": { "port": 3000 }
 }

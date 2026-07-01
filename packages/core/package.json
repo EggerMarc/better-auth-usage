@@ -1,5 +1,5 @@
 {
-    "name": "@repo/core",
+    "name": "@eggermarc/better-auth-usage",
     "version": "0.2.0",
     "repository": {
         "type": "git",
@@ -67,13 +67,16 @@
         }
     },
     "exports": {
-        ".": { "default": "./src/index.ts" },
-        "./client": { "default": "./src/client.ts" },
-        "./react": { "default": "./src/client/react.tsx" },
-        "./drivers": { "default": "./src/drivers/index.ts" },
-        "./drivers/memory": { "default": "./src/drivers/memory.ts" },
-        "./cloudflare": { "default": "./src/drivers/cloudflare/index.ts" },
+        ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+        "./client": { "import": "./dist/client.js", "types": "./dist/client.d.ts" },
+        "./react": { "import": "./dist/react.js", "types": "./dist/react.d.ts" },
+        "./drivers": { "import": "./dist/drivers.js", "types": "./dist/drivers.d.ts" },
+        "./drivers/memory": { "import": "./dist/drivers/memory.js", "types": "./dist/drivers/memory.d.ts" },
+        "./cloudflare": { "import": "./dist/cloudflare.js", "types": "./dist/cloudflare.d.ts" },
         "./package.json": "./package.json"
+    },
+    "publishConfig": {
+        "access": "public"
     },
     "bugs": {
         "url": "https://github.com/EggerMarc/better-auth-plugin/issues"

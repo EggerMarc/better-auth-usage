@@ -1,6 +1,8 @@
 import { makeAuth } from "./index"
-import { memoryDriver } from "@repo/core/drivers/memory"
+import { createDb } from "@repo/db"
+import { memoryDriver } from "@eggermarc/better-auth-usage/drivers/memory"
 
-// Node-loadable auth instance for the better-auth CLI (`generate`/`migrate`).
-// Uses the in-memory driver so there's no cloudflare:workers dependency.
-export const auth = makeAuth(memoryDriver())
+// Node-loadable auth for the better-auth CLI (`generate`). Memory driver (no
+// cloudflare:workers) + a stub D1 (generate reads the schema from config, never
+// queries the database).
+export const auth = makeAuth(memoryDriver(), createDb({} as D1Database))

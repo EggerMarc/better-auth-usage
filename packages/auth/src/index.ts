@@ -1,9 +1,9 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { anonymous } from "better-auth/plugins"
-import { usage } from "@repo/core"
-import type { UsageDriver } from "@repo/core"
-import { db } from "@repo/db"
+import { usage } from "@eggermarc/better-auth-usage"
+import type { UsageDriver } from "@eggermarc/better-auth-usage"
+import type { DB } from "@repo/db"
 import * as schema from "@repo/db/schema/auth"
 import { env } from "@repo/env/server"
 
@@ -12,7 +12,7 @@ import { env } from "@repo/env/server"
  * injected so the runtime decides: a Durable Object in the deployed Worker, an
  * in-memory driver under `bun` dev. Everything else is identical.
  */
-export function makeAuth(driver: UsageDriver) {
+export function makeAuth(driver: UsageDriver, db: DB) {
     return betterAuth({
         database: drizzleAdapter(db, { provider: "sqlite", schema }),
         trustedOrigins: [env.CORS_ORIGIN],

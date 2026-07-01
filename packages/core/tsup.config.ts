@@ -8,11 +8,11 @@ export default defineConfig(({ watch = false }) => ({
         client: "src/client.ts",
         react: "src/client/react.tsx",
         drivers: "src/drivers/index.ts",
+        "drivers/memory": "src/drivers/memory.ts",
         cloudflare: "src/drivers/cloudflare/index.ts",
     },
     format: "esm",
     splitting: false,
     watch,
-    minify: !watch,
-    loader: { '.lua': 'text' }
+    minify: !watch
 }));

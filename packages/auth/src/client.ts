@@ -1,6 +1,6 @@
 import { createAuthClient } from "better-auth/react"
 import { anonymousClient } from "better-auth/client/plugins"
-import { usageClient } from "@repo/core/client"
+import { usageClient } from "@eggermarc/better-auth-usage/client"
 import { env } from "@repo/env/web"
 
 // The auth + usage client deps live here so apps consume a ready client from
@@ -13,5 +13,5 @@ export const authClient = createAuthClient({
     plugins: [anonymousClient(), usageClient()],
 })
 
-export { createUsageProvider } from "@repo/core/react"
-export type { UsageState, ConsumeResult, UsageEvent } from "@repo/core/react"
+export { createUsageProvider } from "@eggermarc/better-auth-usage/react"
+export type { UsageState, ConsumeResult, UsageEvent } from "@eggermarc/better-auth-usage/react"

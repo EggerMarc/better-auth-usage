@@ -151,9 +151,7 @@ export class UsageTrackerHandle {
     private ws: WebSocket | null = null
     private wsReady = false
     private disposed = false
-    /** In-flight RPCs, keyed by request id → resolver/rejecter. */
-    private pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void; timer: ReturnType<typeof setTimeout> }>()
-    /** Request IDs currently in flight — skip matching broadcast events. */
+    /** In-flight consume ids — skip our own echoed broadcast events. */
     private pendingRequests: Set<string> = new Set()
     // Reconnect state
     private wsUrl: string | null = null
@@ -220,24 +218,22 @@ export class UsageTrackerHandle {
 
     /**
      * Atomic check + consume. Only consumes if in-limit.
-     * Routes through WS when connected, REST fallback.
+     *
+     * Mutations always go over REST — the server runs the pipeline (limits, DB,
+     * hooks) and broadcasts the new total to the WS channel, so every transport
+     * (including the co-located Durable Object, whose socket is push-only) stays
+     * live. The WS is purely realtime push; it never serves request-response.
      */
     async consume(featureKey: string, amount = 1, event = "use"): Promise<ConsumeResult> {
         const start = performance.now()
+        // Mark in-flight so our own echo broadcast (event) is skipped — the REST
+        // result below is authoritative and updates state directly.
         const requestId = nextRequestId()
         this.pendingRequests.add(requestId)
 
-        let result: ConsumeResult
-
-        if (this.wsReady && this.ws?.readyState === WebSocket.OPEN) {
-            result = await this.rpc<ConsumeResult>(requestId, "use-feature", {
-                referenceId: this.params.referenceId, featureKey, amount, event,
-            })
-        } else {
-            result = await this.restPost<ConsumeResult>("/usage/use-feature", {
-                referenceId: this.params.referenceId, featureKey, amount, event,
-            })
-        }
+        const result = await this.restPost<ConsumeResult>("/usage/use-feature", {
+            referenceId: this.params.referenceId, featureKey, amount, event,
+        })
 
         this.pendingRequests.delete(requestId)
         const duration = Math.round((performance.now() - start) * 100) / 100
@@ -268,11 +264,6 @@ export class UsageTrackerHandle {
             clearTimeout(this.reconnectTimer)
             this.reconnectTimer = null
         }
-        for (const { reject, timer } of this.pending.values()) {
-            clearTimeout(timer)
-            reject(new Error("disposed"))
-        }
-        this.pending.clear()
         if (this.ws) {
             this.ws.onclose = null
             this.ws.close()
@@ -364,22 +355,6 @@ export class UsageTrackerHandle {
         }
     }
 
-    /** Send an RPC over the socket and await the id-correlated reply. */
-    private rpc<T>(requestId: string, method: string, data: Record<string, unknown>): Promise<T> {
-        return new Promise<T>((resolve, reject) => {
-            const ws = this.ws
-            if (!ws || ws.readyState !== WebSocket.OPEN) return reject(new Error("WebSocket not connected"))
-
-            const timer = setTimeout(() => {
-                this.pending.delete(requestId)
-                reject(new Error(`${method} timed out`))
-            }, 10000)
-
-            this.pending.set(requestId, { resolve, reject, timer })
-            ws.send(JSON.stringify({ t: "rpc", id: requestId, method, data }))
-        })
-    }
-
     private connectWebSocket(wsUrl: string, token?: string) {
         // Keep the BASE url — reconnect reuses it, so the query param is added
         // exactly once per attempt (not compounded across reconnects).
@@ -430,26 +405,6 @@ export class UsageTrackerHandle {
             }
             case "subscribed": {
                 this.fetchAll()
-                return
-            }
-            case "result": {
-                const entry = this.pending.get(msg.id)
-                if (entry) {
-                    clearTimeout(entry.timer)
-                    this.pending.delete(msg.id)
-                    entry.resolve(msg.data)
-                }
-                return
-            }
-            case "error": {
-                if (msg.id) {
-                    const entry = this.pending.get(msg.id)
-                    if (entry) {
-                        clearTimeout(entry.timer)
-                        this.pending.delete(msg.id)
-                        entry.reject(new Error(msg.message))
-                    }
-                }
                 return
             }
             case "event": {

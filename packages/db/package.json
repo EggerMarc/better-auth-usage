@@ -11,8 +11,6 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@libsql/client": "^0.15.0",
-    "@repo/env": "workspace:*",
     "drizzle-orm": "^0.45.1"
   },
   "devDependencies": {

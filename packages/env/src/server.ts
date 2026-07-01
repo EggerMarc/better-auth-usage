@@ -7,7 +7,6 @@ import { z } from "zod"
 // `cloudflare:workers` where needed.
 export const env = createEnv({
     server: {
-        DATABASE_URL: z.string().min(1),
         CORS_ORIGIN: z.url(),
         BETTER_AUTH_URL: z.url(),
         BETTER_AUTH_SECRET: z.string().min(1),
@@ -15,6 +14,6 @@ export const env = createEnv({
     },
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,
-    // Skip when server env is unavailable (e.g. web/native builds).
-    skipValidation: !process.env.DATABASE_URL,
+    // Skip when server env is unavailable (e.g. web builds).
+    skipValidation: !process.env.BETTER_AUTH_SECRET,
 })

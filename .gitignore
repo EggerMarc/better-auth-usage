@@ -12,6 +12,10 @@ dist
 *.db-shm
 *.db-wal
 .source
+.output
+.nitro
+.tanstack
+.open-next
 .wrangler
 .alchemy
 
