@@ -34,20 +34,42 @@ export function memoryDriver(config: MemoryDriverConfig = {}): UsageDriver {
 
         async consume(args: ConsumeArgs): Promise<ConsumeOutcome> {
             const k = key(args.referenceId, args.feature)
-            const meta = limits.get(k)
-            const resetValue = meta?.resetValue ?? 0
+
+            // Self-prime meta from the args (limits + reset config) so consume
+            // works without a prior hydrate. resetAt is seeded only when unset.
+            // CachedLimits is a readonly Schema type — rebuild rather than mutate.
+            const prev = limits.get(k)
+            let meta: CachedLimits = {
+                referenceId: args.referenceId,
+                feature: args.feature,
+                ...prev,
+                ...(args.resetValue !== undefined ? { resetValue: args.resetValue } : {}),
+                ...(args.maxLimit !== undefined ? { maxLimit: args.maxLimit } : {}),
+                ...(args.minLimit !== undefined ? { minLimit: args.minLimit } : {}),
+                ...(prev?.resetAt === undefined && args.resetAt !== undefined
+                    ? { resetAt: new Date(args.resetAt) }
+                    : {}),
+            }
+            const resetValue = meta.resetValue ?? 0
 
             let current = counters.has(k) ? counters.get(k)! : resetValue
             let resetOccurred = false
-            let lastResetAt = meta?.lastResetAt?.getTime() ?? args.nowMs
+            let lastResetAt = meta.lastResetAt?.getTime() ?? args.nowMs
 
             // Reset boundary crossed — mirror drivers/lua/increment.lua
-            if (meta?.resetAt && args.nowMs >= meta.resetAt.getTime()) {
+            if (meta.resetAt && args.nowMs >= meta.resetAt.getTime()) {
                 current = resetValue
                 lastResetAt = args.nowMs
-                limits.set(k, { ...meta, lastResetAt: new Date(args.nowMs), resetAt: undefined })
                 resetOccurred = true
+                meta = {
+                    ...meta,
+                    lastResetAt: new Date(args.nowMs),
+                    resetAt: args.resetAt !== undefined ? new Date(args.resetAt) : undefined,
+                }
             }
+
+            if (meta.lastResetAt === undefined) meta = { ...meta, lastResetAt: new Date(lastResetAt) }
+            limits.set(k, meta)
 
             const newTotal = current + args.amount
             counters.set(k, newTotal)

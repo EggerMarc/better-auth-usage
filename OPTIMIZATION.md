@@ -79,7 +79,39 @@ drops by one (log/trace).
 
 ---
 
-## Phase 2 — Skip `getUsage` in consume when no `before` hook (core)
+## Phase 2 — Skip `getUsage` in consume when no `before` hook (core) — DONE
+
+Implemented as **self-priming consume** (bigger than the original outline —
+`getUsage` also primed the driver's reset meta, so a naive skip would have stopped
+resets firing):
+- `ConsumeArgs` gained optional `resetValue` / `resetAt` / `maxLimit` / `minLimit`.
+- The consume pipeline passes the feature's limits + next reset boundary
+  (`shouldReset(null, reset).nextReset`) into `driver.consume`.
+- DO (`object.ts`) and memory drivers self-prime their meta from those args and
+  apply reset boundaries — no prior `hydrate` needed. Other drivers ignore the
+  new optional fields.
+- `consume` now calls `getUsage` **only** when a `before` hook needs the
+  pre-consume total (after-hook derives `beforeAmount = newTotal - amount`). On
+  driver failure it lazily reads for the DB fallback.
+- `writeToDb` upserts the `usage` snapshot (create-if-missing) since `getUsage`
+  no longer auto-creates the row.
+
+Verified on local DO: consume-first (no prior check) self-primes and accumulates
+(+7→7, +3→10, check→10), `pro` override auto-applies (max 100000), never-reset
+feature works, D1 snapshot upserted (api-calls=10, credits=50) and history
+appended (usage_event deltas 7/3/50). Net: `use-feature` drops from 3 sequential
+DO hops → 1 (`driver.consume`) when there's no before hook.
+
+### Discovered (pre-existing) — DO customer cache never populates
+
+`upsert-customer` forks `driver.setCustomer`, but the DO throws
+`put() called with undefined value` (`body.customer` arrives undefined at the DO).
+Forked → silent → non-blocking (getCustomer falls back to DB, correctness fine),
+but it means **every customer lookup pays a DB read instead of a DO cache hit**.
+Perf follow-up — fix the setCustomer DO payload/handler so the customer caches.
+Unrelated to Phase 1/2 code (object.ts `setCustomer` untouched).
+
+## Phase 2 (original outline) — Skip `getUsage` in consume when no `before` hook (core)
 
 **Problem:** `consumeUsage` calls `getUsage` to compute `beforeAmount`, but
 `driver.consume` already returns `newTotal`. `beforeAmount` is only needed to

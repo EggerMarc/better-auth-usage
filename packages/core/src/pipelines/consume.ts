@@ -3,7 +3,7 @@ import { DriverService, DbService, LoggerService } from "../services"
 import { ValidationError } from "../errors"
 import type { Feature, Customer } from "../types"
 import { getUsage } from "./get-usage"
-import { checkLimit } from "../utils"
+import { checkLimit, shouldReset } from "../utils"
 
 /**
  * Lift a user-provided callback (sync or async) into an Effect.
@@ -58,30 +58,41 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        // 1. Fetch current usage (customer was already resolved by the endpoint)
-        const currentUsage = yield* getUsage({ referenceId, feature })
-
-        const beforeAmount = currentUsage.amount
-        const afterAmount = beforeAmount + amount
-
-        // 2. Before hook
+        // 1. Before hook — only this needs the pre-consume total, so only then do
+        // we pay for a read. Without a before hook we skip getUsage entirely and
+        // let driver.consume return the new total (one fewer round-trip).
+        let beforeAmount: number | null = null
+        let lastResetFromRead: Date | null = null
         if (feature.hooks?.before) {
+            const currentUsage = yield* getUsage({ referenceId, feature })
+            beforeAmount = currentUsage.amount
+            lastResetFromRead = currentUsage.lastResetAt
             yield* liftCallback(() =>
                 feature.hooks!.before!({
-                    usage: { beforeAmount, afterAmount, amount },
+                    usage: { beforeAmount: beforeAmount!, afterAmount: beforeAmount! + amount, amount },
                     customer,
                     feature,
                 })
             )
         }
 
-        // 3. Atomic increment via the driver. On driver failure, fall back to DB.
+        // Next reset boundary (from now) — passed to the driver so co-located
+        // stores self-prime their meta and apply resets without a prior hydrate.
+        const resetAt = feature.reset && feature.reset !== "never"
+            ? shouldReset(null, feature.reset).nextReset?.getTime()
+            : undefined
+
+        // 2. Atomic increment via the driver. On driver failure, fall back to DB.
         const outcome = yield* driver.consume({
             referenceId,
             feature: feature.key,
             amount,
             nowMs: Date.now(),
             event,
+            resetValue: feature.resetValue,
+            maxLimit: feature.maxLimit,
+            minLimit: feature.minLimit,
+            resetAt,
         }).pipe(
             Effect.catchTag("DriverError", (err) => {
                 logger.warn("Driver consume failed, falling back to DB", {
@@ -94,16 +105,17 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
         )
 
         let newTotal: number
-        let effectiveLastResetAt = currentUsage.lastResetAt
+        let effectiveLastResetAt: Date
 
         if (outcome) {
             newTotal = outcome.newTotal
-            if (outcome.resetOccurred) {
-                effectiveLastResetAt = new Date(outcome.lastResetAt)
-            }
+            effectiveLastResetAt = new Date(outcome.lastResetAt)
         } else {
-            // DB-only path — calculate newTotal locally
-            newTotal = afterAmount
+            // Driver failed → DB fallback. Fetch the current total if we don't
+            // already have it from a before-hook read.
+            const base = beforeAmount ?? (yield* getUsage({ referenceId, feature })).amount
+            newTotal = base + amount
+            effectiveLastResetAt = lastResetFromRead ?? new Date()
         }
 
         // 4. Write to DB. When the driver buffers via WAL, the drain worker
@@ -124,11 +136,13 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
             })
         }
 
-        // 4. After hook
+        // 4. After hook (derive beforeAmount from the new total when we skipped
+        // the pre-consume read).
         if (feature.hooks?.after) {
+            const afterBefore = beforeAmount ?? newTotal - amount
             yield* liftCallback(() =>
                 feature.hooks!.after!({
-                    usage: { beforeAmount, afterAmount: newTotal, amount },
+                    usage: { beforeAmount: afterBefore, afterAmount: newTotal, amount },
                     customer,
                     feature,
                 })
@@ -181,20 +195,45 @@ const writeToDb = (
 ) =>
     db.transaction((tx) =>
         Effect.gen(function* () {
-            // 1. Update usage row (getUsage already ensured it exists)
-            yield* tx.update({
+            // 1. Upsert the usage snapshot row. The consume pipeline no longer
+            // pre-reads via getUsage (that used to auto-create the row), so create
+            // it if missing, otherwise update.
+            const existing = yield* tx.findOne<{ referenceId: string }>({
                 model: "usage",
                 where: [
                     { field: "referenceId", value: params.referenceId },
                     { field: "feature", value: params.feature },
                 ],
-                update: {
-                    amount: params.newTotal,
-                    event: params.event,
-                    lastResetAt: params.lastResetAt,
-                    updatedAt: params.now,
-                },
             })
+
+            if (existing) {
+                yield* tx.update({
+                    model: "usage",
+                    where: [
+                        { field: "referenceId", value: params.referenceId },
+                        { field: "feature", value: params.feature },
+                    ],
+                    update: {
+                        amount: params.newTotal,
+                        event: params.event,
+                        lastResetAt: params.lastResetAt,
+                        updatedAt: params.now,
+                    },
+                })
+            } else {
+                yield* tx.create({
+                    model: "usage",
+                    data: {
+                        referenceId: params.referenceId,
+                        feature: params.feature,
+                        amount: params.newTotal,
+                        event: params.event,
+                        lastResetAt: params.lastResetAt,
+                        createdAt: params.now,
+                        updatedAt: params.now,
+                    },
+                })
+            }
 
             // 2. Append to usage_events (history)
             yield* tx.create({

@@ -32,6 +32,15 @@ export class UsageStore {
 
     async consume(args: ConsumeArgs): Promise<ConsumeOutcome> {
         const rec = (await this.storage.get<Rec>(recKey(args.feature))) ?? { current: 0, meta: {} }
+
+        // Self-prime meta from the args (limits + reset config) so consume works
+        // without a prior hydrate. resetAt is only seeded when unset — an active
+        // boundary set by a previous consume must not be pushed forward.
+        if (args.resetValue !== undefined) rec.meta.resetValue = args.resetValue
+        if (args.maxLimit !== undefined) rec.meta.maxLimit = args.maxLimit
+        if (args.minLimit !== undefined) rec.meta.minLimit = args.minLimit
+        if (args.resetAt !== undefined && rec.meta.resetAt === undefined) rec.meta.resetAt = args.resetAt
+
         const resetValue = rec.meta.resetValue ?? 0
         let current = rec.current
         let lastResetAt = rec.meta.lastResetAt ?? args.nowMs
@@ -41,9 +50,12 @@ export class UsageStore {
             current = resetValue
             lastResetAt = args.nowMs
             rec.meta.lastResetAt = args.nowMs
-            rec.meta.resetAt = undefined
+            // Seed the next boundary (the pipeline computes it from ~now).
+            rec.meta.resetAt = args.resetAt
             resetOccurred = true
         }
+
+        if (rec.meta.lastResetAt === undefined) rec.meta.lastResetAt = lastResetAt
 
         const newTotal = current + args.amount
         rec.current = newTotal

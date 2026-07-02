@@ -67,6 +67,15 @@ export const ConsumeArgsSchema = Schema.Struct({
     amount: Schema.Number,
     nowMs: Schema.Number,
     event: Schema.String,
+    // Optional reset/limit config. Lets co-located drivers (Durable Object,
+    // in-memory) self-prime their meta and apply reset boundaries atomically
+    // during consume — so the consume pipeline no longer needs a preceding
+    // getUsage/hydrate round-trip just to seed the counter's limits. Drivers
+    // that prime meta by other means (redis Lua) may ignore these.
+    resetValue: Schema.optional(Schema.Number),
+    resetAt: Schema.optional(Schema.Number),   // epoch ms of the next reset boundary
+    maxLimit: Schema.optional(Schema.Number),
+    minLimit: Schema.optional(Schema.Number),
 })
 
 /** A driver `consume` return — mirrors the increment.lua contract. */
