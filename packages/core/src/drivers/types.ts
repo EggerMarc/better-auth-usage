@@ -91,6 +91,17 @@ export interface WalCapability {
 export interface UsageDriver {
     readonly name: string
 
+    /**
+     * The driver's store is itself durable (survives process/isolate restarts),
+     * so it is the source of truth for the counter — not an ephemeral cache over
+     * the database. When true, the consume pipeline skips the redundant `usage`
+     * snapshot write to the DB (keeping only the append-only history) and getUsage
+     * treats a driver miss as authoritative-empty (no DB fallback). Cache-style
+     * drivers (redis, in-memory) leave this unset. Cloudflare Durable Object
+     * storage is durable → the DO driver sets it.
+     */
+    readonly durable?: boolean
+
     /** Atomic increment with reset-boundary handling + fan-out + WAL append. */
     consume(args: ConsumeArgs): Promise<ConsumeOutcome>
 

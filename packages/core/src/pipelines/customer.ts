@@ -60,14 +60,17 @@ export const upsertCustomer = ({ customer, features }: UpsertCustomerParams) =>
             })
         }
 
-        // Sync to cache — the driver clears stale optional fields internally.
+        // Sync to cache — awaited, not forked. A forked effect is interrupted
+        // when the pipeline completes (structured concurrency); a driver whose
+        // setCustomer does a network round-trip (e.g. the Durable Object) would
+        // be cut mid-flight and never populate its cache. upsert-customer is
+        // infrequent, so paying the round-trip here is the right trade.
         yield* driver.setCustomer(result).pipe(
             Effect.catchAll((err) =>
                 Effect.sync(() =>
                     logger.warn("Failed to cache customer", { referenceId: result.referenceId, error: err })
                 )
             ),
-            Effect.fork,
         )
 
         return result

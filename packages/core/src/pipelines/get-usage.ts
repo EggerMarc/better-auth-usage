@@ -43,6 +43,21 @@ export const getUsage = ({ referenceId, feature }: GetUsageParams) =>
             } satisfies Usage
         }
 
+        // Durable driver: it is the source of truth for the counter, so a miss
+        // means "no usage yet" — don't fall back to the DB or auto-create a row.
+        if (driver.durable) {
+            const now = new Date()
+            return {
+                referenceId,
+                feature: feature.key,
+                amount: feature.resetValue ?? 0,
+                lastResetAt: now,
+                createdAt: now,
+                updatedAt: now,
+                event: "empty",
+            } satisfies Usage
+        }
+
         // 2. Fallback to DB
         const dbUsage = yield* getFromDb(db, referenceId, feature)
 

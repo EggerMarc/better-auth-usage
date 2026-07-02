@@ -38,6 +38,11 @@ export function durableObjectDriver(config: DurableObjectDriverConfig): UsageDri
     return {
         name: "durable-object",
 
+        // DO storage is durable → it is the source of truth for the counter, not
+        // a cache over the DB. Lets the consume pipeline skip the redundant `usage`
+        // snapshot write and the getUsage DB fallback.
+        durable: true,
+
         consume: (args: ConsumeArgs) => call<ConsumeOutcome>(args.referenceId, "/consume", args),
 
         getUsage: async (referenceId, feature) => {

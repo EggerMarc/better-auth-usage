@@ -134,34 +134,121 @@ available); `before` hook needs `beforeAmount` → keep `getUsage` in that branc
 
 ---
 
-## Phase 3 — Take the D1 write off the consume hot path (core)
+## Phase 2.5 — Fix the DO customer cache (setCustomer) (core) — DONE
+
+Root cause: `upsertCustomer` **forked** `setCustomer` (`Effect.fork`). Effect's
+structured concurrency interrupts the fork when the pipeline completes; a DO
+round-trip is slower than the request, so the fetch was cut mid-flight and the DO
+received an empty body → `put(undefined)`. Fix: **await** setCustomer (no fork) —
+upsert is infrequent, so the round-trip is fine, and the DO cache now populates.
+Verified: `put() called with undefined` gone; `check-customer` returns the cached
+customer with `overrideKey`. (Same fork-doesn't-survive hazard that ruled out the
+Phase-3 fork approach.)
+
+Original outline below.
+
+## Phase 2.5 (original outline) — Fix the DO customer cache (setCustomer) (core)
+
+**Problem:** `upsert-customer` forks `driver.setCustomer`, but the DO throws
+`put() called with undefined value` — `body.customer` arrives undefined at the DO.
+Forked/silent, so correctness is fine (getCustomer falls back to DB), but the DO
+customer cache **never populates**, so every customer lookup
+(`resolveCustomerAndOverride` on every consume/check) does DO-getCustomer(miss) +
+a **DB read**. Pre-existing; unrelated to Phases 1/2.
+
+**Change:** Find why `body.customer` is undefined at the DO and fix the
+setCustomer payload/handler (`drivers/cloudflare/index.ts` driver `call` +
+`object.ts` `/setCustomer` case) so the customer actually caches. Likely the DO
+`request.json()` shape or the driver payload; confirm by reproducing.
+
+**Files:** `drivers/cloudflare/index.ts`, `drivers/cloudflare/object.ts`.
+
+**Expected win:** getCustomer becomes a DO cache **hit** instead of DO-miss + DB
+read → −1 DB read on every consume/check. Portable, no lock-in.
+
+**Risk:** Low. Isolated to the DO customer path.
+
+**Verify:** After upsert-customer, `check-customer` served from DO cache (no DB
+read); no `put() called with undefined` in the DO log.
+
+---
+
+## Phase 3 (REVISED) — Durable driver: skip the redundant DB write (core) — DONE
+
+Implemented: `durable?: boolean` on `UsageDriver` (forwarded via `DriverService`);
+`durableObjectDriver` sets `durable: true`. consume: durable path appends only the
+`usage_event` history (1 statement) via `appendUsageEvent` and skips the snapshot
+upsert; getUsage: durable miss returns authoritative-empty (no DB fallback /
+auto-create / hydrate fork). Verified on local DO: after two consumes the `usage`
+table has **0 rows** for the ref (DO owns the counter) while `usage_event` holds
+the history (deltas 5, 3); check/consume read correct totals from the DO; `pro`
+override still auto-applies. D1 cost per consume: 3 sequential statements → 1.
+tsc no new errors; tests 17/17.
+
+Doc note: for DO deployments the `usage` snapshot table is intentionally unused —
+read current usage via the plugin/driver, not raw DB. `usage_event` unaffected.
+
+Details below.
+
+## Phase 3 (REVISED, outline) — Durable driver: skip the redundant DB write (core)
+
+Supersedes the original "fork / DO-WAL" plan below. Both rejected on **lock-in**:
+DO-WAL forces raw D1 in the alarm flush (the better-auth adapter is
+worker/request-scoped, unreachable in the DO); `ctx.waitUntil` is a Cloudflare
+API. Both fight the BYO design (bring-your-own driver/DB/KV).
+
+**Reframe:** the D1 write is a **redundant double-write** for the DO driver. DO
+storage is itself durable (SQLite-backed, survives eviction), so the DO already
+persists the counter. The plugin only writes the `usage` snapshot to D1 because it
+treats every driver as an *ephemeral cache over the DB* — true for redis, false
+for the DO. Treat the DO as the durable store it is.
+
+**Change:**
+1. Add an optional `readonly durable?: boolean` capability to `UsageDriver`
+   (mirrors `wal`/`realtime`). The DO driver sets `durable: true`; memory/redis
+   leave it unset (they remain cache-over-DB). Surface it through `DriverService`
+   (like `wal`/`realtime` at `services/driver.ts`).
+2. In `consumeUsage` (`pipelines/consume.ts`): when `driver.durable`, **skip the
+   `usage` snapshot upsert** (the DO is the snapshot). Keep only the append-only
+   `usage_event` history insert (1 statement) — cross-tenant analytics still wants
+   it. So `writeToDb` drops from `findOne` + upsert + history-insert (3 sequential
+   D1 statements, no txn on D1) → **1 insert**.
+3. In `getUsage` (`pipelines/get-usage.ts`): when `driver.durable`, treat a driver
+   miss as authoritative-empty — skip the D1 counter fallback + the auto-create +
+   the hydrate fork (the DO owns the counter). Removes a DB read on cold reads.
+
+**Files:** `drivers/types.ts` (capability), `services/driver.ts` (forward),
+`drivers/cloudflare/index.ts` (`durable: true`), `pipelines/consume.ts`,
+`pipelines/get-usage.ts`.
+
+**Expected win:** consume D1 cost 3 sequential statements → 1 (history). No
+`waitUntil`, no DO-WAL, no D1 lock-in — the write still goes through the
+better-auth adapter, whatever DB that is.
+
+**Risk:** Medium. Semantics change for DO users: the `usage` snapshot table is no
+longer maintained (the DO is the source of truth). Anything reading `usage`
+directly from the DB for a DO deployment must instead read via the plugin
+(driver). `usage_event` history unaffected. Document it. Non-DO drivers unchanged.
+
+**Optional follow-up (zero D1 in hot path):** the remaining `usage_event` insert
+is append-only → the DO could buffer events in its own storage and expose them for
+drain, OR make history opt-out per feature. Deferred — keeps history durable and
+adds no lock-in as long as it doesn't require D1-in-DO.
+
+**Verify:** consume on the DO driver issues exactly one D1 statement (history);
+counter reads come from the DO; resets still fire (meta lives in the DO from
+Phase 2). Re-measure prod timings.
+
+---
+
+## Phase 3 (original outline, OBSOLETE — rejected on lock-in) — fork / DO-WAL
 
 **Problem:** DO driver has no WAL, so `consumeUsage` writes to D1 synchronously
-(a 2-statement transaction) before responding. The DO counter is already
-authoritative for the response.
+before responding. The DO counter is already authoritative for the response.
 
-**Change (interim):** `Effect.fork` the `writeToDb` call — fire-and-forget with
-error logging, so the response returns on the DO outcome. Accept eventual
-consistency for the `usage`/`usageEvent` snapshot+history (already the model for
-WAL drivers).
-
-**Change (durable, later):** Give the DO driver a real WAL capability — buffer
-consume events in DO storage, flush to D1 via a DO `alarm`. This is the
-alarm-flush path deliberately deferred earlier (see `byo_driver_migration`
-notes). Removes the write from the hot path *and* keeps durability/ordering.
-
-**Files:** `packages/core/src/pipelines/consume.ts` (interim);
-`drivers/cloudflare/object.ts` + `drivers/cloudflare/index.ts` (WAL version).
-
-**Expected win:** −(D1 txn) from the hot path. Combined with 1+2, `use-feature`
-≈ session + 1 DO hop (~0.4s).
-
-**Risk:** Interim fork — a crash between DO write and D1 flush drifts the D1
-snapshot until the next consume/sync. Errors must be logged. The WAL version
-removes this risk.
-
-**Verify:** Consume returns before D1 write completes (timing); D1 row eventually
-matches DO counter.
+Rejected approaches: `Effect.fork` (dies after response on Workers — no
+`waitUntil`), `ctx.waitUntil` (Cloudflare-specific API), DO-WAL alarm flush
+(forces raw D1 in the DO → D1 lock-in). Replaced by Phase 3 (REVISED) above.
 
 ---
 
@@ -211,11 +298,21 @@ across every remaining hop.
 
 ## Sequencing & expected outcome
 
-1. Phases 1–3 (core) together: `use-feature` ~1.1s → ~0.4s; `check` ~0.65s →
-   ~0.4s (still 2 hops unless we also parallelize customer∥usage — candidate
-   follow-up once the customer is passed in).
-2. Phase 4 (client): browser `use-feature` drops by ~one `check` round-trip.
-3. Phase 5 (infra): lowers the per-hop floor for everything.
+Status: Phase 1 ✅, Phase 2 ✅. Remaining:
+
+1. **Phase 2.5** (setCustomer DO cache): getCustomer becomes a DO hit → −1 DB read
+   per consume/check. Cheap, portable.
+2. **Phase 3 (REVISED)** (durable driver): consume D1 write 3 statements → 1;
+   getUsage skips DB fallback on the durable driver. No lock-in.
+   After 2.5 + 3: `use-feature` ≈ session + `getCustomer`(DO hit) +
+   `consume`(DO) + 1 history insert; `check` ≈ session + `getCustomer`(DO hit) +
+   `getUsage`(DO). Both ~2 DO hops, no blocking DB read/snapshot write.
+3. **Phase 4** (client): browser `use-feature` drops ~one `check` round-trip.
+4. **Phase 5** (infra): DO placement lowers the per-hop floor for everything.
+
+Note: `check` still has 2 sequential DO hops (getCustomer → getUsage) because
+getUsage depends on the override-resolved feature. Candidate follow-up: a combined
+DO read (customer + usage in one round-trip, same DO instance) → check to 1 hop.
 
 ## Measurement protocol
 

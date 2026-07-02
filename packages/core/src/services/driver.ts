@@ -20,6 +20,7 @@ export interface DriverService {
     getCustomer(referenceId: string): Effect.Effect<Customer | null, DriverError>
     setCustomer(customer: Customer): Effect.Effect<void, DriverError>
     delCustomer(referenceId: string): Effect.Effect<void, DriverError>
+    readonly durable?: boolean
     readonly wal?: WalCapability
     readonly realtime?: RealtimeCapability
 }
@@ -53,6 +54,7 @@ export const makeDriverServiceLive = (driver: UsageDriver): Layer.Layer<DriverSe
         getCustomer: (referenceId) => wrapDriver("getCustomer", () => driver.getCustomer(referenceId)),
         setCustomer: (customer) => wrapDriver("setCustomer", () => driver.setCustomer(customer)),
         delCustomer: (referenceId) => wrapDriver("delCustomer", () => driver.delCustomer(referenceId)),
+        durable: driver.durable,
         wal: driver.wal,
         realtime: driver.realtime,
     } satisfies DriverService)

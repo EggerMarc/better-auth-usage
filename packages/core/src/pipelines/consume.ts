@@ -118,12 +118,26 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
             effectiveLastResetAt = lastResetFromRead ?? new Date()
         }
 
-        // 4. Write to DB. When the driver buffers via WAL, the drain worker
-        // handles the DB sync; otherwise (no WAL, or driver failed) write here.
+        // 4. Persist to DB.
+        //  - WAL driver: the drain worker syncs; nothing to write here.
+        //  - Durable driver (DO): its store IS the counter snapshot, so writing
+        //    the `usage` row to the DB would be a redundant double-write. Append
+        //    only the history event (1 statement instead of findOne+upsert+insert).
+        //  - Otherwise (cache-over-DB, or driver failed): full snapshot + history.
+        const now = new Date()
         if (outcome && driver.wal) {
             // WAL worker will drain stream → DB. No direct write needed.
+        } else if (outcome && driver.durable) {
+            yield* appendUsageEvent(db, logger, {
+                referenceId,
+                feature: feature.key,
+                amount,
+                event,
+                overrideKey: customer?.overrideKey,
+                lastResetAt: effectiveLastResetAt,
+                now,
+            })
         } else {
-            const now = new Date()
             yield* writeToDb(db, logger, {
                 referenceId,
                 feature: feature.key,
@@ -171,6 +185,46 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
             status,
         } satisfies ConsumeResult
     })
+
+/**
+ * Append only the history event (durable-driver path). The driver already holds
+ * the authoritative counter, so there is no snapshot row to maintain — a single
+ * insert. Best-effort: a failed history write must not fail an already-committed
+ * consume, so it is logged, not propagated.
+ */
+const appendUsageEvent = (
+    db: DbService,
+    logger: LoggerService,
+    params: {
+        referenceId: string
+        feature: string
+        amount: number
+        event: string
+        overrideKey?: string
+        lastResetAt: Date
+        now: Date
+    }
+) =>
+    db.create({
+        model: "usageEvent",
+        data: {
+            referenceId: params.referenceId,
+            feature: params.feature,
+            amount: params.amount,
+            event: params.event,
+            overrideKey: params.overrideKey,
+            lastResetAt: params.lastResetAt,
+            createdAt: params.now,
+        },
+    }).pipe(
+        Effect.catchAll((err) =>
+            Effect.sync(() =>
+                logger.warn("Failed to append usage event", {
+                    referenceId: params.referenceId, feature: params.feature, error: err,
+                })
+            )
+        ),
+    )
 
 /**
  * Write to DB: update usage row + append usage_events row.
