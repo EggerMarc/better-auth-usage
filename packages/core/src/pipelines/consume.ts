@@ -1,9 +1,8 @@
 import { Effect } from "effect"
 import { DriverService, DbService, LoggerService } from "../services"
 import { ValidationError } from "../errors"
-import type { Feature } from "../types"
+import type { Feature, Customer } from "../types"
 import { getUsage } from "./get-usage"
-import { getCustomerOptional } from "./get-customer"
 import { checkLimit } from "../utils"
 
 /**
@@ -25,6 +24,8 @@ interface ConsumeParams {
     amount: number
     event: string
     feature: Feature
+    /** Pre-resolved customer (from the endpoint) — avoids a second lookup. */
+    customer: Customer | null
 }
 
 interface ConsumeResult {
@@ -41,7 +42,7 @@ interface ConsumeResult {
  * Consume usage for a feature.
  *
  * Pipeline:
- *   1. Fetch current usage + customer in parallel
+ *   1. Fetch current usage (customer is pre-resolved by the endpoint)
  *   2. Run before hook (if defined)
  *   3. Atomic increment via the driver (counter + reset + WAL + fan-out)
  *   4. Fallback: write to DB if the driver has no WAL (or the driver failed)
@@ -49,7 +50,7 @@ interface ConsumeResult {
  *
  * Returns: Effect<ConsumeResult, DriverError | DbError, DriverService | DbService | LoggerService>
  */
-export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumeParams) =>
+export const consumeUsage = ({ referenceId, amount, event, feature, customer }: ConsumeParams) =>
     Effect.gen(function* () {
         yield* validateAmount(amount)
 
@@ -57,11 +58,8 @@ export const consumeUsage = ({ referenceId, amount, event, feature }: ConsumePar
         const db = yield* DbService
         const logger = yield* LoggerService
 
-        // 1. Fetch current usage + customer in parallel
-        const [currentUsage, customer] = yield* Effect.all([
-            getUsage({ referenceId, feature }),
-            getCustomerOptional(referenceId),
-        ], { concurrency: 2 })
+        // 1. Fetch current usage (customer was already resolved by the endpoint)
+        const currentUsage = yield* getUsage({ referenceId, feature })
 
         const beforeAmount = currentUsage.amount
         const afterAmount = beforeAmount + amount

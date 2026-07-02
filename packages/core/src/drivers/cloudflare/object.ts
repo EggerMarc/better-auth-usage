@@ -65,8 +65,13 @@ export class UsageStore {
     }
 
     async hydrate(feature: string, usage: CachedUsage, meta: CachedLimits): Promise<void> {
+        // Prime the counter only when this DO has none yet — the DO is the
+        // authoritative source for `current`, so a DB→cache hydrate must never
+        // regress a live counter (e.g. a hydrate forked from a getUsage miss
+        // landing after a concurrent consume). Only `reset()` forces the value.
+        const existing = await this.storage.get<Rec>(recKey(feature))
         await this.storage.put(recKey(feature), {
-            current: usage.current,
+            current: existing ? existing.current : usage.current,
             meta: {
                 lastResetAt: meta.lastResetAt?.getTime(),
                 resetAt: meta.resetAt?.getTime(),
@@ -124,7 +129,11 @@ export class UsageDurableObject {
 
         const { pathname } = new URL(request.url)
         const body = (await request.json().catch(() => ({}))) as any
-        const json = (data: unknown) => new Response(JSON.stringify(data ?? {}), { headers: { "content-type": "application/json" } })
+        // Preserve null — a cache miss (getUsage/getCustomer → null) must stay
+        // null over the wire so the driver falls back to the DB. Coercing to `{}`
+        // makes a miss look like a truthy hit (empty customer / usage), which
+        // silently drops overrides and DB reads.
+        const json = (data: unknown) => new Response(JSON.stringify(data ?? null), { headers: { "content-type": "application/json" } })
 
         switch (pathname) {
             case "/consume": {

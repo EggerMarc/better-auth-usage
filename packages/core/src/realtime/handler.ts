@@ -4,7 +4,7 @@ import type { ResolvedUsageOptions } from "../types"
 import { checkUsage, canUse } from "../pipelines/check"
 import { consumeUsage, useFeature } from "../pipelines/consume"
 import { resolveFeature } from "../pipelines/features"
-import { resolveOverrideKey } from "../pipelines/resolve-override"
+import { resolveCustomerAndOverride } from "../pipelines/resolve-override"
 import { DriverService, DbService, LoggerService } from "../services"
 import { NotAuthorized } from "../errors"
 import { validateSessionToken, liftAuthorizeUser, type SocketAuth } from "./auth"
@@ -86,16 +86,17 @@ const authorizeAndResolve = (
                 new NotAuthorized({ userId: auth.userId, referenceId: data.referenceId, feature: data.featureKey })
             )
         }
-        const overrideKey = yield* resolveOverrideKey({
+        const { customer, overrideKey } = yield* resolveCustomerAndOverride({
             overrideKey: data.overrideKey,
             referenceId: data.referenceId,
         })
-        return yield* resolveFeature({
+        const feature = yield* resolveFeature({
             featureKey: data.featureKey,
             overrideKey,
             features: options.features,
             overrides: options.overrides,
         })
+        return { feature, customer }
     })
 
 const rpcEffect = (
@@ -105,7 +106,7 @@ const rpcEffect = (
     data: Extract<ClientMsg, { t: "rpc" }>["data"],
 ) =>
     Effect.gen(function* () {
-        const feature = yield* authorizeAndResolve(options, auth, data)
+        const { feature, customer } = yield* authorizeAndResolve(options, auth, data)
         switch (method) {
             case "check":
                 return yield* checkUsage({ referenceId: data.referenceId, feature, amount: data.amount })
@@ -117,6 +118,7 @@ const rpcEffect = (
                     amount: data.amount ?? 1,
                     event: data.event ?? "use",
                     feature,
+                    customer,
                 })
             case "use-feature":
                 return yield* useFeature({
@@ -124,6 +126,7 @@ const rpcEffect = (
                     amount: data.amount ?? 1,
                     event: data.event ?? "use",
                     feature,
+                    customer,
                 })
         }
     })
