@@ -1,16 +1,39 @@
 import { Effect, Layer, Fiber } from "effect"
 import { APIError } from "better-auth/api"
-import { DriverService, makeDriverServiceLive, DbService, makeDbService, LoggerService, makeLoggerServiceLive } from "./services"
+import {
+    DriverService,
+    makeDriverServiceLive,
+    DbService,
+    makeDbService,
+    LoggerService,
+    makeLoggerServiceLive,
+    BackgroundService,
+    makeBackgroundServiceLive,
+    RequestTimings,
+    makeRequestTimings,
+    timed,
+} from "./services"
 import { recover, startSubscribeWorker, startPollWorker } from "./wal"
 import { startWsServer, type WsServerHandle } from "./realtime/ws-server"
 import type { ResolvedUsageOptions } from "./types"
 import type { UsageDriver } from "./drivers/types"
 import type { AuthContext } from "better-auth"
 
+/** Services built once from plugin options and shared by every request. */
+type SharedServices = DriverService | LoggerService | BackgroundService
+
+/** Everything a pipeline can require: the shared services plus the per-request DB. */
+export type UsageServices = SharedServices | DbService
+
+/** Where `runPipeline` writes response headers (better-auth's endpoint ctx). */
+export interface ResponseHeaders {
+    setHeader(key: string, value: string): void
+}
+
 /**
  * Shared state — initialized once, reused across requests.
  */
-let sharedLayer: Layer.Layer<DriverService | LoggerService> | null = null
+let sharedLayer: Layer.Layer<SharedServices> | null = null
 let capturedAdapter: any = null
 let capturedDriver: UsageDriver | null = null
 let walFiber: Fiber.RuntimeFiber<any, any> | null = null
@@ -20,13 +43,14 @@ let wsServer: WsServerHandle | null = null
 /**
  * Initialize the shared layer from plugin options.
  */
-function getSharedLayer(options: ResolvedUsageOptions): Layer.Layer<DriverService | LoggerService> {
+function getSharedLayer(options: ResolvedUsageOptions): Layer.Layer<SharedServices> {
     if (sharedLayer) return sharedLayer
 
     capturedDriver = options.driver
     const loggerLayer = makeLoggerServiceLive(options.logger)
     const driverLayer = makeDriverServiceLive(options.driver)
-    sharedLayer = Layer.merge(driverLayer, loggerLayer)
+    const backgroundLayer = makeBackgroundServiceLive(options.background)
+    sharedLayer = Layer.mergeAll(driverLayer, loggerLayer, backgroundLayer)
 
     return sharedLayer
 }
@@ -89,11 +113,15 @@ async function ensureWalStarted(options: ResolvedUsageOptions) {
  * Maps typed Effect errors to BetterAuth APIErrors at the boundary.
  *
  * Endpoints no longer need try-catch — error mapping is centralized here.
+ *
+ * Pass `response` (the endpoint ctx) to get a `Server-Timing` header when the
+ * `serverTiming` option is on.
  */
 export async function runPipeline<A, E>(
     authCtx: AuthContext,
     options: ResolvedUsageOptions,
-    effect: Effect.Effect<A, E, DriverService | DbService | LoggerService>
+    effect: Effect.Effect<A, E, UsageServices>,
+    response?: ResponseHeaders,
 ): Promise<A> {
     if (!capturedAdapter) {
         capturedAdapter = authCtx
@@ -106,7 +134,7 @@ export async function runPipeline<A, E>(
     await ensureWalStarted(options)
 
     const exit = await Effect.runPromiseExit(
-        effect.pipe(Effect.provide(fullLayer))
+        withServerTiming(effect, options.serverTiming ? response : undefined).pipe(Effect.provide(fullLayer))
     )
 
     if (exit._tag === "Success") {
@@ -160,6 +188,30 @@ export async function runPipeline<A, E>(
         message: `Usage plugin error: ${message}`
     })
 }
+
+/**
+ * Collect driver/db timings for this request and write them, plus the whole
+ * pipeline's duration, as a `Server-Timing` header. The header is written
+ * whether the pipeline succeeds or fails. Without `response` the effect runs
+ * unchanged and nothing is recorded.
+ */
+const withServerTiming = <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+    response: ResponseHeaders | undefined,
+): Effect.Effect<A, E, R> =>
+    response
+        ? Effect.flatMap(makeRequestTimings, (timings) =>
+            effect.pipe(
+                timed("usage"),
+                Effect.ensuring(
+                    Effect.flatMap(timings.header, (header) =>
+                        Effect.sync(() => { if (header) response.setHeader("Server-Timing", header) })
+                    )
+                ),
+                Effect.provideService(RequestTimings, timings),
+            )
+        )
+        : effect
 
 /**
  * Reset the runtime (for testing). Returns a promise that resolves once the

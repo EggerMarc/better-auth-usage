@@ -1,5 +1,6 @@
 import { Context, Effect } from "effect"
 import { DbError } from "../errors"
+import { timed } from "./timing"
 import type { AuthContext } from "better-auth"
 
 /**
@@ -44,7 +45,7 @@ const wrapDb = <T>(operation: string, fn: () => Promise<T>): Effect.Effect<T, Db
     Effect.tryPromise({
         try: fn,
         catch: (cause) => new DbError({ cause, operation }),
-    })
+    }).pipe(timed(`db.${operation}`))
 
 /**
  * Create a DbService from a BetterAuth AuthContext.

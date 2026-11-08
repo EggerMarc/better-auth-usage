@@ -249,6 +249,8 @@ export interface ResolvedUsageOptions {
     driver: import("./drivers/types").UsageDriver;
     cacheOptions?: UsageOptions["cacheOptions"];
     logger?: UsageOptions["logger"];
+    background?: UsageOptions["background"];
+    serverTiming?: UsageOptions["serverTiming"];
 }
 
 export interface UsageOptions {
@@ -288,6 +290,19 @@ export interface UsageOptions {
             pollInterval?: number;
         };
     },
+    /**
+     * Keeps background work (e.g. the usage history write on durable drivers)
+     * alive after the response is sent. On Cloudflare Workers pass `waitUntil`
+     * from `cloudflare:workers`, otherwise that work may be dropped. Omit it on
+     * long-lived runtimes (Node, bun), where a forked fiber is enough.
+     */
+    background?: (promise: Promise<unknown>) => void;
+    /**
+     * Add a `Server-Timing` header to usage responses with the time spent in
+     * driver and database calls, so DevTools shows where latency comes from.
+     * It exposes internal timings, so leave it off unless you're debugging.
+     */
+    serverTiming?: boolean;
     logger?: {
         debug?(message: string, context?: Record<string, unknown>): void;
         info?(message: string, context?: Record<string, unknown>): void;

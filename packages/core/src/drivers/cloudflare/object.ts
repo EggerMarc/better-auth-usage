@@ -124,6 +124,8 @@ export class UsageStore {
  */
 export class UsageDurableObject {
     private store: UsageStore
+    /** Colo this instance runs in, looked up once per instance (debug only). */
+    private colo: Promise<string> | null = null
     constructor(private state: DurableObjectState, _env?: unknown) {
         this.store = new UsageStore(state.storage as unknown as DOStorageLike)
     }
@@ -168,9 +170,26 @@ export class UsageDurableObject {
                 return json(await this.store.setCustomer(body.customer))
             case "/delCustomer":
                 return json(await this.store.delCustomer())
+            case "/debug/colo":
+                return json({ colo: await this.lookupColo() })
             default:
                 return new Response("Not found", { status: 404 })
         }
+    }
+
+    /**
+     * Where this DO actually runs. `locationHint` is best-effort and only applies
+     * when the DO is first created, so this is how you check placement.
+     */
+    private lookupColo(): Promise<string> {
+        this.colo ??= fetch("https://cloudflare.com/cdn-cgi/trace")
+            .then((res) => res.text())
+            .then((text) => /^colo=(.+)$/m.exec(text)?.[1] ?? "unknown")
+            .catch(() => {
+                this.colo = null
+                return "unknown"
+            })
+        return this.colo
     }
 
     // ── Hibernatable WebSocket handlers ──

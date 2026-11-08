@@ -1,4 +1,5 @@
 import { Effect, Schedule, Duration, Layer } from "effect"
+import type { UsageServices } from "../runtime"
 import { DriverService, DbService, LoggerService, wrapDriver } from "../services"
 import { applyWalEntries } from "./apply"
 
@@ -58,7 +59,7 @@ const checkBackpressure = Effect.gen(function* () {
  *
  * Accepts a `layer` so the drain runs inside the callback with full services.
  */
-export const startSubscribeWorker = (layer: Layer.Layer<DriverService | DbService | LoggerService>) =>
+export const startSubscribeWorker = (layer: Layer.Layer<UsageServices>) =>
     Effect.gen(function* () {
         const driver = yield* DriverService
         const logger = yield* LoggerService

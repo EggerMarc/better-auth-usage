@@ -20,5 +20,10 @@
       "migrations_dir": "../../packages/db/src/migrations"
     }
   ],
+  // Fast session store (better-auth secondaryStorage). Local dev uses a local KV
+  // under .wrangler; alchemy provisions + binds the real namespace on deploy.
+  "kv_namespaces": [
+    { "binding": "SESSION_KV", "id": "00000000000000000000000000000000" }
+  ],
   "dev": { "port": 3000 }
 }

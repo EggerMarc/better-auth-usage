@@ -6,5 +6,6 @@ declare namespace Cloudflare {
     interface Env {
         DB: D1Database
         USAGE_DO: DurableObjectNamespace
+        SESSION_KV: KVNamespace
     }
 }

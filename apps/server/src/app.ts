@@ -12,6 +12,11 @@ function corsHeaders(origin: string | null): Record<string, string> {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        // Cache the preflight so the browser doesn't send an OPTIONS round trip
+        // before every JSON POST (Chrome caps this at 2h, Firefox at 24h).
+        "Access-Control-Max-Age": "86400",
+        // Let the web app read Server-Timing cross-origin (DevTools / Resource Timing API).
+        "Timing-Allow-Origin": origin ?? env.CORS_ORIGIN,
     }
 }
 

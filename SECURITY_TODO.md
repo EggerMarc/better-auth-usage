@@ -66,6 +66,15 @@ overrideKey lockdown.
 
 ---
 
+## VULN 4 — session revocation lag (introduced by the latency work)
+
+To cut the per-request D1 session read, `packages/auth` now enables
+`session.cookieCache` (maxAge 5 min) and a KV `secondaryStorage`. Trade-off: a
+revoked or expired session can remain valid until the cookie cache expires
+(≤ maxAge) and/or the KV entry TTL lapses. Acceptable for now; if strict instant
+revocation is needed, lower `cookieCache.maxAge` and/or delete the KV session key
+on revoke. Tune when hardening.
+
 ## Suggested order (post-optimization)
 
 1. Wire `authorizeUser` (VULN 1) — smallest change, closes cross-tenant access.

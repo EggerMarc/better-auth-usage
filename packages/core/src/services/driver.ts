@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { DriverError } from "../errors"
+import { timed } from "./timing"
 import type { CachedUsage, CachedLimits, ConsumeArgs, ConsumeOutcome, Customer } from "../types"
 import type { UsageDriver, RealtimeCapability, WalCapability } from "../drivers/types"
 
@@ -34,7 +35,7 @@ export const wrapDriver = <T>(operation: string, fn: () => Promise<T>): Effect.E
     Effect.tryPromise({
         try: fn,
         catch: (cause) => new DriverError({ cause, operation }),
-    })
+    }).pipe(timed(`driver.${operation}`))
 
 /**
  * Lift a `UsageDriver` into a `DriverService` layer.

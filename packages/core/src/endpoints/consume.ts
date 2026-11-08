@@ -47,6 +47,6 @@ export function getConsumeEndpoint(endpointOptions: ResolvedUsageOptions) {
                     feature,
                     customer,
                 })
-            }))
+            }), ctx)
     )
 }

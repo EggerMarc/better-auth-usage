@@ -39,7 +39,7 @@ export function getUpsertCustomerEndpoint(endpointOptions: ResolvedUsageOptions)
                     },
                     features: endpointOptions.features,
                 })
-            }))
+            }), ctx)
     )
 }
 
@@ -63,6 +63,6 @@ export function getCheckCustomerEndpoint(endpointOptions: ResolvedUsageOptions) 
                     feature: "*",
                 })
                 return yield* getCustomer(ctx.body.referenceId)
-            }))
+            }), ctx)
     )
 }

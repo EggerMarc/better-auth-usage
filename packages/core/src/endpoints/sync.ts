@@ -42,6 +42,6 @@ export function getSyncEndpoint(endpointOptions: ResolvedUsageOptions) {
                     referenceId: ctx.body.referenceId,
                     feature,
                 })
-            }))
+            }), ctx)
     )
 }

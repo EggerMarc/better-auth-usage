@@ -1,4 +1,5 @@
 import { Layer } from "effect"
+import type { UsageServices } from "../runtime"
 import type { WebSocket as WSocket } from "ws"
 import type { IncomingMessage } from "http"
 import type { AuthContext } from "better-auth"
@@ -7,7 +8,7 @@ import { DriverService, DbService, LoggerService, defaultLogger } from "../servi
 import { handleClientMessage, type WsConnection, type HandlerContext } from "./handler"
 import { parseClientMsg, encode, roomFor, type ServerMsg } from "./protocol"
 
-type WsLayer = Layer.Layer<DriverService | DbService | LoggerService>
+type WsLayer = Layer.Layer<UsageServices>
 
 export interface WsServerHandle {
     close(): Promise<void>

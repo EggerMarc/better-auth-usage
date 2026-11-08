@@ -5,6 +5,7 @@ import {
   TanStackStart,
   D1Database,
   DurableObjectNamespace,
+  KVNamespace,
 } from "alchemy/cloudflare";
 import { env } from "@repo/env/infra";
 import { CloudflareStateStore } from "alchemy/state";
@@ -49,6 +50,13 @@ const usageDO = DurableObjectNamespace("usage", {
   sqlite: true,
 });
 
+// Fast session store for better-auth secondaryStorage (keeps session validation
+// off D1 on every request).
+const sessionKv = await KVNamespace("usage-sessions", {
+  title: "better-auth-usage-sessions",
+  adopt: true,
+});
+
 export const server = await Worker("server", {
   name: "better-auth-usage-api",
   cwd: "../../apps/server",
@@ -60,6 +68,7 @@ export const server = await Worker("server", {
   bindings: {
     DB: db,
     USAGE_DO: usageDO,
+    SESSION_KV: sessionKv,
     BETTER_AUTH_SECRET: alchemy.secret(env.BETTER_AUTH_SECRET),
     BETTER_AUTH_URL: "https://api.better-auth-usage.com",
     CORS_ORIGIN: "https://better-auth-usage.com",

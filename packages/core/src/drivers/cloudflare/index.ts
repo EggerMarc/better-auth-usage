@@ -10,6 +10,13 @@ export interface DurableObjectDriverConfig {
     namespace: DurableObjectNamespace
     /** WS path the client connects to (default `/usage/ws`). */
     wsPath?: string
+    /**
+     * Region hint for where each DO is created — e.g. `"sam"` (South America),
+     * `"enam"`, `"weur"`. Applied at `.get()` time; only affects a DO the first
+     * time it is created (existing DOs stay where they were). Set it to place the
+     * counter near your users and cut the worker→DO round-trip.
+     */
+    locationHint?: DurableObjectLocationHint
 }
 
 /**
@@ -23,7 +30,8 @@ export interface DurableObjectDriverConfig {
  */
 export function durableObjectDriver(config: DurableObjectDriverConfig): UsageDriver {
     const ns = config.namespace
-    const stubFor = (referenceId: string) => ns.get(ns.idFromName(referenceId))
+    const getOpts = config.locationHint ? { locationHint: config.locationHint } : undefined
+    const stubFor = (referenceId: string) => ns.get(ns.idFromName(referenceId), getOpts)
 
     const call = async <T>(referenceId: string, path: string, payload: unknown): Promise<T> => {
         const res = await stubFor(referenceId).fetch(`https://do${path}`, {
@@ -91,7 +99,7 @@ interface AuthLike {
  */
 export async function mountUsage(
     request: Request,
-    opts: { namespace: DurableObjectNamespace; auth: AuthLike; wsPath?: string },
+    opts: { namespace: DurableObjectNamespace; auth: AuthLike; wsPath?: string; locationHint?: DurableObjectLocationHint },
 ): Promise<Response | null> {
     const url = new URL(request.url)
     const wsPath = opts.wsPath ?? "/usage/ws"
@@ -105,7 +113,8 @@ export async function mountUsage(
     if (!referenceId) return new Response("referenceId query param required", { status: 400 })
 
     const ns = opts.namespace
-    return ns.get(ns.idFromName(referenceId)).fetch(request)
+    // Same location hint as the driver so the WS lands on the same DO instance.
+    return ns.get(ns.idFromName(referenceId), opts.locationHint ? { locationHint: opts.locationHint } : undefined).fetch(request)
 }
 
 export type { UsageDriver } from "../types"

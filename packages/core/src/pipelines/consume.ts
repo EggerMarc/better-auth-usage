@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { DriverService, DbService, LoggerService } from "../services"
+import { DriverService, DbService, LoggerService, BackgroundService } from "../services"
 import { ValidationError } from "../errors"
 import type { Feature, Customer } from "../types"
 import { getUsage } from "./get-usage"
@@ -48,7 +48,7 @@ interface ConsumeResult {
  *   4. Fallback: write to DB if the driver has no WAL (or the driver failed)
  *   5. Run after hook (if defined)
  *
- * Returns: Effect<ConsumeResult, DriverError | DbError, DriverService | DbService | LoggerService>
+ * Returns: Effect<ConsumeResult, DriverError | DbError, DriverService | DbService | LoggerService | BackgroundService>
  */
 export const consumeUsage = ({ referenceId, amount, event, feature, customer }: ConsumeParams) =>
     Effect.gen(function* () {
@@ -57,6 +57,7 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
         const driver = yield* DriverService
         const db = yield* DbService
         const logger = yield* LoggerService
+        const background = yield* BackgroundService
 
         // 1. Before hook — only this needs the pre-consume total, so only then do
         // we pay for a read. Without a before hook we skip getUsage entirely and
@@ -122,13 +123,15 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
         //  - WAL driver: the drain worker syncs; nothing to write here.
         //  - Durable driver (DO): its store IS the counter snapshot, so writing
         //    the `usage` row to the DB would be a redundant double-write. Append
-        //    only the history event (1 statement instead of findOne+upsert+insert).
+        //    only the history event (1 statement instead of findOne+upsert+insert),
+        //    in the background: the counter is already committed in the driver,
+        //    and the DB may be far from the user (D1 sits in one region).
         //  - Otherwise (cache-over-DB, or driver failed): full snapshot + history.
         const now = new Date()
         if (outcome && driver.wal) {
             // WAL worker will drain stream → DB. No direct write needed.
         } else if (outcome && driver.durable) {
-            yield* appendUsageEvent(db, logger, {
+            yield* background.run(appendUsageEvent(db, logger, {
                 referenceId,
                 feature: feature.key,
                 amount,
@@ -136,7 +139,7 @@ export const consumeUsage = ({ referenceId, amount, event, feature, customer }: 
                 overrideKey: customer?.overrideKey,
                 lastResetAt: effectiveLastResetAt,
                 now,
-            })
+            }))
         } else {
             yield* writeToDb(db, logger, {
                 referenceId,

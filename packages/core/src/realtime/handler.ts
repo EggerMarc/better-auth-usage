@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect"
+import type { UsageServices } from "../runtime"
 import type { AuthContext } from "better-auth"
 import type { ResolvedUsageOptions } from "../types"
 import { checkUsage, canUse } from "../pipelines/check"
@@ -23,11 +24,11 @@ export interface WsConnection {
 
 export interface HandlerContext {
     options: ResolvedUsageOptions
-    layer: Layer.Layer<DriverService | DbService | LoggerService>
+    layer: Layer.Layer<UsageServices>
     authCtx: AuthContext
 }
 
-type WsLayer = Layer.Layer<DriverService | DbService | LoggerService>
+type WsLayer = Layer.Layer<UsageServices>
 
 /** Map an Effect failure cause to a human-readable message. */
 function causeToMessage(cause: unknown): string {
@@ -57,7 +58,7 @@ function causeToMessage(cause: unknown): string {
 async function runRpc<A>(
     conn: WsConnection,
     id: string,
-    effect: Effect.Effect<A, any, DriverService | DbService | LoggerService>,
+    effect: Effect.Effect<A, any, UsageServices>,
     layer: WsLayer,
 ) {
     const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(layer)))

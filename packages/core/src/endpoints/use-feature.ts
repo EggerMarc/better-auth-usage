@@ -47,6 +47,6 @@ export function getUseFeatureEndpoint(endpointOptions: ResolvedUsageOptions) {
                     feature,
                     customer,
                 })
-            }))
+            }), ctx)
     )
 }

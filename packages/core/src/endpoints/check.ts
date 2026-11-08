@@ -44,6 +44,6 @@ export function getCheckEndpoint(endpointOptions: ResolvedUsageOptions) {
                     feature,
                     amount: ctx.body.amount,
                 })
-            }))
+            }), ctx)
     )
 }
